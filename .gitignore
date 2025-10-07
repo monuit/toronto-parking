@@ -88,7 +88,10 @@ var/
 /output/
 /external_data/
 /parking_data/
+# Large merged GeoJSON file (generated at runtime from chunks)
 map-app/public/data/tickets_aggregated.geojson
+# But allow the split chunks to be committed
+!map-app/public/data/tickets_aggregated_part*.geojson
 
 # MARK: System files
 .DS_Store

@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { createAppData } from './createAppData.js';
 import { createTileService } from './tileService.js';
+import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +18,10 @@ const resolve = (p) => path.resolve(__dirname, '..', p);
 const isProd = process.env.NODE_ENV === 'production';
 const dataDir = isProd ? resolve('dist/client/data') : resolve('public/data');
 process.env.DATA_DIR = dataDir;
+
+// Merge split GeoJSON chunks at startup
+console.log('🚀 Initializing server...');
+await mergeGeoJSONChunks();
 
 const tileService = createTileService();
 
