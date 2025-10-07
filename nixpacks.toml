@@ -1,18 +1,33 @@
 [phases.setup]
-nixPkgs = ['nodejs_20', 'gitFull', 'git-lfs']
+nixPkgs = ['nodejs_20', 'gitFull', 'git-lfs', 'gnugrep']  # grep used in sanity checks
 
 [phases.install]
 cmds = [
+  # Sanity: ensure we are in a git repo
+  '[ -d .git ] || (echo "No .git directory — LFS cannot run here." && exit 1)',
+
+  # Install LFS into the system Git (Nix store is read-only; --system is fine)
   'git lfs install --system',
+
+  # Show LFS env for debugging
+  'git lfs env',
+
+  # Fetch all LFS objects and replace pointers with real files
   'git lfs fetch --all',
-  'git lfs pull',
+  'git lfs checkout',
+
+  # Optional: if your workflow relies on remote default
+  # 'git lfs pull',
+
+  # Verify the large file is materialized (non-zero size)
+  # Example: if your file is at map-app/public/data/big.asset
+  'test -s map-app/public/data/your-big-file.ext || (echo "LFS file not materialized" && exit 1)',
+
   'cd map-app && npm ci'
 ]
 
 [phases.build]
-cmds = [
-  'cd map-app && npm run build:ssr'
-]
+cmds = ['cd map-app && npm run build:ssr']
 
 [start]
 cmd = 'cd map-app && npm start'
