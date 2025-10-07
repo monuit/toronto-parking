@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:ssr": "node server/index.js",
     "build": "vite build",
-    "build:ssr": "vite build && vite build --ssr src/entry-server.jsx",
+    "build:ssr": "vite build && vite build --ssr src/entry-server.jsx --outDir dist/server",
     "start": "NODE_ENV=production node server/index.js",
     "lint": "eslint .",
     "preview": "vite preview",

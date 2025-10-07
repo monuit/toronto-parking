@@ -34,6 +34,6 @@ jobs:
       
       - name: Verify build output
         run: |
-          test -f dist/index.html || exit 1
-          test -f dist/entry-server.js || exit 1
+          test -f dist/client/index.html || exit 1
+          test -f dist/server/entry-server.js || exit 1
           echo "Build artifacts verified successfully"
