@@ -61,6 +61,44 @@ toronto-parking/
 2. Run full geocoding (~2 days)
 3. Integrate into map visualization
 
+## 🤖 OpenAI Forecasting Roadmap
+
+### Historical Coverage & Holdouts
+
+- **Source window:** Parking and officer activity data from **2008 through 2024**.
+- **Per-year evaluation slices:** Reserve the **last quarter of each year (Oct–Dec)** plus **one floating high-demand month** (e.g., March) for testing to capture seasonal variance.
+- **Training inputs:** Remaining months per year (≈ 8 months) feed the fine-tuning corpora.
+- **Targets:** Predict (a) ticket counts per geocoded location per hour and (b) officer patrol density vectors derived from historical movement logs.
+
+### Dataset Construction
+
+- Extend existing preprocessing flows to emit **OpenAI-ready JSONL** files with chat-style prompts containing spatial/temporal context and tool-call friendly completions.
+- Generate paired datasets for **training** and **evaluation**; include metadata fields (`year`, `month`, `location_id`, `officer_cluster`) to support stratified sampling.
+- Store artifacts under `output/fine_tuning/{year}/` with manifest JSON describing splits and checksum hashes.
+
+### Fine-Tune & Eval Workflow
+
+- Automate fine-tuning via CLI scripts that:
+   1. Upload curated JSONL files to OpenAI file storage.
+   2. Launch fine-tune jobs targeting `gpt-4.1-mini` (tickets) and `gpt-4o-mini` (officer movement) with consistent hyperparameters.
+   3. Monitor job status, persisting run IDs and metrics to `output/fine_tuning/runs.json`.
+- Configure **OpenAI Evals** to benchmark against holdout months, scoring MAE, RMSE, and hotspot ranking accuracy.
+- Promote models only when eval metrics beat the naïve historical-baseline funnel by ≥10%.
+
+### Forecast Generation (Oct 7, 2025 Focus)
+
+- Implement a forecast harness that:
+   1. Builds scenario prompts from the latest geocoded ticket map and officer routing history.
+   2. Calls the fine-tuned models to obtain **hourly forecasts for Oct 7, 2025** (primary test case) and optional adjacent days.
+   3. Aggregates outputs into GeoJSON + timeseries JSON persisted under `map-app/public/data/forecasts/`.
+- Cache model responses with idempotent keys `(model_id, scenario_hash)` to avoid duplicate billing.
+
+### Frontend & Monitoring
+
+- Extend the MapLibre frontend to ingest the saved forecast GeoJSON, providing toggles for "Historicals" vs. "Oct 7 2025 Forecast".
+- Display confidence intervals from eval metrics and flag locations where model uncertainty >25%.
+- Log forecast generation runs (input hashes, model versions, timestamps) to support reproducibility and rollback.
+
 ## 💻 Commands Reference
 
 ### Geocoding (Main Workflow)
@@ -84,6 +122,12 @@ python preprocessing/prepare_map_data.py
 
 # Create test dataset
 python preprocessing/create_test_queries.py
+
+# Build fine-tuning datasets (train/test_case/seasonal splits)
+python preprocessing/build_fine_tune_datasets.py --output-root output/fine_tuning
+
+# Launch fine-tune + evaluation workflow (requires OPENAI_API_KEY)
+python preprocessing/manage_fine_tunes.py run-full-cycle --train output/fine_tuning/aggregated/train.jsonl --validation output/fine_tuning/aggregated/test_case.jsonl --eval-dataset output/fine_tuning/aggregated/seasonal.jsonl --model gpt-4.1-mini
 ```
 
 ### Map Application
@@ -118,7 +162,7 @@ npm run dev      # Start development server
 
 Create `.env` file:
 
-```
+```bash
 GEOCODE_MAPS_CO_API_KEY=your_key_here
 ```
 
@@ -142,7 +186,7 @@ npm install
 
 ## 🎯 Workflow
 
-```
+```text
 1. prepare_map_data.py
    ↓ generates unique_queries.json
 

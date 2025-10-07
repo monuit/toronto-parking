@@ -1,0 +1,5 @@
+{
+  "installCommand": "pip install -r requirements.txt && npm --prefix map-app install",
+  "buildCommand": "npm --prefix map-app run build",
+  "outputDirectory": "map-app/dist"
+}
