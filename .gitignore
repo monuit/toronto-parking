@@ -88,6 +88,7 @@ var/
 /output/
 /external_data/
 /parking_data/
+map-app/public/data/tickets_aggregated.geojson
 
 # MARK: System files
 .DS_Store

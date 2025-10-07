@@ -1,1 +1,2 @@
-map-app/public/data/tickets_aggregated.geojson filter=lfs diff=lfs merge=lfs -text
+# Large data files are fetched from MinIO storage during build
+# map-app/public/data/tickets_aggregated.geojson
