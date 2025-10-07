@@ -6,11 +6,11 @@ cmds = [
   # Create data directory
   'mkdir -p map-app/public/data',
   
-  # Download tickets_aggregated.geojson from MinIO (direct S3-style path)
-  'curl -f "https://to-parking.monuit.dev/tickets_aggregated.geojson" -o map-app/public/data/tickets_aggregated.geojson',
+  # Download tickets_aggregated.geojson from GitHub Releases
+  'curl -fL "https://github.com/monuit/toronto-parking/releases/download/v1.0-data/tickets_aggregated.geojson" -o map-app/public/data/tickets_aggregated.geojson',
   
-  # Verify file was downloaded
-  'test -s map-app/public/data/tickets_aggregated.geojson || (echo "Failed to download tickets_aggregated.geojson from MinIO" && exit 1)',
+  # Verify file was downloaded and matches expected size (should be ~240MB)
+  'test -s map-app/public/data/tickets_aggregated.geojson || (echo "Failed to download tickets_aggregated.geojson from GitHub Releases" && exit 1)',
   
   'cd map-app && npm ci'
 ]
