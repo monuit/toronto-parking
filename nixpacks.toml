@@ -3,13 +3,16 @@ nixPkgs = ['nodejs_20', 'gitFull', 'git-lfs']
 
 [phases.install]
 cmds = [
-  'git lfs install',
+  'git lfs install --system',
+  'git lfs fetch --all',
   'git lfs pull',
   'cd map-app && npm ci'
 ]
 
 [phases.build]
-cmds = ['cd map-app && npm run build:ssr']
+cmds = [
+  'cd map-app && npm run build:ssr'
+]
 
 [start]
 cmd = 'cd map-app && npm start'
