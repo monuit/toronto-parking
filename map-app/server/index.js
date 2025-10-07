@@ -12,6 +12,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const resolve = (p) => path.resolve(__dirname, '..', p);
+
+// Set data directory for bundled server modules
+const isProd = process.env.NODE_ENV === 'production';
+const dataDir = isProd ? resolve('dist/client/data') : resolve('public/data');
+process.env.DATA_DIR = dataDir;
+
 const tileService = createTileService();
 
 function registerTileRoutes(app) {

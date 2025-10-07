@@ -8,12 +8,8 @@ import { normalizeStreetName } from '../shared/streetUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// In dev: server/ -> public/data/
-// In prod: dist/server/ -> dist/client/data/
-const isProd = process.env.NODE_ENV === 'production';
-const DATA_DIR = isProd
-  ? path.resolve(__dirname, '../client/data')
-  : path.resolve(__dirname, '../public/data');
+// Use DATA_DIR from environment (set by index.js)
+const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../public/data');
 const TICKETS_FILE = path.join(DATA_DIR, 'tickets_aggregated.geojson');
 const NEIGHBOURHOODS_FILE = path.join(DATA_DIR, 'neighbourhoods.geojson');
 

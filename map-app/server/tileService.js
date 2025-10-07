@@ -1,7 +1,6 @@
 import { readFile, stat } from 'fs/promises';
 import path from 'path';
 import process from 'node:process';
-import { fileURLToPath } from 'url';
 import Supercluster from 'supercluster';
 import geojsonvt from 'geojson-vt';
 import vtpbf from 'vt-pbf';
@@ -448,13 +447,11 @@ class TileService {
 }
 
 export function createTileService() {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  // In dev: server/ -> public/data/
-  // In prod: dist/server/ -> dist/client/data/
-  const isProd = process.env.NODE_ENV === 'production';
-  const dataFile = isProd
-    ? path.resolve(__dirname, '../client/data/tickets_aggregated.geojson')
-    : path.resolve(__dirname, '../public/data/tickets_aggregated.geojson');
+  // Use DATA_DIR from environment (set by index.js)
+  const dataDir = process.env.DATA_DIR;
+  if (!dataDir) {
+    throw new Error('DATA_DIR environment variable must be set');
+  }
+  const dataFile = path.join(dataDir, 'tickets_aggregated.geojson');
   return new TileService(dataFile);
 }
