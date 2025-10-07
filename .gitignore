@@ -102,6 +102,3 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
-
-# MARK: Repository-specific
-/.github/
