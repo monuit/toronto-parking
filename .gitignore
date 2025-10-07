@@ -84,6 +84,16 @@ var/
 *.xls
 *.xlsx
 
+# MARK: Temporary and test files
+test_*.py
+test_*.json
+*_cache.json
+failed_*.json
+split_geojson.py
+minio_diagnostic.py
+MINIO_DIAGNOSTIC.md
+QUICK_FIX.md
+
 # MARK: Local datasets and outputs
 /output/
 /external_data/

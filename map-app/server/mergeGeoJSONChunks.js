@@ -21,7 +21,7 @@ const CHUNK_PATTERN = /^tickets_aggregated_part\d+\.geojson$/;
  */
 export async function mergeGeoJSONChunks() {
   console.log('🔗 Merging GeoJSON chunks...');
-  
+
   // Check if merged file already exists
   if (fs.existsSync(OUTPUT_FILE)) {
     const stats = fs.statSync(OUTPUT_FILE);
@@ -29,7 +29,7 @@ export async function mergeGeoJSONChunks() {
     console.log(`✓ Merged file already exists: ${sizeMB} MB`);
     return OUTPUT_FILE;
   }
-  
+
   // Find all chunk files
   const files = fs.readdirSync(DATA_DIR);
   const chunkFiles = files
@@ -39,42 +39,42 @@ export async function mergeGeoJSONChunks() {
       const numB = parseInt(b.match(/\d+/)[0]);
       return numA - numB;
     });
-  
+
   if (chunkFiles.length === 0) {
     throw new Error('No chunk files found to merge');
   }
-  
+
   console.log(`  Found ${chunkFiles.length} chunks to merge`);
-  
+
   // Merge all features
   const allFeatures = [];
-  
+
   for (const chunkFile of chunkFiles) {
     const chunkPath = path.join(DATA_DIR, chunkFile);
     console.log(`  Reading ${chunkFile}...`);
-    
+
     const data = JSON.parse(fs.readFileSync(chunkPath, 'utf-8'));
     allFeatures.push(...data.features);
   }
-  
+
   console.log(`  Total features merged: ${allFeatures.length.toLocaleString()}`);
-  
+
   // Create merged GeoJSON
   const mergedData = {
     type: 'FeatureCollection',
     features: allFeatures
   };
-  
+
   // Write merged file
   console.log('  Writing merged file...');
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(mergedData));
-  
+
   const stats = fs.statSync(OUTPUT_FILE);
   const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
-  
+
   console.log(`✓ Merged file created: ${sizeMB} MB`);
   console.log(`✓ Output: ${OUTPUT_FILE}`);
-  
+
   return OUTPUT_FILE;
 }
 
