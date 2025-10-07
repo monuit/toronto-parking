@@ -14,6 +14,22 @@ import { HowItWorks } from './components/HowItWorks.jsx';
 import { ViewportInsights } from './components/ViewportInsights.jsx';
 import './App.css';
 
+const POPUP_SHEET_BREAKPOINT = 640;
+const POPUP_SIDE_BREAKPOINT = 1024;
+
+function getPopupVariantForWidth(width) {
+  if (!Number.isFinite(width)) {
+    return 'floating';
+  }
+  if (width <= POPUP_SHEET_BREAKPOINT) {
+    return 'sheet';
+  }
+  if (width <= POPUP_SIDE_BREAKPOINT) {
+    return 'side';
+  }
+  return 'floating';
+}
+
 const MapExperience = lazy(() => import('./components/MapExperience.jsx'));
 
 function AppContent({
@@ -29,12 +45,33 @@ function AppContent({
   const [viewportSummary, setViewportSummary] = useState({ zoomRestricted: true, topStreets: [] });
   const [isClient, setIsClient] = useState(() => !isServer && typeof window !== 'undefined');
   const [isOverlayCollapsed, setIsOverlayCollapsed] = useState(false);
+  const [popupVariant, setPopupVariant] = useState(() => {
+    if (typeof window === 'undefined') {
+      return 'floating';
+    }
+    return getPopupVariantForWidth(window.innerWidth);
+  });
   const { getStreetSummary, getCentrelineDetail } = useCentrelineLookup();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsClient(true);
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const updateVariant = () => {
+      setPopupVariant((current) => {
+        const next = getPopupVariantForWidth(window.innerWidth);
+        return current === next ? current : next;
+      });
+    };
+    updateVariant();
+    window.addEventListener('resize', updateVariant);
+    return () => window.removeEventListener('resize', updateVariant);
   }, []);
 
   const handleMapLoad = useCallback((mapInstance) => {
@@ -64,6 +101,9 @@ function AppContent({
   }, [map]);
 
   const computePopupPosition = useCallback((event) => {
+    if (popupVariant !== 'floating') {
+      return null;
+    }
     if (typeof window === 'undefined') {
       return { x: 0, y: 0 };
     }
@@ -101,7 +141,18 @@ function AppContent({
     const y = Math.min(Math.max(baseY, minY), maxY);
 
     return { x, y };
-  }, []);
+  }, [popupVariant]);
+
+  useEffect(() => {
+    if (!popupData) {
+      return;
+    }
+    if (popupVariant === 'floating') {
+      setPopupPosition((current) => current ?? computePopupPosition());
+    } else {
+      setPopupPosition(null);
+    }
+  }, [popupVariant, popupData, computePopupPosition]);
 
   const handleNeighbourhoodClick = useCallback((properties, event) => {
     setActiveCentrelineIds([]);
@@ -313,6 +364,7 @@ function AppContent({
         <InfoPopup
           data={popupData}
           position={popupPosition}
+          variant={popupVariant}
           onClose={closePopup}
         />
       )}

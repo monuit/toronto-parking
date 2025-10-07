@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 import { formatNumber, formatCurrency } from '../lib/dataTransforms';
 import '../styles/Controls.css';
 
-export function InfoPopup({ data, position, onClose }) {
+export function InfoPopup({ data, position, onClose, variant = 'floating' }) {
   const popupRef = useRef(null);
 
   useEffect(() => {
@@ -22,15 +22,24 @@ export function InfoPopup({ data, position, onClose }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [data, onClose]);
 
+  useEffect(() => {
+    if (!popupRef.current) {
+      return;
+    }
+    popupRef.current.scrollTop = 0;
+  }, [data, variant]);
+
   if (!data) return null;
 
-  const style = position ? {
+  const floatingStyle = position ? {
     position: 'fixed',
     left: `${position.x}px`,
     top: `${position.y}px`,
     transform: 'translate(-50%, -50%)',
     zIndex: 10000
   } : {};
+  const isFloatingVariant = variant === 'floating';
+  const style = isFloatingVariant ? floatingStyle : {};
   const isTicketLocation = Boolean(data?.location);
   const isNeighbourhood = Boolean(!isTicketLocation && data?.name);
 
@@ -224,7 +233,7 @@ export function InfoPopup({ data, position, onClose }) {
     </>
   ) : null;
 
-  const classNames = ['info-popup'];
+  const classNames = ['info-popup', `popup-variant-${variant}`];
   if (isTicketLocation) {
     classNames.push('ticket-popup');
   }
