@@ -83,7 +83,6 @@ var/
 *.feather
 *.xls
 *.xlsx
-map-app/public/data/tickets_aggregated.geojson
 
 # MARK: Local datasets and outputs
 /output/

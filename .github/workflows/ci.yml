@@ -37,4 +37,5 @@ jobs:
           test -f dist/client/index.html || exit 1
           test -f dist/server/entry-server.js || exit 1
           test -d dist/client/data || exit 1
+          test -f dist/client/data/tickets_aggregated.geojson || exit 1
           echo "Build artifacts verified successfully"
