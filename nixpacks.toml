@@ -3,8 +3,8 @@ nixPkgs = ['nodejs_20', 'git-lfs']
 
 [phases.install]
 cmds = [
-  'git lfs install',
-  'git lfs pull',
+  'git-lfs install',
+  'git-lfs pull',
   'cd map-app && npm ci'
 ]
 
