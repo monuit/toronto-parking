@@ -1,5 +1,5 @@
 {
   "installCommand": "npm install --prefix map-app",
-  "buildCommand": "npm run build --prefix map-app",
+  "buildCommand": "npm run build:ssr --prefix map-app",
   "outputDirectory": "map-app/dist"
 }

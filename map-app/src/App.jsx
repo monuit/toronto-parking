@@ -64,13 +64,43 @@ function AppContent({
   }, [map]);
 
   const computePopupPosition = useCallback((event) => {
-    if (event && event.point) {
-      return { x: event.point.x + 320, y: event.point.y };
+    if (typeof window === 'undefined') {
+      return { x: 0, y: 0 };
     }
-    if (typeof window !== 'undefined') {
-      return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    const sidebarWidth = 320;
+    const overlayWidth = viewportWidth <= 1024 ? 280 : 320;
+    const rightMargin = viewportWidth <= 1024 ? 16 : 20;
+    const popupMaxWidth = 420;
+    const popupHalfWidth = popupMaxWidth / 2;
+    const baseX = event?.point?.x ?? viewportWidth / 2;
+    const baseY = event?.point?.y ?? viewportHeight / 2;
+
+    const minCenterX = sidebarWidth + popupHalfWidth + 24;
+    const preferredCenterX = viewportWidth - overlayWidth - rightMargin - popupHalfWidth;
+    const maxCenterX = viewportWidth - popupHalfWidth - rightMargin;
+
+    let x;
+    if (preferredCenterX >= minCenterX) {
+      x = preferredCenterX;
+    } else {
+      if (maxCenterX <= minCenterX) {
+        const fallback = Math.min(Math.max(baseX, popupHalfWidth + rightMargin), viewportWidth - popupHalfWidth - rightMargin);
+        x = Number.isFinite(fallback) ? fallback : viewportWidth / 2;
+      } else {
+        const clamped = Math.min(Math.max(baseX, minCenterX), maxCenterX);
+        x = Number.isFinite(clamped) ? clamped : minCenterX;
+      }
     }
-    return { x: 0, y: 0 };
+
+    const minY = 120;
+    const maxY = viewportHeight - 200;
+    const y = Math.min(Math.max(baseY, minY), maxY);
+
+    return { x, y };
   }, []);
 
   const handleNeighbourhoodClick = useCallback((properties, event) => {

@@ -345,6 +345,8 @@
   z-index: 10000;
   min-width: 280px;
   max-width: 360px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
   border: 1px solid rgba(0, 0, 0, 0.08);
   animation: popupFadeIn 0.2s ease-out;
 }
@@ -356,11 +358,11 @@
 @keyframes popupFadeIn {
   from {
     opacity: 0;
-    transform: translate(-50%, -110%) scale(0.95);
+    transform: translate(-50%, -40%) scale(0.95);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -120%) scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 

@@ -28,7 +28,7 @@ export function InfoPopup({ data, position, onClose }) {
     position: 'fixed',
     left: `${position.x}px`,
     top: `${position.y}px`,
-    transform: 'translate(-50%, -120%)',
+    transform: 'translate(-50%, -50%)',
     zIndex: 10000
   } : {};
   const isTicketLocation = Boolean(data?.location);
