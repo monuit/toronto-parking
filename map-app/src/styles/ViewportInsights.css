@@ -1,0 +1,85 @@
+.viewport-insights {
+  margin-top: 1rem;
+}
+
+.viewport-insights--compact {
+  margin-top: 0;
+}
+
+.viewport-insights h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.viewport-insights--compact h3 {
+  font-size: 0.95rem;
+}
+
+.viewport-insights .hint {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0 0 0.5rem;
+}
+
+.viewport-insights--compact .hint {
+  font-size: 0.75rem;
+}
+
+.viewport-insights .street-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.viewport-insights--compact .street-list {
+  gap: 0.5rem;
+}
+
+.viewport-insights li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.viewport-insights--compact li {
+  padding-bottom: 0.35rem;
+}
+
+.viewport-insights .primary-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.viewport-insights--compact .primary-row {
+  font-size: 0.95rem;
+}
+
+.viewport-insights .rank {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.viewport-insights--compact .rank {
+  font-size: 0.85rem;
+}
+
+.viewport-insights .secondary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.viewport-insights--compact .secondary-row {
+  font-size: 0.75rem;
+}

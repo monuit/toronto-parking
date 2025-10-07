@@ -1,0 +1,488 @@
+/* Controls and UI elements - Compact top-right design */
+
+.layer-toggles {
+  padding: 14px 16px;
+  min-width: 180px;
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.controls-title {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d1d1f;
+  letter-spacing: 0.3px;
+}
+
+.toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1d1d1f;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.toggle-item:hover {
+  background: rgba(255, 255, 255, 0.6);
+  transform: translateX(2px);
+}
+
+.toggle-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.toggle-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #667eea;
+  border-radius: 4px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.legend {
+  background: #2c2c2e;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.legend.collapsed {
+  padding: 0;
+  min-width: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: rgba(44, 44, 46, 0.95);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.legend.expanded {
+  padding: 0;
+  padding-top: 36px;
+  min-width: 280px;
+  width: auto;
+  height: auto;
+}
+
+.legend-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 10px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.legend.collapsed .legend-toggle {
+  padding: 12px;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+}
+
+.legend.collapsed .legend-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.05);
+}
+
+.legend.expanded .legend-toggle {
+  display: none;
+}
+
+.legend.expanded .legend-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.legend-toggle svg {
+  color: #0a84ff;
+  flex-shrink: 0;
+}
+
+.legend-attribution {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-traffic-lights {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.traffic-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.traffic-light.red {
+  background: #ff5f57;
+}
+
+.traffic-light.yellow {
+  background: #ffbd2e;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.traffic-light.green {
+  background: #28ca42;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.traffic-light.red:hover {
+  background: #ff3b30;
+  transform: scale(1.1);
+}
+
+.traffic-light.red:active {
+  transform: scale(0.9);
+}
+
+.legend-content {
+  animation: fadeIn 0.3s ease;
+  position: relative;
+  padding: 0 16px 16px 16px;
+}
+
+.legend h4 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.legend-intro {
+  margin: 0 0 12px 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+}
+
+.legend-section {
+  margin-bottom: 12px;
+}
+
+.legend-section:last-of-type {
+  margin-bottom: 0;
+}
+
+.legend-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 6px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.legend-item:last-child {
+  margin-bottom: 0;
+}
+
+.legend-color {
+  width: 16px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+}
+
+.legend-color.circle {
+  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+}
+
+.legend-gradient-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  margin-bottom: 8px;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.05)) drop-shadow(0 0 12px currentColor);
+}
+
+.legend-gradient-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.65);
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-clusters {
+  list-style: none;
+  padding: 6px 0 0 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legend-cluster-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.legend-dot {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(78, 205, 196, 0.9);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+}
+
+.legend-dot--sm {
+  width: 10px;
+  height: 10px;
+}
+
+.legend-dot--md {
+  width: 14px;
+  height: 14px;
+}
+
+.legend-dot--lg {
+  width: 20px;
+  height: 20px;
+}
+
+.legend-dot--xl {
+  width: 26px;
+  height: 26px;
+}
+
+.legend-note {
+  margin: 10px 0 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.attribution {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-mobile-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  display: none;
+}
+
+.info-popup {
+  position: fixed;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  z-index: 10000;
+  min-width: 280px;
+  max-width: 360px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  animation: popupFadeIn 0.2s ease-out;
+}
+
+.info-popup.street-popup {
+  max-width: 420px;
+}
+
+@keyframes popupFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -110%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -120%) scale(1);
+  }
+}
+
+.info-popup h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1d1d1f;
+  padding-right: 24px;
+  line-height: 1.3;
+}
+
+.info-popup .close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  font-size: 20px;
+  color: #86868b;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.info-popup .close-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #1d1d1f;
+}
+
+.popup-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.popup-stat {
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #515154;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.popup-stat strong {
+  color: #1d1d1f;
+  font-weight: 600;
+  margin-right: 12px;
+}
+
+.popup-section {
+  margin-top: 18px;
+}
+
+.popup-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.popup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.popup-list-item {
+  background: rgba(0, 0, 0, 0.035);
+  padding: 10px 12px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.popup-list-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: #1d1d1f;
+}
+
+.popup-list-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: #515154;
+}
+
+/* Responsive mobile adjustments handled by parent layout */
+
+@media (max-width: 768px) {
+  .legend {
+    width: 100%;
+  }
+
+  .legend.collapsed {
+    align-self: flex-end;
+  }
+
+  .legend.expanded {
+    min-width: unset;
+  }
+
+  .legend-cluster-item {
+    font-size: 12px;
+  }
+
+  .legend-note {
+    font-size: 12px;
+  }
+
+  .legend-mobile-hint {
+    display: block;
+  }
+}

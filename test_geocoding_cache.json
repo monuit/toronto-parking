@@ -1,0 +1,39 @@
+{
+  "702ff62f091da8516cf0283e64307b6b": {
+    "lat": 43.7707344,
+    "lon": -79.4987401,
+    "query": "4700 KEELE ST, Toronto, Ontario, Canada"
+  },
+  "20 EDWARD ST, Toronto, ON, Canada": {
+    "lat": 43.657059,
+    "lon": -79.382187,
+    "query": "20 EDWARD ST, Toronto, ON, Canada",
+    "formatted_address": "20 Edward St, Toronto, ON M5G",
+    "accuracy": 1,
+    "accuracy_type": "rooftop"
+  },
+  "LOWTHER AVE and HURON ST, Toronto, ON, Canada": {
+    "lat": 43.669455,
+    "lon": -79.402412,
+    "query": "LOWTHER AVE and HURON ST, Toronto, ON, Canada",
+    "formatted_address": "Huron St and Lowther Ave, Toronto, ON M5R",
+    "accuracy": 1,
+    "accuracy_type": "intersection"
+  },
+  "HURON ST and BLOOR ST W, Toronto, ON, Canada": {
+    "lat": 43.667156,
+    "lon": -79.40153,
+    "query": "HURON ST and BLOOR ST W, Toronto, ON, Canada",
+    "formatted_address": "Bloor St W and Huron St, Toronto, ON M5S",
+    "accuracy": 1,
+    "accuracy_type": "intersection"
+  },
+  "4700 KEELE ST, Toronto, ON, Canada": {
+    "lat": 43.77341,
+    "lon": -79.502338,
+    "query": "4700 KEELE ST, Toronto, ON, Canada",
+    "formatted_address": "4700 Keele St, North York, ON M3J",
+    "accuracy": 0.9,
+    "accuracy_type": "rooftop"
+  }
+}

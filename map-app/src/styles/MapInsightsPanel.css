@@ -1,0 +1,31 @@
+.map-insights-panel {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(28, 28, 30, 0.9);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  z-index: 1200;
+}
+
+.map-insights-panel .stats-summary {
+  border: none;
+  padding-bottom: 0;
+}
+
+@media (max-width: 1024px) {
+  .map-insights-panel {
+    top: auto;
+    bottom: 24px;
+    width: calc(100vw - 48px);
+    max-width: 360px;
+  }
+}
