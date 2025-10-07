@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ['nodejs_20']
+
+[phases.install]
+cmds = ['cd map-app && npm ci']
+
+[phases.build]
+cmds = ['cd map-app && npm run build:ssr']
+
+[start]
+cmd = 'cd map-app && npm start'
