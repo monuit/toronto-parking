@@ -52,7 +52,10 @@ build/
 develop-eggs/
 dist/
 eggs/
-lib/
+# NOTE: root-level Python build outputs only; allow nested frontend lib directories
+/lib/
+!map-app/src/lib/
+!map-app/src/lib/**
 lib64/
 parts/
 sdist/
