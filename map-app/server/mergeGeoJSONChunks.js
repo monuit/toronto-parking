@@ -3,6 +3,8 @@
  * This runs once at server startup to combine the split data files
  */
 
+/* global process */
+
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
