@@ -1,4 +1,3 @@
-import { normalizeStreetName } from '../shared/streetUtils.js';
 import {
   loadTicketsSummary,
   loadStreetStats,
@@ -34,58 +33,21 @@ export async function createAppData() {
     totalRevenue: Number(summary.totalRevenue) || 0,
   };
 
-  const streetMap = new Map();
-  for (const [location, stats] of Object.entries(streetStats)) {
-    const streetKey = normalizeStreetName(location);
-    if (!streetKey) {
-      continue;
-    }
-
+  const streetEntries = Object.entries(streetStats).map(([name, stats]) => {
     const ticketCount = Number(stats.ticketCount) || 0;
     const totalRevenue = Number(stats.totalRevenue ?? stats.totalFines ?? 0) || 0;
-    const neighbourhoodValues = new Set();
-    if (Array.isArray(stats.neighbourhoods)) {
-      for (const value of stats.neighbourhoods) {
-        if (value && value !== 'Unknown') {
-          neighbourhoodValues.add(value);
-        }
-      }
-    } else if (stats.neighbourhood && stats.neighbourhood !== 'Unknown') {
-      neighbourhoodValues.add(stats.neighbourhood);
-    }
-
-    let entry = streetMap.get(streetKey);
-    if (!entry) {
-      entry = {
-        name: streetKey,
-        ticketCount: 0,
-        totalRevenue: 0,
-        neighbourhoods: new Set(),
-        sampleLocation: location,
-        _sampleTicketCount: 0,
-        topInfraction: null,
-      };
-      streetMap.set(streetKey, entry);
-    }
-
-    entry.ticketCount += ticketCount;
-    entry.totalRevenue += totalRevenue;
-    for (const neighbourhood of neighbourhoodValues) {
-      entry.neighbourhoods.add(neighbourhood);
-    }
-
-    if (stats.topInfraction && !entry.topInfraction) {
-      entry.topInfraction = stats.topInfraction;
-    }
-
-    if (ticketCount > entry._sampleTicketCount) {
-      entry._sampleTicketCount = ticketCount;
-      entry.sampleLocation = location;
-      if (stats.topInfraction) {
-        entry.topInfraction = stats.topInfraction;
-      }
-    }
-  }
+    const neighbourhoods = Array.isArray(stats.neighbourhoods)
+      ? stats.neighbourhoods.filter((value) => value && value !== 'Unknown')
+      : [];
+    return {
+      name,
+      ticketCount,
+      totalRevenue,
+      neighbourhoods,
+      sampleLocation: stats.sampleLocation || name,
+      topInfraction: stats.topInfraction || null,
+    };
+  });
 
   const neighbourhoodMap = new Map();
   for (const [name, stats] of Object.entries(neighbourhoodStats)) {
@@ -96,14 +58,13 @@ export async function createAppData() {
     });
   }
 
-  const topStreets = mapToSerializableList(streetMap, (entry) => ({
-    name: entry.name,
-    ticketCount: entry.ticketCount,
-    totalRevenue: Number(entry.totalRevenue.toFixed(2)),
-    neighbourhoods: Array.from(entry.neighbourhoods),
-    sampleLocation: entry.sampleLocation,
-    topInfraction: entry.topInfraction || null,
-  })).slice(0, 10);
+  const topStreets = streetEntries
+    .sort((a, b) => (b.totalRevenue || 0) - (a.totalRevenue || 0))
+    .slice(0, 10)
+    .map((entry) => ({
+      ...entry,
+      totalRevenue: Number(entry.totalRevenue.toFixed(2)),
+    }));
 
   const topNeighbourhoods = mapToSerializableList(
     neighbourhoodMap,
