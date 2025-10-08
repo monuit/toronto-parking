@@ -98,7 +98,7 @@ function registerTileRoutes(app) {
   app.get('/api/dataset-totals', async (req, res) => {
     const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'parking_tickets';
     try {
-      const totals = await getDatasetTotals(dataset, { dataDir });
+      const totals = await getDatasetTotals(dataset);
       if (!totals) {
         res.status(503).json({ error: 'Dataset unavailable', dataset });
         return;

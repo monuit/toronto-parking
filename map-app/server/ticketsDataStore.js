@@ -12,6 +12,9 @@ const __dirname = path.dirname(__filename);
 
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../public/data');
 const TICKETS_FILE = path.join(DATA_DIR, 'tickets_aggregated.geojson');
+const SUMMARY_FILE = path.join(DATA_DIR, 'tickets_summary.json');
+const STREET_STATS_FILE = path.join(DATA_DIR, 'street_stats.json');
+const NEIGHBOURHOOD_STATS_FILE = path.join(DATA_DIR, 'neighbourhood_stats.json');
 const CHUNK_PREFIX = 'tickets_aggregated_part';
 
 const redisSettings = getRedisConfig();
@@ -21,6 +24,9 @@ const REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-dat
 const REDIS_KEY = `${REDIS_NAMESPACE}:tickets:aggregated:v1`;
 const REDIS_MANIFEST_KEY = `${REDIS_NAMESPACE}:tickets:aggregated:v1:chunks`;
 const CHUNK_KEY_PREFIX = `${REDIS_NAMESPACE}:tickets:aggregated:v1:chunk:`;
+const REDIS_SUMMARY_KEY = `${REDIS_NAMESPACE}:tickets:summary:v1`;
+const REDIS_STREET_STATS_KEY = `${REDIS_NAMESPACE}:tickets:street-stats:v1`;
+const REDIS_NEIGHBOURHOOD_STATS_KEY = `${REDIS_NAMESPACE}:tickets:neighbourhood-stats:v1`;
 const REDIS_TTL_SECONDS = Number.parseInt(process.env.MAP_DATA_REDIS_TTL || '86400', 10);
 
 let redisClientPromise = null;
@@ -82,6 +88,39 @@ function decompress(encoded) {
   return gunzipSync(Buffer.from(encoded, 'base64')).toString('utf-8');
 }
 
+async function readJsonFileWithMeta(filePath) {
+  try {
+    const raw = await readFile(filePath, 'utf-8');
+    const json = JSON.parse(raw);
+    const { mtimeMs } = await stat(filePath);
+    return {
+      data: json,
+      version: Math.trunc(mtimeMs),
+      source: filePath,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normaliseRedisWrapper(payload, fallbackSource) {
+  if (!payload) {
+    return null;
+  }
+  const versionFromPayload = Number.isFinite(payload.version) ? Number(payload.version) : null;
+  const parsedUpdatedAt = payload.updatedAt ? Date.parse(payload.updatedAt) : null;
+  const version = versionFromPayload ?? (Number.isFinite(parsedUpdatedAt) ? parsedUpdatedAt : null);
+  const data = payload.data ?? null;
+  if (data === null || data === undefined) {
+    return null;
+  }
+  return {
+    data,
+    version,
+    source: fallbackSource || 'redis',
+  };
+}
+
 async function readAggregateFromRedis() {
   const client = await getRedisClient();
   if (!client) {
@@ -104,6 +143,27 @@ async function readAggregateFromRedis() {
     };
   } catch (error) {
     console.warn('Failed to read tickets data from Redis:', error.message);
+    return null;
+  }
+}
+
+async function readJsonWrapperFromRedis(key) {
+  if (!REDIS_ENABLED) {
+    return null;
+  }
+  const client = await getRedisClient();
+  if (!client) {
+    return null;
+  }
+  try {
+    const payload = await client.get(key);
+    if (!payload) {
+      return null;
+    }
+    const parsed = JSON.parse(payload);
+    return normaliseRedisWrapper(parsed, 'redis');
+  } catch (error) {
+    console.warn(`Failed to read JSON blob from Redis (${key}):`, error.message);
     return null;
   }
 }
@@ -347,6 +407,42 @@ export async function getTicketsRaw() {
 export function clearTicketsCache() {
   cachedManifest = null;
   cachedManifestVersion = null;
+}
+
+export async function loadTicketsSummary() {
+  const redisResult = await readJsonWrapperFromRedis(REDIS_SUMMARY_KEY);
+  if (redisResult) {
+    return { ...redisResult, source: 'redis' };
+  }
+  const diskResult = await readJsonFileWithMeta(SUMMARY_FILE);
+  if (diskResult) {
+    return { ...diskResult, source: 'disk' };
+  }
+  return null;
+}
+
+export async function loadStreetStats() {
+  const redisResult = await readJsonWrapperFromRedis(REDIS_STREET_STATS_KEY);
+  if (redisResult) {
+    return { ...redisResult, source: 'redis' };
+  }
+  const diskResult = await readJsonFileWithMeta(STREET_STATS_FILE);
+  if (diskResult) {
+    return { ...diskResult, source: 'disk' };
+  }
+  return null;
+}
+
+export async function loadNeighbourhoodStats() {
+  const redisResult = await readJsonWrapperFromRedis(REDIS_NEIGHBOURHOOD_STATS_KEY);
+  if (redisResult) {
+    return { ...redisResult, source: 'redis' };
+  }
+  const diskResult = await readJsonFileWithMeta(NEIGHBOURHOOD_STATS_FILE);
+  if (diskResult) {
+    return { ...diskResult, source: 'disk' };
+  }
+  return null;
 }
 
 export { TICKETS_FILE };

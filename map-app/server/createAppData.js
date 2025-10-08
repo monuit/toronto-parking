@@ -1,16 +1,9 @@
-import { readFile, stat } from 'fs/promises';
-import path from 'path';
-import process from 'node:process';
-import { fileURLToPath } from 'url';
 import { normalizeStreetName } from '../shared/streetUtils.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-// Use DATA_DIR from environment (set by index.js)
-const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../public/data');
-const STREET_STATS_FILE = path.join(DATA_DIR, 'street_stats.json');
-const NEIGHBOURHOOD_STATS_FILE = path.join(DATA_DIR, 'neighbourhood_stats.json');
-const SUMMARY_FILE = path.join(DATA_DIR, 'tickets_summary.json');
+import {
+  loadTicketsSummary,
+  loadStreetStats,
+  loadNeighbourhoodStats,
+} from './ticketsDataStore.js';
 
 let cachedSnapshot = null;
 
@@ -20,37 +13,20 @@ function mapToSerializableList(map, transform, sortKey = 'totalRevenue') {
     .sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0));
 }
 
-async function readJson(filePath, fallbackValue) {
-  try {
-    const raw = await readFile(filePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (error) {
-    if (fallbackValue !== undefined) {
-      console.warn(`Failed to read ${filePath}, using fallback:`, error.message);
-      return fallbackValue;
-    }
-    throw error;
-  }
-}
-
 export async function createAppData() {
-  let version = null;
-  try {
-    const stats = await stat(SUMMARY_FILE);
-    version = Math.trunc(stats.mtimeMs);
-  } catch (error) {
-    console.warn('Unable to stat tickets summary file:', error.message);
-  }
+  const summaryResult = await loadTicketsSummary();
+  const streetStatsResult = await loadStreetStats();
+  const neighbourhoodStatsResult = await loadNeighbourhoodStats();
+
+  const version = summaryResult?.version ?? null;
 
   if (cachedSnapshot && version !== null && cachedSnapshot.version === version) {
     return cachedSnapshot.payload;
   }
 
-  const [summary, streetStats, neighbourhoodStats] = await Promise.all([
-    readJson(SUMMARY_FILE, { featureCount: 0, ticketCount: 0, totalRevenue: 0 }),
-    readJson(STREET_STATS_FILE, {}),
-    readJson(NEIGHBOURHOOD_STATS_FILE, {}),
-  ]);
+  const summary = summaryResult?.data || { featureCount: 0, ticketCount: 0, totalRevenue: 0 };
+  const streetStats = streetStatsResult?.data || {};
+  const neighbourhoodStats = neighbourhoodStatsResult?.data || {};
 
   const totals = {
     featureCount: Number(summary.featureCount) || 0,
@@ -119,10 +95,14 @@ export async function createAppData() {
     generatedAt: new Date().toISOString(),
   };
 
-  cachedSnapshot = {
-    version,
-    payload,
-  };
+  if (version !== null) {
+    cachedSnapshot = {
+      version,
+      payload,
+    };
+  } else {
+    cachedSnapshot = null;
+  }
 
   return payload;
 }
