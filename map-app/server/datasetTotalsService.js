@@ -44,6 +44,10 @@ function isRetryable(error) {
   );
 }
 
+function isMissingRelation(error) {
+  return Boolean(error && error.code === '42P01');
+}
+
 async function withPgClient(task) {
   const activePool = ensurePool();
   if (!activePool) {
@@ -196,6 +200,22 @@ export async function getDatasetTotals(dataset, options = {}) {
       return null;
     }
   } catch (error) {
+    if (isMissingRelation(error)) {
+      console.warn(`Dataset totals fallback: missing relation for ${normalised}`);
+      if (normalised === 'parking_tickets') {
+        const summary = await readLocalSummary(dataDir);
+        if (summary) {
+          return {
+            dataset: 'parking_tickets',
+            featureCount: Number(summary.featureCount) || 0,
+            ticketCount: Number(summary.ticketCount) || 0,
+            totalRevenue: Number(summary.totalRevenue) || 0,
+            source: 'local-summary',
+          };
+        }
+      }
+      return null;
+    }
     if (!isRetryable(error)) {
       throw error;
     }
