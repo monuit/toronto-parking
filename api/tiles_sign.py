@@ -13,8 +13,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 TILE_HOST = os.getenv("TILE_HOST", "https://tiles.example.com")
-SIGNING_SECRET = os.getenv("TILE_SIGNING_SECRET", "change-me").encode("utf-8")
+SIGNING_SECRET_RAW = os.getenv("TILE_SIGNING_SECRET")
 DEFAULT_TTL = int(os.getenv("TILE_URL_TTL", "900"))
+
+if not SIGNING_SECRET_RAW:
+  raise RuntimeError("TILE_SIGNING_SECRET must be set in the environment")
+
+SIGNING_SECRET = SIGNING_SECRET_RAW.encode("utf-8")
 
 
 def _json(status: int, payload: dict):
