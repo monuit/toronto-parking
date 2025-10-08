@@ -67,9 +67,11 @@ export function getPostgresConfig() {
     process.env.DATABASE_SSL === '1' ||
     process.env.PGSSLMODE === 'require' ||
     connectionString.includes('railway');
-  const sslOptions = sslRequired
-    ? { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== '0' }
-    : undefined;
+  const defaultRejectUnauthorized = connectionString.includes('railway') ? false : true;
+  const rejectEnv = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED;
+  const rejectUnauthorized =
+    rejectEnv !== undefined ? rejectEnv !== '0' : defaultRejectUnauthorized;
+  const sslOptions = sslRequired ? { rejectUnauthorized } : undefined;
   return {
     enabled,
     connectionString: enabled ? connectionString : null,
