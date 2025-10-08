@@ -54,7 +54,14 @@ export async function mergeGeoJSONChunks() {
     console.log(`  Reading ${chunkFile}...`);
 
     const data = JSON.parse(fs.readFileSync(chunkPath, 'utf-8'));
-    allFeatures.push(...data.features);
+    
+    // Use concat or loop to avoid stack overflow with large arrays
+    // spread operator (...) causes "Maximum call stack size exceeded" with 100k+ items
+    for (let i = 0; i < data.features.length; i++) {
+      allFeatures.push(data.features[i]);
+    }
+    
+    console.log(`    Added ${data.features.length.toLocaleString()} features (total: ${allFeatures.length.toLocaleString()})`);
   }
 
   console.log(`  Total features merged: ${allFeatures.length.toLocaleString()}`);
