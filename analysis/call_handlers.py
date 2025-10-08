@@ -7,18 +7,35 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
+POSTGIS_ENV_KEY = "POSTGIS_DATABASE_URL"
+REDIS_ENV_KEY = "REDIS_URL"
+
+
 def prepare_runtime() -> None:
     root = Path(__file__).resolve().parents[1]
     load_dotenv(root / ".env")
-    os.environ["POSTGIS_DATABASE_URL"] = (
-        "postgresql://postgres:CA3DeGBF23F5C3Aag3Ecg4f2eDGD52Be@interchange.proxy.rlwy.net:57747/railway"
+
+    database_url = os.environ.get(POSTGIS_ENV_KEY) or os.environ.get("DATABASE_URL")
+    redis_url = (
+        os.environ.get(REDIS_ENV_KEY)
+        or os.environ.get("REDIS_PUBLIC_URL")
+        or os.environ.get("REDIS_CONNECTION")
     )
-    os.environ["DATABASE_URL"] = os.environ["POSTGIS_DATABASE_URL"]
-    os.environ["REDIS_URL"] = (
-        "redis://default:zwDTKpSxWrJRitMMEIBmAoqVRhaRDxgO@switchback.proxy.rlwy.net:23261"
-    )
-    os.environ["REDIS_PUBLIC_URL"] = os.environ["REDIS_URL"]
-    os.environ["REDIS_CONNECTION"] = os.environ["REDIS_URL"]
+
+    if not database_url:
+        raise RuntimeError(
+            "POSTGIS_DATABASE_URL (or DATABASE_URL) must be set in the environment"
+        )
+    if not redis_url:
+        raise RuntimeError(
+            "REDIS_URL (or REDIS_PUBLIC_URL/REDIS_CONNECTION) must be set in the environment"
+        )
+
+    os.environ[POSTGIS_ENV_KEY] = database_url
+    os.environ.setdefault("DATABASE_URL", database_url)
+    os.environ[REDIS_ENV_KEY] = redis_url
+    os.environ.setdefault("REDIS_PUBLIC_URL", redis_url)
+    os.environ.setdefault("REDIS_CONNECTION", redis_url)
     if str(root) not in sys.path:
         sys.path.append(str(root))
     src_root = root / "src"

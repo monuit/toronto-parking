@@ -9,6 +9,7 @@ import { createAppData } from './createAppData.js';
 import { createTileService } from './tileService.js';
 import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
 import { getDatasetTotals } from './datasetTotalsService.js';
+import { wakeRemoteServices } from './wakeRemoteServices.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,11 @@ process.env.DATA_DIR = dataDir;
 
 // Merge split GeoJSON chunks at startup
 console.log('🚀 Initializing server...');
+const wakeResults = await wakeRemoteServices();
+console.log(
+  `   Redis: ${wakeResults.redis.enabled ? (wakeResults.redis.awake ? 'awake' : 'sleeping') : 'disabled'} | ` +
+    `Postgres: ${wakeResults.postgres.enabled ? (wakeResults.postgres.awake ? 'awake' : 'sleeping') : 'disabled'}`,
+);
 await mergeGeoJSONChunks();
 
 const tileService = createTileService();
