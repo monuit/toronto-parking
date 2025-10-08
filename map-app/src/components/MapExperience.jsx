@@ -14,6 +14,7 @@ function MapExperience({
   onViewportSummaryChange,
   onStreetSegmentClick,
   highlightCentrelineIds = [],
+  dataset = 'parking_tickets',
 }) {
   const [mapInstance, setMapInstance] = useState(null);
   const [pointsVisible, setPointsVisible] = useState(true);
@@ -55,12 +56,14 @@ function MapExperience({
     <MapContainer onMapLoad={handleLoad}>
       {mapInstance && (
         <>
-          <CityGlowLayer
-            map={mapInstance}
-            visible
-            onStreetClick={onStreetSegmentClick}
-            highlightCentrelineIds={highlightCentrelineIds}
-          />
+          {dataset === 'parking_tickets' ? (
+            <CityGlowLayer
+              map={mapInstance}
+              visible
+              onStreetClick={onStreetSegmentClick}
+              highlightCentrelineIds={highlightCentrelineIds}
+            />
+          ) : null}
           <NeighbourhoodLayer
             map={mapInstance}
             visible={false}
@@ -71,6 +74,7 @@ function MapExperience({
             visible={pointsVisible}
             onPointClick={onPointClick}
             onViewportSummaryChange={onViewportSummaryChange}
+            dataset={dataset}
           />
         </>
       )}

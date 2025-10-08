@@ -12,18 +12,23 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "serve:ssr": "cross-env NODE_ENV=production node server/index.js",
-    "smoke:overlay": "node scripts/run-overlay-smoke-test.mjs"
+    "smoke:overlay": "node scripts/run-overlay-smoke-test.mjs",
+    "cache:tickets": "node scripts/pushTicketsToRedis.mjs"
   },
   "dependencies": {
     "@turf/boolean-point-in-polygon": "^7.0.0",
     "@turf/helpers": "^7.0.0",
+    "dotenv": "^17.2.3",
     "express": "^4.21.1",
     "flatbush": "^4.0.2",
     "geojson-vt": "^3.2.1",
     "maplibre-gl": "^5.8.0",
+    "pg": "^8.16.3",
+    "prop-types": "^15.8.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-map-gl": "^8.1.0",
+    "redis": "^5.8.3",
     "supercluster": "^8.0.1",
     "vt-pbf": "^3.1.3"
   },

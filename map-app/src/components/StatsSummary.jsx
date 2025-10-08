@@ -2,17 +2,38 @@ import { formatCurrency, formatNumber } from '../lib/dataTransforms';
 import { useAppData } from '../context/AppDataContext.jsx';
 import '../styles/StatsSummary.css';
 
+const DATASET_TITLES = {
+  parking_tickets: 'Toronto Parking Tickets',
+  red_light_locations: 'Red Light Camera Charges',
+  ase_locations: 'Automated Speed Enforcement Charges',
+};
+
 export function StatsSummary({
   viewportSummary,
   variant = 'default',
   showTotals = true,
   showViewport = true,
-  title = 'Toronto Parking Tickets',
+  dataset = 'parking_tickets',
+  totalsOverride = null,
+  title,
   viewportTitle = 'Current view',
 }) {
-  const { totals } = useAppData();
-  const totalTickets = formatNumber(totals.ticketCount || 0);
-  const totalRevenue = formatCurrency(totals.totalRevenue || 0);
+  const { totals: contextTotals } = useAppData();
+  const totalsSource = (totalsOverride && Object.keys(totalsOverride).length > 0)
+    ? totalsOverride
+    : contextTotals || {};
+  const toNumber = (value, fallback = 0) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+  };
+  const isParkingDataset = dataset === 'parking_tickets';
+  const locationCountValue = toNumber(totalsSource.featureCount, 0);
+  const ticketsCountValue = toNumber(
+    totalsSource.ticketCount ?? (isParkingDataset ? totalsSource.featureCount : undefined),
+    0,
+  );
+  const totalRevenueValue = toNumber(totalsSource.totalRevenue, 0);
+  const heading = title || DATASET_TITLES[dataset] || 'Dataset overview';
   const hasViewportData = !viewportSummary?.zoomRestricted && typeof viewportSummary?.visibleCount === 'number';
   const classes = ['stats-summary'];
 
@@ -28,15 +49,28 @@ export function StatsSummary({
     <div className={classes.join(' ')}>
       {showTotals ? (
         <div className="totals">
-          <h2>{title}</h2>
+          <h2>{heading}</h2>
           <div className="totals-grid">
-            <div>
-              <span className="label">Tickets recorded</span>
-              <span className="value">{totalTickets}</span>
-            </div>
+            {isParkingDataset ? (
+              <div>
+                <span className="label">Tickets recorded</span>
+                <span className="value">{formatNumber(ticketsCountValue)}</span>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <span className="label">Locations tracked</span>
+                  <span className="value">{formatNumber(locationCountValue)}</span>
+                </div>
+                <div>
+                  <span className="label">Tickets issued</span>
+                  <span className="value">{formatNumber(ticketsCountValue)}</span>
+                </div>
+              </>
+            )}
             <div>
               <span className="label">Total fines</span>
-              <span className="value">{totalRevenue}</span>
+              <span className="value">{formatCurrency(totalRevenueValue)}</span>
             </div>
           </div>
         </div>
