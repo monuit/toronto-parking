@@ -31,21 +31,45 @@ async function getRedisClient() {
   if (!REDIS_ENABLED) {
     return null;
   }
-  if (!redisClientPromise) {
-    redisClientPromise = (async () => {
-      const client = createClient({ url: REDIS_URL });
-      client.on('error', (error) => {
-        console.warn('Redis client error:', error.message);
-      });
-      try {
-        await client.connect();
-        return client;
-      } catch (error) {
-        console.warn('Failed to connect to Redis, continuing without cache:', error.message);
-        return null;
+  if (redisClientPromise) {
+    try {
+      const existing = await redisClientPromise;
+      if (existing && existing.isOpen) {
+        return existing;
       }
-    })();
+    } catch (error) {
+      console.warn('Previous Redis connection attempt failed:', error.message);
+    }
+    redisClientPromise = null;
   }
+
+  redisClientPromise = (async () => {
+    const client = createClient({ url: REDIS_URL });
+    const reset = () => {
+      if (redisClientPromise) {
+        redisClientPromise = null;
+      }
+    };
+    client.on('error', (error) => {
+      console.warn('Redis client error:', error.message);
+    });
+    client.on('end', reset);
+    client.on('close', reset);
+    try {
+      await client.connect();
+      return client;
+    } catch (error) {
+      reset();
+      console.warn('Failed to connect to Redis, continuing without cache:', error.message);
+      try {
+        await client.disconnect();
+      } catch (disconnectError) {
+        console.warn('Error while closing Redis client after failed connection:', disconnectError.message);
+      }
+      return null;
+    }
+  })();
+
   const client = await redisClientPromise;
   return client && client.isOpen ? client : null;
 }
@@ -225,7 +249,7 @@ async function readChunkFromDisk(chunkPath) {
 }
 
 async function resolveChunkManifest() {
-  if (cachedManifest) {
+  if (Array.isArray(cachedManifest) && cachedManifest.length > 0) {
     return { version: cachedManifestVersion, chunks: cachedManifest };
   }
 
@@ -257,8 +281,6 @@ async function resolveChunkManifest() {
     return { version: cachedManifestVersion, chunks: cachedManifest };
   }
 
-  cachedManifest = [];
-  cachedManifestVersion = null;
   return { version: null, chunks: [] };
 }
 
