@@ -172,6 +172,18 @@ body, html {
   min-width: 280px;
 }
 
+.dataset-toggle-floating {
+  position: fixed;
+  top: 20px;
+  left: 340px;
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.dataset-toggle-floating .dataset-toggle {
+  pointer-events: auto;
+}
+
 @media (max-width: 1024px) {
   .insights-overlay {
     max-width: 280px;
@@ -199,6 +211,12 @@ body, html {
   .legend-floating {
     right: 16px;
     bottom: 16px;
+  }
+
+  .dataset-toggle-floating {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 16px;
   }
 }
 
