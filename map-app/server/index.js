@@ -11,6 +11,11 @@ import { createTileService } from './tileService.js';
 import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
 import { getDatasetTotals } from './datasetTotalsService.js';
 import { wakeRemoteServices } from './wakeRemoteServices.js';
+import {
+  loadStreetStats,
+  loadTicketsSummary,
+  loadNeighbourhoodStats,
+} from './ticketsDataStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -231,6 +236,66 @@ function registerTileRoutes(app) {
   });
 }
 
+function registerDataRoutes(app, dataDirectory) {
+  const resolveDataPath = (fileName) => path.join(dataDirectory, fileName);
+
+  app.get('/data/tickets_summary.json', async (req, res) => {
+    try {
+      const summary = await loadTicketsSummary();
+      if (summary?.data) {
+        res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=120');
+        res.json(summary.data);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load tickets summary for /data route:', error.message);
+    }
+    res.status(503).json({ error: 'Summary unavailable' });
+  });
+
+  app.get('/data/street_stats.json', async (req, res) => {
+    try {
+      const stats = await loadStreetStats();
+      if (stats?.data) {
+        res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=120');
+        res.json(stats.data);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load street stats for /data route:', error.message);
+    }
+    res.status(503).json({ error: 'Street stats unavailable' });
+  });
+
+  app.get('/data/neighbourhood_stats.json', async (req, res) => {
+    try {
+      const stats = await loadNeighbourhoodStats();
+      if (stats?.data) {
+        res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=120');
+        res.json(stats.data);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load neighbourhood stats for /data route:', error.message);
+    }
+    res.status(503).json({ error: 'Neighbourhood stats unavailable' });
+  });
+
+  app.get('/data/tickets_glow_lines.geojson', async (req, res) => {
+    const glowPath = resolveDataPath('tickets_glow_lines.geojson');
+    try {
+      const raw = await fs.readFile(glowPath, 'utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=120');
+      res.type('application/json').send(raw);
+    } catch (error) {
+      console.warn('Failed to read tickets glow lines from disk:', error.message);
+      res.status(404).json({ error: 'Glow dataset unavailable' });
+    }
+  });
+
+  app.use('/data', express.static(dataDirectory));
+}
+
 function injectTemplate(template, appHtml, initialData) {
   const safeData = JSON.stringify(initialData).replace(/</g, '\\u003c');
   return template
@@ -241,6 +306,7 @@ function injectTemplate(template, appHtml, initialData) {
 async function createDevServer() {
   const app = express();
   registerTileRoutes(app);
+  registerDataRoutes(app, dataDir);
   const vite = await createViteServer({
     server: { middlewareMode: 'ssr' },
     appType: 'custom',
@@ -297,6 +363,7 @@ async function createProdServer() {
   const ssrEntry = resolve('dist/server/entry-server.js');
 
   registerTileRoutes(app);
+  registerDataRoutes(app, dataDir);
 
   app.use(express.static(distPath, { index: false }));
 
