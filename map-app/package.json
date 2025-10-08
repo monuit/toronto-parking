@@ -8,7 +8,7 @@
     "dev:ssr": "node server/index.js",
     "build": "vite build",
     "build:ssr": "vite build && vite build --ssr src/entry-server.jsx --outDir dist/server",
-    "start": "cross-env NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 node server/index.js",
+    "start": "NODE_ENV=production node --max-old-space-size=8192 server/index.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "serve:ssr": "cross-env NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 node server/index.js",
