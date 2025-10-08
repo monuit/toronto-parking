@@ -1,5 +1,6 @@
 /* eslint-env node */
 import fs from 'fs/promises';
+import { existsSync } from 'fs';
 import express from 'express';
 import path from 'path';
 import process from 'node:process';
@@ -16,10 +17,35 @@ const __dirname = path.dirname(__filename);
 
 const resolve = (p) => path.resolve(__dirname, '..', p);
 
+function resolveDataDirectory(isProduction) {
+  if (process.env.DATA_DIR) {
+    return process.env.DATA_DIR;
+  }
+
+  const candidates = [];
+  if (isProduction) {
+    candidates.push(resolve('dist/client/data'));
+  }
+  candidates.push(resolve('public/data'));
+
+  for (const dir of candidates) {
+    if (existsSync(dir)) {
+      return dir;
+    }
+  }
+
+  return candidates[candidates.length - 1];
+}
+
 // Set data directory for bundled server modules
 const isProd = process.env.NODE_ENV === 'production';
-const dataDir = isProd ? resolve('dist/client/data') : resolve('public/data');
-process.env.DATA_DIR = dataDir;
+const dataDir = resolveDataDirectory(isProd);
+if (!process.env.DATA_DIR) {
+  process.env.DATA_DIR = dataDir;
+}
+if (isProd && !dataDir.includes('dist/client/data')) {
+  console.warn(`Using fallback data directory: ${dataDir}`);
+}
 
 // Merge split GeoJSON chunks at startup
 console.log('🚀 Initializing server...');
