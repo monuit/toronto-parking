@@ -18,8 +18,14 @@ import redis
 DEFAULT_NAMESPACE = "toronto:map-data"
 DEFAULT_REDIS_TTL = 86_400  # 24 hours
 RELATIVE_DATA_PATH = Path("map-app/public/data/tickets_aggregated.geojson")
+SUMMARY_RELATIVE_PATH = Path("map-app/public/data/tickets_summary.json")
+STREET_STATS_RELATIVE_PATH = Path("map-app/public/data/street_stats.json")
+NEIGHBOURHOOD_STATS_RELATIVE_PATH = Path("map-app/public/data/neighbourhood_stats.json")
 
 CHUNK_MANIFEST_KEY = "chunks"
+SUMMARY_REDIS_KEY = "summary"
+STREET_STATS_REDIS_KEY = "street-stats"
+NEIGHBOURHOOD_STATS_REDIS_KEY = "neighbourhood-stats"
 
 
 def _load_env(repo_root: Path) -> None:
@@ -132,10 +138,29 @@ def _group_features_by_neighbourhood(raw: str) -> dict[str, list[dict]]:
     return buckets
 
 
-def push_to_redis(raw: str, redis_url: str, namespace: str, ttl: int | None) -> None:
+def _load_json_file(path: Path) -> dict | list | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:  # pragma: no cover - corrupted artefact
+        raise RuntimeError(f"Invalid JSON payload in {path}") from exc
+
+
+def _store_json_blob(client, key: str, payload: dict | list, ttl: int | None) -> None:
+    wrapper = {
+        "version": int(time.time() * 1000),
+        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "data": payload,
+    }
+    client.set(key, json.dumps(wrapper), ex=ttl or None)
+
+
+def push_to_redis(raw: str, data_path: Path, redis_url: str, namespace: str, ttl: int | None) -> None:
     key, payload = _encode_payload(raw, namespace)
     client = redis.from_url(redis_url)
     manifest_entries: list[dict] = []
+    data_dir = data_path.parent
     try:
         client.set(key, json.dumps(payload), ex=ttl or None)
 
@@ -156,6 +181,25 @@ def push_to_redis(raw: str, redis_url: str, namespace: str, ttl: int | None) -> 
 
         if manifest_entries:
             _store_manifest(client, namespace, manifest_entries, ttl)
+
+        summary_path = data_dir / SUMMARY_RELATIVE_PATH.name
+        street_stats_path = data_dir / STREET_STATS_RELATIVE_PATH.name
+        neighbourhood_stats_path = data_dir / NEIGHBOURHOOD_STATS_RELATIVE_PATH.name
+
+        summary_payload = _load_json_file(summary_path)
+        if summary_payload is not None:
+            summary_key = f"{namespace}:tickets:{SUMMARY_REDIS_KEY}:v1"
+            _store_json_blob(client, summary_key, summary_payload, ttl)
+
+        street_stats_payload = _load_json_file(street_stats_path)
+        if street_stats_payload is not None:
+            street_key = f"{namespace}:tickets:{STREET_STATS_REDIS_KEY}:v1"
+            _store_json_blob(client, street_key, street_stats_payload, ttl)
+
+        neighbourhood_stats_payload = _load_json_file(neighbourhood_stats_path)
+        if neighbourhood_stats_payload is not None:
+            neighbourhood_key = f"{namespace}:tickets:{NEIGHBOURHOOD_STATS_REDIS_KEY}:v1"
+            _store_json_blob(client, neighbourhood_key, neighbourhood_stats_payload, ttl)
     finally:
         client.close()
     print(f"Stored tickets aggregate in Redis key '{key}' (TTL={ttl or 'none'}).")
@@ -183,7 +227,7 @@ def main(argv: list[str] | None = None) -> None:
     ttl = _resolve_ttl()
 
     raw, data_path = _read_geojson(repo_root, args.data_file)
-    push_to_redis(raw, redis_url, namespace, ttl)
+    push_to_redis(raw, data_path, redis_url, namespace, ttl)
     print(f"Source file: {data_path}")
 
 

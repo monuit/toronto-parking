@@ -1,8 +1,7 @@
-import { readFile } from 'fs/promises';
-import path from 'path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Pool } from 'pg';
 import { getPostgresConfig } from './runtimeConfig.js';
+import { loadTicketsSummary } from './ticketsDataStore.js';
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1200;
@@ -73,20 +72,6 @@ async function withPgClient(task) {
   return Promise.reject(lastError);
 }
 
-async function readLocalSummary(dataDir) {
-  if (!dataDir) {
-    return null;
-  }
-  try {
-    const filePath = path.join(dataDir, 'tickets_summary.json');
-    const raw = await readFile(filePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (error) {
-    console.warn('Failed to read local tickets summary:', error.message);
-    return null;
-  }
-}
-
 async function fetchParkingTicketTotals() {
   return withPgClient(async (client) => {
     const result = await client.query(
@@ -155,9 +140,8 @@ async function fetchASETotals() {
   });
 }
 
-export async function getDatasetTotals(dataset, options = {}) {
+export async function getDatasetTotals(dataset) {
   const normalised = dataset || 'parking_tickets';
-  const { dataDir } = options;
 
   try {
     if (normalised === 'parking_tickets') {
@@ -165,8 +149,9 @@ export async function getDatasetTotals(dataset, options = {}) {
       if (pgResult) {
         return pgResult;
       }
-      const summary = await readLocalSummary(dataDir);
-      if (summary) {
+      const summaryWrapper = await loadTicketsSummary();
+      if (summaryWrapper?.data) {
+        const summary = summaryWrapper.data;
         return {
           dataset: 'parking_tickets',
           featureCount: Number(summary.featureCount) || 0,
@@ -203,8 +188,9 @@ export async function getDatasetTotals(dataset, options = {}) {
     if (isMissingRelation(error)) {
       console.warn(`Dataset totals fallback: missing relation for ${normalised}`);
       if (normalised === 'parking_tickets') {
-        const summary = await readLocalSummary(dataDir);
-        if (summary) {
+      const summaryWrapper = await loadTicketsSummary();
+      if (summaryWrapper?.data) {
+        const summary = summaryWrapper.data;
           return {
             dataset: 'parking_tickets',
             featureCount: Number(summary.featureCount) || 0,
