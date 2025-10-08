@@ -37,23 +37,54 @@ export async function createAppData() {
   const streetMap = new Map();
   for (const [location, stats] of Object.entries(streetStats)) {
     const streetKey = normalizeStreetName(location);
-    const neighbourhoodSet = new Set();
+    if (!streetKey) {
+      continue;
+    }
+
+    const ticketCount = Number(stats.ticketCount) || 0;
+    const totalRevenue = Number(stats.totalRevenue ?? stats.totalFines ?? 0) || 0;
+    const neighbourhoodValues = new Set();
     if (Array.isArray(stats.neighbourhoods)) {
       for (const value of stats.neighbourhoods) {
         if (value && value !== 'Unknown') {
-          neighbourhoodSet.add(value);
+          neighbourhoodValues.add(value);
         }
       }
     } else if (stats.neighbourhood && stats.neighbourhood !== 'Unknown') {
-      neighbourhoodSet.add(stats.neighbourhood);
+      neighbourhoodValues.add(stats.neighbourhood);
     }
-    streetMap.set(streetKey, {
-      name: streetKey,
-      ticketCount: Number(stats.ticketCount) || 0,
-      totalRevenue: Number(stats.totalRevenue) || 0,
-      sampleLocation: location,
-      neighbourhoods: neighbourhoodSet,
-    });
+
+    let entry = streetMap.get(streetKey);
+    if (!entry) {
+      entry = {
+        name: streetKey,
+        ticketCount: 0,
+        totalRevenue: 0,
+        neighbourhoods: new Set(),
+        sampleLocation: location,
+        _sampleTicketCount: 0,
+        topInfraction: null,
+      };
+      streetMap.set(streetKey, entry);
+    }
+
+    entry.ticketCount += ticketCount;
+    entry.totalRevenue += totalRevenue;
+    for (const neighbourhood of neighbourhoodValues) {
+      entry.neighbourhoods.add(neighbourhood);
+    }
+
+    if (stats.topInfraction && !entry.topInfraction) {
+      entry.topInfraction = stats.topInfraction;
+    }
+
+    if (ticketCount > entry._sampleTicketCount) {
+      entry._sampleTicketCount = ticketCount;
+      entry.sampleLocation = location;
+      if (stats.topInfraction) {
+        entry.topInfraction = stats.topInfraction;
+      }
+    }
   }
 
   const neighbourhoodMap = new Map();
@@ -71,6 +102,7 @@ export async function createAppData() {
     totalRevenue: Number(entry.totalRevenue.toFixed(2)),
     neighbourhoods: Array.from(entry.neighbourhoods),
     sampleLocation: entry.sampleLocation,
+    topInfraction: entry.topInfraction || null,
   })).slice(0, 10);
 
   const topNeighbourhoods = mapToSerializableList(
