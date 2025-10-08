@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,6 +66,21 @@ def normalize_plate(value) -> Optional[str]:
     return text
 
 
+STREET_DIRECTION_RE = re.compile(r"\b(NB|SB|EB|WB)\b")
+
+
+def normalize_street_label(location: Optional[str]) -> Optional[str]:
+    if not location:
+        return None
+    text = str(location).upper()
+    text = STREET_DIRECTION_RE.sub("", text)
+    text = " ".join(text.split())
+    text = text.lstrip("0123456789- ")
+    if not text:
+        return None
+    return text
+
+
 def parse_date_components(raw) -> Optional[tuple[int, int]]:
     text = str(raw).strip()
     if len(text) < 6:
@@ -121,21 +137,61 @@ def build_tickets_geojson(location_stats: Dict[str, LocationAggregate]) -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
-def build_street_stats(location_stats: Dict[str, LocationAggregate], limit: int = 500) -> Dict[str, dict]:
-    sorted_locations = sorted(
-        location_stats.values(),
-        key=lambda item: item.count,
+def build_street_stats(
+    location_stats: Dict[str, LocationAggregate],
+    limit: Optional[int] = None,
+) -> Dict[str, dict]:
+    aggregate: Dict[str, dict] = {}
+
+    for stats in location_stats.values():
+        street_label = normalize_street_label(stats.location)
+        if not street_label:
+            continue
+
+        entry = aggregate.get(street_label)
+        if entry is None:
+            entry = {
+                "ticketCount": 0,
+                "totalRevenue": 0.0,
+                "infractions": defaultdict(int),
+                "neighbourhoods": set(),
+                "sampleLocation": stats.location,
+                "sampleTicketCount": 0,
+            }
+            aggregate[street_label] = entry
+
+        entry["ticketCount"] += stats.count
+        entry["totalRevenue"] += stats.total_revenue
+        for code, qty in stats.infractions.items():
+            entry["infractions"][code] += qty
+
+        neighbourhood = stats.neighbourhood or "Unknown"
+        if neighbourhood != "Unknown":
+            entry["neighbourhoods"].add(neighbourhood)
+
+        if stats.count > entry["sampleTicketCount"]:
+            entry["sampleTicketCount"] = stats.count
+            entry["sampleLocation"] = stats.location
+
+    sorted_items = sorted(
+        aggregate.items(),
+        key=lambda item: (item[1]["ticketCount"], item[1]["totalRevenue"]),
         reverse=True,
-    )[:limit]
+    )
+
+    if limit is not None:
+        sorted_items = sorted_items[:limit]
 
     result: Dict[str, dict] = {}
-    for stats in sorted_locations:
-        result[stats.location] = {
-            "ticketCount": stats.count,
-            "totalRevenue": round(stats.total_revenue, 2),
-            "topInfraction": top_entry(stats.infractions),
-            "neighbourhood": stats.neighbourhood or "Unknown",
+    for street, info in sorted_items:
+        result[street] = {
+            "ticketCount": info["ticketCount"],
+            "totalRevenue": round(info["totalRevenue"], 2),
+            "topInfraction": top_entry(info["infractions"]),
+            "neighbourhoods": sorted(info["neighbourhoods"]),
+            "sampleLocation": info["sampleLocation"],
         }
+
     return result
 
 
@@ -203,6 +259,7 @@ __all__ = [
     "normalize_address",
     "normalize_infraction",
     "normalize_plate",
+    "normalize_street_label",
     "parse_date_components",
     "to_float",
     "top_entry",
