@@ -11,4 +11,9 @@ export default defineConfig({
   ssr: {
     format: 'esm',
   },
+  server: {
+    proxy: {
+      '/api': 'http://localhost:3000',
+    },
+  },
 })

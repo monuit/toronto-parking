@@ -8,6 +8,7 @@ import { createServer as createViteServer } from 'vite';
 import { createAppData } from './createAppData.js';
 import { createTileService } from './tileService.js';
 import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
+import { getDatasetTotals } from './datasetTotalsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,6 +60,35 @@ function registerTileRoutes(app) {
     } catch (error) {
       console.error('Failed to load application data snapshot', error);
       res.status(500).json({ error: 'Failed to load app data' });
+    }
+  });
+
+  app.get('/api/dataset-totals', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'parking_tickets';
+    try {
+      const totals = await getDatasetTotals(dataset, { dataDir });
+      if (!totals) {
+        res.status(503).json({ error: 'Dataset unavailable', dataset });
+        return;
+      }
+      const featureCount = Number(totals.featureCount) || 0;
+      const ticketCount = Number(totals.ticketCount ?? featureCount) || 0;
+      const revenueValue = Number(totals.totalRevenue ?? 0);
+      const totalRevenue = Number.isFinite(revenueValue)
+        ? Number(revenueValue.toFixed(2))
+        : 0;
+      const payload = {
+        dataset: totals.dataset || dataset,
+        featureCount,
+        ticketCount,
+        totalRevenue,
+        source: totals.source || 'postgres',
+      };
+      res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+      res.json(payload);
+    } catch (error) {
+      console.error('Failed to compute dataset totals', error);
+      res.status(500).json({ error: 'Failed to compute dataset totals' });
     }
   });
 
@@ -178,6 +208,7 @@ function injectTemplate(template, appHtml, initialData) {
 
 async function createDevServer() {
   const app = express();
+  registerTileRoutes(app);
   const vite = await createViteServer({
     server: { middlewareMode: 'ssr' },
     appType: 'custom',
@@ -200,8 +231,6 @@ async function createDevServer() {
   } catch (error) {
     console.warn('Unable to warm tile cache:', error.message);
   }
-
-  registerTileRoutes(app);
 
   app.use('*', async (req, res) => {
     const url = req.originalUrl;
@@ -235,6 +264,8 @@ async function createProdServer() {
   const distPath = resolve('dist/client');
   const ssrEntry = resolve('dist/server/entry-server.js');
 
+  registerTileRoutes(app);
+
   app.use(express.static(distPath, { index: false }));
 
   try {
@@ -252,8 +283,6 @@ async function createProdServer() {
   } catch (error) {
     console.warn('Unable to warm tile cache:', error.message);
   }
-
-  registerTileRoutes(app);
 
   app.use('*', async (req, res) => {
     const url = req.originalUrl;

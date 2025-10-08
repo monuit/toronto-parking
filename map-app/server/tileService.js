@@ -1,5 +1,3 @@
-import { readFile, stat } from 'fs/promises';
-import path from 'path';
 import process from 'node:process';
 import Supercluster from 'supercluster';
 import geojsonvt from 'geojson-vt';
@@ -11,6 +9,7 @@ import {
   SUMMARY_ZOOM_THRESHOLD,
   TILE_LAYER_NAME,
 } from '../shared/mapConstants.js';
+import { getTicketChunks, loadTicketChunk, getTicketsRaw } from './ticketsDataStore.js';
 
 const TILE_CACHE_LIMIT = 512;
 const SUMMARY_LIMIT = 5;
@@ -143,27 +142,43 @@ function hydrateTemporalTags(tile) {
 
 // MARK: TileService
 class TileService {
-  constructor(dataFile) {
-    this.dataFile = dataFile;
-    this.lastMtimeMs = null;
+  constructor() {
+    this.dataVersion = null;
     this.loadingPromise = null;
     this.clusterIndex = null;
     this.pointIndex = null;
     this.summaryPoints = [];
+    this.locationTable = [];
+    this.streetTable = [];
     this.summaryTree = null;
     this.tileCache = new Map();
   }
 
   async ensureLoaded() {
-    const fileInfo = await stat(this.dataFile);
-    if (this.lastMtimeMs && this.lastMtimeMs === fileInfo.mtimeMs && this.clusterIndex && this.pointIndex) {
+    const { version, chunks } = await getTicketChunks();
+    const resolvedVersion = version ?? null;
+    if (
+      resolvedVersion !== null &&
+      this.dataVersion !== null &&
+      this.dataVersion === resolvedVersion &&
+      this.clusterIndex &&
+      this.pointIndex
+    ) {
       return;
     }
     if (this.loadingPromise) {
       await this.loadingPromise;
-      return;
+      if (
+        resolvedVersion !== null &&
+        this.dataVersion !== null &&
+        this.dataVersion === resolvedVersion &&
+        this.clusterIndex &&
+        this.pointIndex
+      ) {
+        return;
+      }
     }
-    this.loadingPromise = this.loadFromDisk(fileInfo);
+    this.loadingPromise = this.loadFromChunks({ version: resolvedVersion, chunks });
     try {
       await this.loadingPromise;
     } finally {
@@ -171,79 +186,121 @@ class TileService {
     }
   }
 
-  async loadFromDisk(fileInfo) {
-    const raw = await readFile(this.dataFile, 'utf-8');
-    const geojson = JSON.parse(raw);
-    const features = Array.isArray(geojson?.features) ? geojson.features : [];
+  async loadFromChunks({ version, chunks }) {
+    let chunkDescriptors = Array.isArray(chunks) ? chunks : [];
+
+    if (chunkDescriptors.length === 0) {
+      try {
+        const resource = await getTicketsRaw();
+        const parsed = JSON.parse(resource.raw);
+        chunkDescriptors = [
+          {
+            features: Array.isArray(parsed?.features) ? parsed.features : [],
+            featureCount: Array.isArray(parsed?.features) ? parsed.features.length : 0,
+            source: resource.source,
+            version: resource.version,
+          },
+        ];
+      } catch (error) {
+        console.error('Failed to load tickets GeoJSON fallback:', error.message);
+        throw error;
+      }
+    }
 
     const sanitized = [];
     const summaryPoints = [];
-    const spatialIndex = new Flatbush(features.length || 1);
+    const locationTable = [];
+    const streetTable = [];
+    const locationLookup = new Map();
+    const streetLookup = new Map();
+    let featureId = 0;
 
-    for (let i = 0; i < features.length; i += 1) {
-      const feature = features[i];
-      const coords = feature?.geometry?.coordinates;
-      if (!Array.isArray(coords) || coords.length < 2) {
-        continue;
+    const internString = (value, lookup, table) => {
+      if (!value) {
+        return null;
       }
-      const [longitude, latitude] = coords;
-      if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
-        continue;
+      const existing = lookup.get(value);
+      if (existing !== undefined) {
+        return existing;
+      }
+      const id = table.length;
+      table.push(value);
+      lookup.set(value, id);
+      return id;
+    };
+
+    for (const descriptor of chunkDescriptors) {
+      const chunk = descriptor.features ? descriptor : await loadTicketChunk(descriptor);
+      const features = Array.isArray(chunk?.features) ? chunk.features : [];
+      for (const feature of features) {
+        const coords = feature?.geometry?.coordinates;
+        if (!Array.isArray(coords) || coords.length < 2) {
+          continue;
+        }
+        const [longitude, latitude] = coords;
+        if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+          continue;
+        }
+
+        const props = feature?.properties || {};
+        const count = Number(props.count) || 0;
+        const totalRevenue = Number(props.total_revenue) || 0;
+        if (count <= 0) {
+          continue;
+        }
+
+        const years = toNumberArray(props.years, YEARS_LIMIT);
+        const months = toNumberArray(props.months, MONTHS_LIMIT);
+        const yearMask = encodeYearMask(years);
+        const monthMask = encodeMonthMask(months);
+        const location = props.location || null;
+        const topInfraction = props.top_infraction || null;
+        const streetName = normalizeStreetName(location || props.address || '');
+
+        const cleanedProperties = {
+          id: featureId,
+          location,
+          count,
+          total_revenue: Number(totalRevenue.toFixed(2)),
+          top_infraction: topInfraction,
+          yearMask,
+          monthMask,
+        };
+
+        if (!cleanedProperties.top_infraction) {
+          delete cleanedProperties.top_infraction;
+        }
+
+        sanitized.push({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [longitude, latitude],
+          },
+          properties: cleanedProperties,
+        });
+
+        const locationId = internString(location || streetName, locationLookup, locationTable);
+        const streetId = internString(streetName || location, streetLookup, streetTable);
+
+        summaryPoints.push({
+          longitude,
+          latitude,
+          ticketCount: count,
+          totalRevenue,
+          locationId,
+          streetId,
+          yearMask,
+          monthMask,
+        });
+
+        featureId += 1;
       }
 
-      const props = feature?.properties || {};
-      const count = Number(props.count) || 0;
-      const totalRevenue = Number(props.total_revenue) || 0;
-      if (count <= 0) {
-        continue;
+      if (!descriptor.features && chunk) {
+        chunk.features = [];
       }
-
-      const years = toNumberArray(props.years, YEARS_LIMIT);
-      const months = toNumberArray(props.months, MONTHS_LIMIT);
-      const yearMask = encodeYearMask(years);
-      const monthMask = encodeMonthMask(months);
-      const location = props.location || null;
-      const topInfraction = props.top_infraction || null;
-      const streetName = normalizeStreetName(location || props.address || '');
-
-      const cleanedProperties = {
-        id: i,
-        location,
-        count,
-        total_revenue: Number(totalRevenue.toFixed(2)),
-        top_infraction: topInfraction,
-        yearMask,
-        monthMask,
-      };
-
-      if (!cleanedProperties.top_infraction) {
-        delete cleanedProperties.top_infraction;
-      }
-
-      sanitized.push({
-        type: 'Feature',
-        geometry: {
-          type: 'Point',
-          coordinates: [longitude, latitude],
-        },
-        properties: cleanedProperties,
-      });
-
-      summaryPoints.push({
-        longitude,
-        latitude,
-        ticketCount: count,
-        totalRevenue,
-        location: location || streetName,
-        streetName,
-        yearMask,
-        monthMask,
-      });
-
-      spatialIndex.add(longitude, latitude, longitude, latitude);
     }
-
-    spatialIndex.finish();
 
     const clusterIndex = new Supercluster({
       minZoom: 0,
@@ -267,7 +324,8 @@ class TileService {
 
     clusterIndex.load(sanitized);
 
-    const pointIndex = geojsonvt({ type: 'FeatureCollection', features: sanitized }, {
+    const vtCollection = { type: 'FeatureCollection', features: sanitized };
+    const pointIndex = geojsonvt(vtCollection, {
       maxZoom: 16,
       extent: 4096,
       buffer: 64,
@@ -275,11 +333,27 @@ class TileService {
       indexMaxPoints: 0,
     });
 
+    vtCollection.features = [];
+    const featureCount = summaryPoints.length || 1;
+    sanitized.length = 0;
+
+    const spatialIndex = new Flatbush(featureCount);
+    for (const point of summaryPoints) {
+      const { longitude, latitude } = point;
+      if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+        continue;
+      }
+      spatialIndex.add(longitude, latitude, longitude, latitude);
+    }
+    spatialIndex.finish();
+
     this.clusterIndex = clusterIndex;
     this.pointIndex = pointIndex;
     this.summaryPoints = summaryPoints;
+    this.locationTable = locationTable;
+    this.streetTable = streetTable;
     this.summaryTree = spatialIndex;
-    this.lastMtimeMs = fileInfo.mtimeMs;
+    this.dataVersion = version ?? Date.now();
     this.tileCache.clear();
   }
 
@@ -361,13 +435,17 @@ class TileService {
       visibleCount += point.ticketCount;
       visibleRevenue += point.totalRevenue;
 
-      const streetKey = point.streetName || point.location;
+      const streetName =
+        Number.isInteger(point.streetId) ? this.streetTable[point.streetId] : null;
+      const locationName =
+        Number.isInteger(point.locationId) ? this.locationTable[point.locationId] : null;
+      const streetKey = streetName || locationName || 'Unknown';
       if (!streetMap.has(streetKey)) {
         streetMap.set(streetKey, {
           name: streetKey,
           ticketCount: 0,
           totalRevenue: 0,
-          sampleLocation: point.location,
+          sampleLocation: locationName || streetKey,
         });
       }
       const streetEntry = streetMap.get(streetKey);
@@ -452,6 +530,5 @@ export function createTileService() {
   if (!dataDir) {
     throw new Error('DATA_DIR environment variable must be set');
   }
-  const dataFile = path.join(dataDir, 'tickets_aggregated.geojson');
-  return new TileService(dataFile);
+  return new TileService();
 }
