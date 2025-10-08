@@ -91,10 +91,23 @@ function AppContent({
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
         if (!cancelled && payload) {
-          setTotalsByDataset((previous) => ({
-            ...previous,
-            [dataset]: { ...payload, __source: 'api' },
-          }));
+          setTotalsByDataset((previous) => {
+            if (dataset === 'parking_tickets') {
+              const contextTicketCount = Number(
+                contextTotals?.ticketCount ?? contextTotals?.featureCount ?? 0,
+              );
+              const payloadTicketCount = Number(
+                payload.ticketCount ?? payload.featureCount ?? 0,
+              );
+              if (contextTicketCount > 0 && payloadTicketCount === 0) {
+                return previous;
+              }
+            }
+            return {
+              ...previous,
+              [dataset]: { ...payload, __source: 'api' },
+            };
+          });
         }
       })
       .catch((error) => {
@@ -104,7 +117,7 @@ function AppContent({
     return () => {
       cancelled = true;
     };
-  }, [dataset, totalsByDataset]);
+  }, [dataset, totalsByDataset, contextTotals]);
 
   const currentTotalsEntry = totalsByDataset[dataset] || null;
   const currentTotals = useMemo(() => {
