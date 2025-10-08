@@ -1,12 +1,27 @@
 from __future__ import annotations
 
+import os
+from dotenv import load_dotenv
 import psycopg
 
-DSN = "postgresql://postgres:REDACTED_POSTGRES_PASSWORD@interchange.proxy.rlwy.net:57747/railway"
+
+def _resolve_dsn() -> str:
+    load_dotenv()
+    dsn = (
+        os.environ.get("POSTGIS_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+        or os.environ.get("POSTGRES_URL")
+    )
+    if not dsn:
+        raise RuntimeError(
+            "POSTGIS_DATABASE_URL (or DATABASE_URL/POSTGRES_URL) must be set in the environment"
+        )
+    return dsn
 
 
 def main() -> None:
-    with psycopg.connect(DSN) as conn:
+    dsn = _resolve_dsn()
+    with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
