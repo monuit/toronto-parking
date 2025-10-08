@@ -373,11 +373,24 @@ def main() -> None:
     write_json(output_dir / "officer_stats.json", plate_output)
     write_json(output_dir / "neighbourhood_stats.json", neighbourhood_stats)
 
+    total_ticket_count = sum(stats.count for stats in location_stats.values())
+    total_revenue = sum(stats.total_revenue for stats in location_stats.values())
+    summary_payload = {
+        "featureCount": len(tickets_geojson["features"]),
+        "ticketCount": total_ticket_count,
+        "totalRevenue": round(total_revenue, 2),
+    }
+    write_json(output_dir / "tickets_summary.json", summary_payload)
+
     print("Outputs written:")
     print(f"  • tickets_aggregated.geojson ({len(tickets_geojson['features']):,} features)")
     print(f"  • street_stats.json ({len(street_stats):,} entries)")
     print(f"  • officer_stats.json ({len(plate_output):,} entries)")
     print(f"  • neighbourhood_stats.json ({len(neighbourhood_stats):,} entries)")
+    print(
+        "  • tickets_summary.json"
+        f" (tickets={summary_payload['ticketCount']:,}, revenue=${summary_payload['totalRevenue']:,})"
+    )
 
 
 if __name__ == "__main__":

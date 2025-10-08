@@ -3,7 +3,7 @@
  * Single responsibility: coordinate all map components and state
  */
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
-import { AppDataProvider } from './context/AppDataContext.jsx';
+import { AppDataProvider, useAppData } from './context/AppDataContext.jsx';
 import { useCentrelineLookup } from './context/CentrelineContext.jsx';
 import { StatsSummary } from './components/StatsSummary.jsx';
 import { StreetLeaderboard } from './components/StreetLeaderboard.jsx';
@@ -12,6 +12,8 @@ import { Legend } from './components/Legend.jsx';
 import { InfoPopup } from './components/InfoPopup.jsx';
 import { HowItWorks } from './components/HowItWorks.jsx';
 import { ViewportInsights } from './components/ViewportInsights.jsx';
+import { DatasetToggle } from './components/DatasetToggle.jsx';
+import { MAP_CONFIG } from './lib/mapSources.js';
 import './App.css';
 
 const POPUP_SHEET_BREAKPOINT = 640;
@@ -37,12 +39,15 @@ function AppContent({
   fallbackTopStreets = [],
   fallbackTopNeighbourhoods = [],
 }) {
+  const { totals: contextTotals } = useAppData();
   const [map, setMap] = useState(null);
   const [activeCentrelineIds, setActiveCentrelineIds] = useState([]);
   const [activeTab, setActiveTab] = useState('streets');
   const [popupData, setPopupData] = useState(null);
   const [popupPosition, setPopupPosition] = useState(null);
   const [viewportSummary, setViewportSummary] = useState({ zoomRestricted: true, topStreets: [] });
+  const [dataset, setDataset] = useState('parking_tickets');
+  const [totalsByDataset, setTotalsByDataset] = useState({});
   const [isClient, setIsClient] = useState(() => !isServer && typeof window !== 'undefined');
   const [isOverlayCollapsed, setIsOverlayCollapsed] = useState(false);
   const [popupVariant, setPopupVariant] = useState(() => {
@@ -52,6 +57,63 @@ function AppContent({
     return getPopupVariantForWidth(window.innerWidth);
   });
   const { getStreetSummary, getCentrelineDetail } = useCentrelineLookup();
+  useEffect(() => {
+    if (!contextTotals || typeof contextTotals !== 'object') {
+      return;
+    }
+
+    const nextPayload = { ...contextTotals, __source: 'context' };
+
+    setTotalsByDataset((previous) => {
+      const existing = previous.parking_tickets;
+      if (existing && existing.__source === 'api') {
+        return previous;
+      }
+      if (existing && existing.__source === 'context') {
+        const same = Object.keys(contextTotals).every((key) => existing[key] === contextTotals[key]);
+        if (same) {
+          return previous;
+        }
+      }
+      return { ...previous, parking_tickets: nextPayload };
+    });
+
+  }, [contextTotals]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const entry = totalsByDataset[dataset];
+    if (entry && entry.__source === 'api') {
+      return undefined;
+    }
+
+    fetch(`${MAP_CONFIG.API_PATHS.DATASET_TOTALS}?dataset=${dataset}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!cancelled && payload) {
+          setTotalsByDataset((previous) => ({
+            ...previous,
+            [dataset]: { ...payload, __source: 'api' },
+          }));
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load dataset totals', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataset, totalsByDataset]);
+
+  const currentTotalsEntry = totalsByDataset[dataset] || null;
+  const currentTotals = useMemo(() => {
+    if (!currentTotalsEntry || typeof currentTotalsEntry !== 'object') {
+      return null;
+    }
+    const { __source, ...rest } = currentTotalsEntry;
+    return rest;
+  }, [currentTotalsEntry]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -191,6 +253,12 @@ function AppContent({
     setIsOverlayCollapsed((current) => !current);
   }, []);
 
+  useEffect(() => {
+    setViewportSummary({ zoomRestricted: true, topStreets: [] });
+    setPopupData(null);
+    setPopupPosition(null);
+  }, [dataset]);
+
   const handleStreetSelect = useCallback((streetEntry) => {
     if (!streetEntry) {
       return;
@@ -278,7 +346,12 @@ function AppContent({
     <div className="App">
       <div className="left-sidebar">
         <div className="sidebar-content">
-          <StatsSummary viewportSummary={viewportSummary} showViewport={false} />
+          <StatsSummary
+            viewportSummary={viewportSummary}
+            showViewport={false}
+            dataset={dataset}
+            totalsOverride={currentTotals}
+          />
 
           <div className="tab-switcher">
             <button
@@ -295,16 +368,36 @@ function AppContent({
             </button>
           </div>
 
-          <StreetLeaderboard
-            visible={activeTab === 'streets'}
-            initialStreets={fallbackTopStreets}
-            onStreetSelect={handleStreetSelect}
-          />
-          <NeighbourhoodLeaderboard
-            visible={activeTab === 'neighbourhoods'}
-            onNeighbourhoodClick={handleNeighbourhoodFocus}
-            initialNeighbourhoods={fallbackTopNeighbourhoods}
-          />
+          {dataset === 'parking_tickets' ? (
+            <StreetLeaderboard
+              visible={activeTab === 'streets'}
+              initialStreets={fallbackTopStreets}
+              onStreetSelect={handleStreetSelect}
+            />
+          ) : (
+            activeTab === 'streets' ? (
+              <div className="leaderboard street-leaderboard">
+                <p className="subtitle" style={{ marginBottom: 0 }}>
+                  Citywide street rankings are currently available for parking ticket data. Switch datasets to view the latest parking insights.
+                </p>
+              </div>
+            ) : null
+          )}
+          {dataset === 'parking_tickets' ? (
+            <NeighbourhoodLeaderboard
+              visible={activeTab === 'neighbourhoods'}
+              onNeighbourhoodClick={handleNeighbourhoodFocus}
+              initialNeighbourhoods={fallbackTopNeighbourhoods}
+            />
+          ) : (
+            activeTab === 'neighbourhoods' ? (
+              <div className="leaderboard neighbourhood-leaderboard">
+                <p className="subtitle" style={{ marginBottom: 0 }}>
+                  Neighbourhood trends are currently limited to parking ticket data. Switch datasets to explore parking activity by area.
+                </p>
+              </div>
+            ) : null
+          )}
           <HowItWorks />
         </div>
       </div>
@@ -322,27 +415,35 @@ function AppContent({
         </div>
         {!isOverlayCollapsed ? (
           <div className="overlay-stack">
-            <div className="overlay-panel summary-panel">
-              <StatsSummary
-                viewportSummary={viewportSummary}
-                variant="compact"
-                showTotals={false}
-                viewportTitle="Current view"
-              />
-            </div>
-            <div className="overlay-panel insights-panel">
-              <ViewportInsights
-                summary={viewportSummary}
-                fallbackTopStreets={fallbackTopStreets}
-                variant="compact"
-              />
-            </div>
+            <>
+              <div className="overlay-panel summary-panel">
+                <StatsSummary
+                  viewportSummary={viewportSummary}
+                  variant="compact"
+                  showTotals={false}
+                  dataset={dataset}
+                  totalsOverride={currentTotals}
+                  viewportTitle="Current view"
+                />
+              </div>
+              <div className="overlay-panel insights-panel">
+                <ViewportInsights
+                  summary={viewportSummary}
+                  fallbackTopStreets={dataset === 'parking_tickets' ? fallbackTopStreets : []}
+                  variant="compact"
+                />
+              </div>
+            </>
           </div>
         ) : null}
       </div>
 
       <div className="legend-floating">
         <Legend visible={true} />
+      </div>
+
+      <div className="dataset-toggle-floating">
+        <DatasetToggle value={dataset} onChange={setDataset} />
       </div>
 
       {isClient ? (
@@ -354,6 +455,7 @@ function AppContent({
             onViewportSummaryChange={setViewportSummary}
             onStreetSegmentClick={handleStreetSegmentClick}
             highlightCentrelineIds={activeCentrelineIds}
+            dataset={dataset}
           />
         </Suspense>
       ) : (

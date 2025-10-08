@@ -5,15 +5,18 @@
 
 /* global process */
 
-import fs from 'fs';
+import fs from 'node:fs';
+import { promises as fsPromises } from 'node:fs';
+import { once } from 'node:events';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { ensureTicketsFileFromRedis, storeTicketsRaw, TICKETS_FILE } from './ticketsDataStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../public/data');
-const OUTPUT_FILE = path.join(DATA_DIR, 'tickets_aggregated.geojson');
+const OUTPUT_FILE = TICKETS_FILE;
 const CHUNK_PATTERN = /^tickets_aggregated_part\d+\.geojson$/;
 
 /**
@@ -22,7 +25,7 @@ const CHUNK_PATTERN = /^tickets_aggregated_part\d+\.geojson$/;
 export async function mergeGeoJSONChunks() {
   console.log('🔗 Merging GeoJSON chunks...');
 
-  // Check if merged file already exists
+  // Check if merged file already exists or can be restored from Redis
   if (fs.existsSync(OUTPUT_FILE)) {
     const stats = fs.statSync(OUTPUT_FILE);
     const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
@@ -30,8 +33,20 @@ export async function mergeGeoJSONChunks() {
     return OUTPUT_FILE;
   }
 
+  try {
+    const restored = await ensureTicketsFileFromRedis();
+    if (restored) {
+      const stats = fs.statSync(OUTPUT_FILE);
+      const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+      console.log(`✓ Restored merged file from Redis cache: ${sizeMB} MB`);
+      return OUTPUT_FILE;
+    }
+  } catch (error) {
+    console.warn('Unable to restore tickets_aggregated from Redis:', error.message);
+  }
+
   // Find all chunk files
-  const files = fs.readdirSync(DATA_DIR);
+  const files = await fsPromises.readdir(DATA_DIR);
   const chunkFiles = files
     .filter(f => CHUNK_PATTERN.test(f))
     .sort((a, b) => {
@@ -46,37 +61,59 @@ export async function mergeGeoJSONChunks() {
 
   console.log(`  Found ${chunkFiles.length} chunks to merge`);
 
-  // Merge all features
-  const allFeatures = [];
-
-  for (const chunkFile of chunkFiles) {
-    const chunkPath = path.join(DATA_DIR, chunkFile);
-    console.log(`  Reading ${chunkFile}...`);
-
-    const data = JSON.parse(fs.readFileSync(chunkPath, 'utf-8'));
-    
-    // Use concat or loop to avoid stack overflow with large arrays
-    // spread operator (...) causes "Maximum call stack size exceeded" with 100k+ items
-    for (let i = 0; i < data.features.length; i++) {
-      allFeatures.push(data.features[i]);
+  const writeStream = fs.createWriteStream(OUTPUT_FILE, { encoding: 'utf-8' });
+  const write = async (content) => {
+    if (!writeStream.write(content)) {
+      await once(writeStream, 'drain');
     }
-    
-    console.log(`    Added ${data.features.length.toLocaleString()} features (total: ${allFeatures.length.toLocaleString()})`);
-  }
-
-  console.log(`  Total features merged: ${allFeatures.length.toLocaleString()}`);
-
-  // Create merged GeoJSON
-  const mergedData = {
-    type: 'FeatureCollection',
-    features: allFeatures
   };
 
-  // Write merged file
-  console.log('  Writing merged file...');
-  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(mergedData));
+  let totalFeatures = 0;
+  let firstFeature = true;
 
-  const stats = fs.statSync(OUTPUT_FILE);
+  try {
+    await write('{"type":"FeatureCollection","features":[');
+
+    for (const chunkFile of chunkFiles) {
+      const chunkPath = path.join(DATA_DIR, chunkFile);
+      console.log(`  Reading ${chunkFile}...`);
+
+      let raw = await fsPromises.readFile(chunkPath, 'utf-8');
+      const data = JSON.parse(raw);
+      const features = Array.isArray(data.features) ? data.features : [];
+
+      for (const feature of features) {
+        if (!firstFeature) {
+          await write(',');
+        } else {
+          firstFeature = false;
+        }
+        await write(JSON.stringify(feature));
+      }
+
+      totalFeatures += features.length;
+      console.log(`    Added ${features.length.toLocaleString()} features (total: ${totalFeatures.toLocaleString()})`);
+
+      data.features = null;
+      raw = null;
+    }
+
+    await write(']}');
+    writeStream.end();
+    await once(writeStream, 'finish');
+  } catch (error) {
+    writeStream.destroy();
+    throw error;
+  }
+
+  console.log(`  Total features merged: ${totalFeatures.toLocaleString()}`);
+
+  console.log('  Writing merged file and caching in Redis...');
+  let mergedRaw = await fsPromises.readFile(OUTPUT_FILE, 'utf-8');
+  await storeTicketsRaw(mergedRaw);
+  mergedRaw = null;
+
+  const stats = await fsPromises.stat(OUTPUT_FILE);
   const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
 
   console.log(`✓ Merged file created: ${sizeMB} MB`);
