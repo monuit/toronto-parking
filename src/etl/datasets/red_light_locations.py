@@ -19,6 +19,7 @@ RED_LIGHT_FINE_ESTIMATE = Decimal(os.getenv("RED_LIGHT_FINE_AMOUNT", "325"))
 
 STAGING_COLUMNS = (
     "intersection_id",
+    "location_code",
     "linear_name_full_1",
     "linear_name_full_2",
     "location_name",
@@ -40,54 +41,80 @@ def _format_pg_array(values: Sequence[int]) -> str:
     return "{" + ",".join(str(int(value)) for value in values) + "}"
 
 
-def _load_charges_summary(path: Path | None) -> Dict[int, Dict[str, Any]]:
+def _load_charges_summary(path: Path | None) -> Dict[str, Dict[str, Any]]:
     if path is None or not path.exists():
         return {}
 
-    dataframe = pd.read_excel(path, header=3)
+    dataframe = pd.read_excel(path, skiprows=4)
     if dataframe.empty:
         return {}
 
-    header = dataframe.iloc[0]
-    charges_df = dataframe.iloc[1:].copy()
-    charges_df.columns = header
-    charges_df["Location Codes"] = pd.to_numeric(charges_df.get("Location Codes"), errors="coerce")
-    charges_df = charges_df.dropna(subset=["Location Codes"])
+    dataframe = dataframe.rename(columns=lambda value: str(value).strip() if value is not None else "")
+    dataframe["Location Codes"] = pd.to_numeric(dataframe.get("Location Codes"), errors="coerce")
+    dataframe = dataframe.dropna(subset=["Location Codes"])
 
-    year_columns: List[tuple[Any, int]] = []
-    for column in charges_df.columns:
+    year_columns: List[Any] = []
+    for column in dataframe.columns:
         if isinstance(column, (int, float)) and not pd.isna(column):
-            year_columns.append((column, int(column)))
-        elif isinstance(column, str) and column.strip().isdigit():
-            year_columns.append((column, int(column.strip())))
+            year_columns.append(int(column))
+        else:
+            text = str(column).strip()
+            if text.isdigit():
+                year_columns.append(int(text))
 
-    summary: Dict[int, Dict[str, Any]] = {}
-    for _, row in charges_df.iterrows():
-        location_code = int(row["Location Codes"])
+    summary: Dict[str, Dict[str, Any]] = {}
+
+    for _, row in dataframe.iterrows():
+        try:
+            location_code = str(int(round(float(row["Location Codes"]))))
+        except (TypeError, ValueError):
+            continue
+
         yearly_counts: Dict[str, int] = {}
         years: List[int] = []
         total_tickets = 0
 
-        for column, year in year_columns:
-            raw_value = row.get(column)
+        for year in year_columns:
+            raw_value = row.get(year) if year in row else row.get(str(year))
             value = pd.to_numeric(raw_value, errors="coerce")
             if pd.isna(value) or value <= 0:
                 continue
             ticket_total = int(round(float(value)))
             if ticket_total <= 0:
                 continue
-            yearly_counts[str(year)] = ticket_total
+            yearly_counts[str(year)] = yearly_counts.get(str(year), 0) + ticket_total
             years.append(year)
             total_tickets += ticket_total
 
-        summary[location_code] = {
-            "location_name": str(row.get("Charges Laid by Location & Year") or ""),
-            "ticket_count": total_tickets,
-            "total_fine_amount": (RED_LIGHT_FINE_ESTIMATE * Decimal(total_tickets)).quantize(Decimal("0.01")),
-            "years": sorted(set(years)),
-            "months": [],
-            "yearly_counts": yearly_counts,
-        }
+        fine_amount = (RED_LIGHT_FINE_ESTIMATE * Decimal(total_tickets)).quantize(Decimal("0.01"))
+        ward_value = row.get("Ward Number") or row.get("Ward")
+        location_name = row.get("Charges Laid by Location & Year") or row.get("Location") or ""
+
+        existing = summary.get(location_code)
+        if existing is None:
+            summary[location_code] = {
+                "location_name": str(location_name).strip(),
+                "ward": ward_value,
+                "ticket_count": total_tickets,
+                "total_fine_amount": fine_amount,
+                "years": sorted(set(years)),
+                "months": [],
+                "yearly_counts": dict(yearly_counts),
+            }
+        else:
+            existing["ticket_count"] += total_tickets
+            existing["total_fine_amount"] = (Decimal(existing["total_fine_amount"]) + fine_amount).quantize(Decimal("0.01"))
+            if ward_value and not existing.get("ward"):
+                existing["ward"] = ward_value
+            if existing.get("location_name") in (None, "") and location_name:
+                existing["location_name"] = str(location_name).strip()
+            merged_years = set(existing.get("years", []))
+            merged_years.update(years)
+            existing["years"] = sorted(merged_years)
+            merged_counts = existing.get("yearly_counts", {})
+            for key, value in yearly_counts.items():
+                merged_counts[key] = merged_counts.get(key, 0) + value
+            existing["yearly_counts"] = merged_counts
 
     return summary
 
@@ -174,14 +201,14 @@ class RedLightLocationsETL(DatasetETL):
             geometry_json = json.dumps(geometry_obj)
 
             rlc_value = row.get("RLC") or row.get("rlc")
-            location_code = None
+            location_code: str | None = None
             if rlc_value is not None:
                 try:
-                    location_code = int(float(rlc_value)) - RLC_CODE_OFFSET
+                    location_code = str(int(round(float(rlc_value))) - RLC_CODE_OFFSET)
                 except (TypeError, ValueError):
                     location_code = None
 
-            metrics = charges_summary.get(location_code) if location_code is not None else None
+            metrics = charges_summary.get(str(location_code)) if location_code else None
             ticket_count = int(metrics.get("ticket_count", 0)) if metrics else 0
             total_fine_amount = metrics.get("total_fine_amount") if metrics else None
             years = metrics.get("years", []) if metrics else []
@@ -191,6 +218,7 @@ class RedLightLocationsETL(DatasetETL):
             rows.append(
                 (
                     intersection_id,
+                    location_code,
                     row.get("LINEAR_NAME_FULL_1") or row.get("linear_name_full_1"),
                     row.get("LINEAR_NAME_FULL_2") or row.get("linear_name_full_2"),
                     (metrics.get("location_name") if metrics else None)
@@ -220,6 +248,7 @@ class RedLightLocationsETL(DatasetETL):
             """
             CREATE TABLE IF NOT EXISTS red_light_camera_locations (
                 intersection_id TEXT PRIMARY KEY,
+                location_code TEXT,
                 linear_name_full_1 TEXT,
                 linear_name_full_2 TEXT,
                 location_name TEXT,
@@ -239,6 +268,7 @@ class RedLightLocationsETL(DatasetETL):
             """
             ALTER TABLE red_light_camera_locations
                 ADD COLUMN IF NOT EXISTS location_name TEXT,
+                ADD COLUMN IF NOT EXISTS location_code TEXT,
                 ADD COLUMN IF NOT EXISTS ticket_count INTEGER DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS total_fine_amount NUMERIC(18, 2),
                 ADD COLUMN IF NOT EXISTS years INTEGER[],
@@ -251,6 +281,7 @@ class RedLightLocationsETL(DatasetETL):
             """
             CREATE TABLE IF NOT EXISTS red_light_camera_locations_staging (
                 intersection_id TEXT,
+                location_code TEXT,
                 linear_name_full_1 TEXT,
                 linear_name_full_2 TEXT,
                 location_name TEXT,
@@ -272,6 +303,7 @@ class RedLightLocationsETL(DatasetETL):
             """
             INSERT INTO red_light_camera_locations AS target (
                 intersection_id,
+                location_code,
                 linear_name_full_1,
                 linear_name_full_2,
                 location_name,
@@ -287,6 +319,7 @@ class RedLightLocationsETL(DatasetETL):
             )
             SELECT DISTINCT ON (intersection_id)
                 intersection_id,
+                NULLIF(location_code, ''),
                 linear_name_full_1,
                 linear_name_full_2,
                 location_name,
@@ -314,6 +347,7 @@ class RedLightLocationsETL(DatasetETL):
                 linear_name_full_1 = EXCLUDED.linear_name_full_1,
                 linear_name_full_2 = EXCLUDED.linear_name_full_2,
                 location_name = EXCLUDED.location_name,
+                location_code = COALESCE(EXCLUDED.location_code, target.location_code),
                 ward_1 = EXCLUDED.ward_1,
                 police_division_1 = EXCLUDED.police_division_1,
                 activation_date = EXCLUDED.activation_date,

@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.etl.datasets.parking_tickets import (  # noqa: E402
     STAGING_COLUMNS,
+    build_ticket_hash,
     _normalise_date,
     _normalise_time,
     _safe_decimal,
@@ -55,7 +56,8 @@ def ensure_tables(pg: PostgresClient) -> None:
     pg.execute(
         """
         CREATE TABLE IF NOT EXISTS parking_tickets (
-            ticket_number TEXT PRIMARY KEY,
+            ticket_hash TEXT PRIMARY KEY,
+            ticket_number TEXT,
             date_of_infraction DATE,
             time_of_infraction TEXT,
             infraction_code TEXT,
@@ -76,6 +78,7 @@ def ensure_tables(pg: PostgresClient) -> None:
     pg.execute(
         """
         CREATE TABLE IF NOT EXISTS parking_tickets_staging (
+            ticket_hash TEXT,
             ticket_number TEXT,
             date_of_infraction TEXT,
             time_of_infraction TEXT,
@@ -93,6 +96,71 @@ def ensure_tables(pg: PostgresClient) -> None:
         )
         """
     )
+    pg.execute(
+        """
+        ALTER TABLE parking_tickets
+        ADD COLUMN IF NOT EXISTS ticket_hash TEXT
+        """
+    )
+    pg.execute(
+        """
+        ALTER TABLE parking_tickets_staging
+        ADD COLUMN IF NOT EXISTS ticket_hash TEXT
+        """
+    )
+    pg.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.table_constraints
+                WHERE table_schema = 'public'
+                  AND table_name = 'parking_tickets'
+                  AND constraint_type = 'PRIMARY KEY'
+            ) THEN
+                EXECUTE 'ALTER TABLE parking_tickets DROP CONSTRAINT parking_tickets_pkey';
+            END IF;
+        END
+        $$
+        """
+    )
+    pg.execute(
+        """
+        UPDATE parking_tickets
+        SET ticket_hash = md5(
+            COALESCE(ticket_number, '') || '|' ||
+            COALESCE(date_of_infraction::TEXT, '') || '|' ||
+            COALESCE(time_of_infraction, '') || '|' ||
+            COALESCE(infraction_code, '') || '|' ||
+            COALESCE(infraction_description, '') || '|' ||
+            COALESCE(set_fine_amount::TEXT, '') || '|' ||
+            COALESCE(location1, '') || '|' ||
+            COALESCE(location2, '') || '|' ||
+            COALESCE(location3, '') || '|' ||
+            COALESCE(location4, '')
+        )
+        WHERE ticket_hash IS NULL
+        """
+    )
+    pg.execute("ALTER TABLE parking_tickets ALTER COLUMN ticket_hash SET NOT NULL")
+    pg.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.table_constraints
+                WHERE table_schema = 'public'
+                  AND table_name = 'parking_tickets'
+                  AND constraint_type = 'PRIMARY KEY'
+            ) THEN
+                EXECUTE 'ALTER TABLE parking_tickets ADD CONSTRAINT parking_tickets_pkey PRIMARY KEY (ticket_hash)';
+            END IF;
+        END
+        $$
+        """
+    )
 
 
 def load_batch(pg: PostgresClient, rows: Iterable[Tuple]) -> None:
@@ -104,6 +172,7 @@ def load_batch(pg: PostgresClient, rows: Iterable[Tuple]) -> None:
     pg.execute(
         """
         INSERT INTO parking_tickets AS target (
+            ticket_hash,
             ticket_number,
             date_of_infraction,
             time_of_infraction,
@@ -118,7 +187,8 @@ def load_batch(pg: PostgresClient, rows: Iterable[Tuple]) -> None:
             centreline_id,
             geom
         )
-        SELECT DISTINCT ON (ticket_number)
+        SELECT DISTINCT ON (ticket_hash)
+            ticket_hash,
             ticket_number,
             NULLIF(date_of_infraction, '')::DATE,
             time_of_infraction,
@@ -136,8 +206,9 @@ def load_batch(pg: PostgresClient, rows: Iterable[Tuple]) -> None:
                 ELSE ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
             END
         FROM parking_tickets_staging
-        ORDER BY ticket_number, date_of_infraction DESC
-        ON CONFLICT (ticket_number) DO UPDATE SET
+        ORDER BY ticket_hash, NULLIF(date_of_infraction, '')::DATE DESC, time_of_infraction DESC
+        ON CONFLICT (ticket_hash) DO UPDATE SET
+            ticket_number = EXCLUDED.ticket_number,
             date_of_infraction = EXCLUDED.date_of_infraction,
             time_of_infraction = EXCLUDED.time_of_infraction,
             infraction_code = EXCLUDED.infraction_code,
@@ -187,13 +258,31 @@ def _prepare_ticket_row(record: Dict[str, Optional[str]], geocodes: Dict[str, Ge
         if match:
             street_normalized, centreline_id, latitude, longitude = match
 
-    return (
+    infraction_code = (record.get("infraction_code") or record.get("infractioncode") or "").strip() or None
+    infraction_description = (record.get("infraction_description") or record.get("infractiondescription") or "").strip() or None
+    set_fine = _safe_decimal(record.get("set_fine_amount") or record.get("setfineamount"))
+
+    ticket_hash = build_ticket_hash(
         ticket_number,
         parsed_date,
         time_value,
-        (record.get("infraction_code") or record.get("infractioncode") or "").strip() or None,
-        (record.get("infraction_description") or record.get("infractiondescription") or "").strip() or None,
-        _safe_decimal(record.get("set_fine_amount") or record.get("setfineamount")),
+        infraction_code,
+        infraction_description,
+        set_fine,
+        location1 or None,
+        location2 or None,
+        location3 or None,
+        location4 or None,
+    )
+
+    return (
+        ticket_hash,
+        ticket_number,
+        parsed_date,
+        time_value,
+        infraction_code,
+        infraction_description,
+        set_fine,
         location1 or None,
         location2 or None,
         location3 or None,

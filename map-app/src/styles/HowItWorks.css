@@ -64,28 +64,112 @@
   font-size: 14px;
 }
 
-.modal-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  background: rgba(0, 0, 0, 0.05);
-  border: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  color: #1d1d1f;
+.modal-body a {
+  color: #0a84ff;
+  text-decoration: none;
 }
 
-.modal-close:hover {
-  background: rgba(0, 0, 0, 0.1);
-  transform: rotate(90deg);
+.modal-body a:hover {
+  text-decoration: underline;
+}
+
+.modal-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.modal-tab {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(29, 29, 31, 0.08);
+  color: #1d1d1f;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.modal-tab:hover {
+  background: rgba(29, 29, 31, 0.12);
+}
+
+.modal-tab--active {
+  background: #1d1d1f;
+  color: #ffffff;
+}
+
+.modal-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modal-section ol {
+  margin: 0 0 16px 0;
+  padding-left: 20px;
+}
+
+.modal-section li {
+  margin-bottom: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.modal-kofi {
+  margin-top: 20px;
+}
+
+.modal-traffic-lights {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 1;
+}
+
+.modal-light {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+
+.modal-light--red {
+  background: #ff5f57;
+}
+
+.modal-light--red:hover {
+  background: #ff3b30;
+  transform: scale(1.08);
+}
+
+.modal-light--red:active {
+  transform: scale(0.92);
+}
+
+.modal-light--red:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
+}
+
+.modal-light--yellow {
+  background: #ffbd2e;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.modal-light--green {
+  background: #28ca42;
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 @keyframes fadeIn {

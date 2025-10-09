@@ -10,12 +10,20 @@ const defaultData = {
   },
   topStreets: [],
   topNeighbourhoods: [],
+  datasets: {},
+  yearlyMeta: {},
 };
 
 export const AppDataContext = createContext(defaultData);
 
 export function AppDataProvider({ value, children }) {
-  const mergedValue = value ? { ...defaultData, ...value } : defaultData;
+  const mergedValue = value
+    ? {
+        ...defaultData,
+        ...value,
+        datasets: value.datasets || defaultData.datasets,
+      }
+    : defaultData;
   return (
     <AppDataContext.Provider value={mergedValue}>
       <CentrelineProvider>

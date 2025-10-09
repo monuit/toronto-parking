@@ -6,16 +6,59 @@ import { useMemo, useState } from 'react';
 import { STYLE_CONSTANTS } from '../lib/mapSources';
 import '../styles/Controls.css';
 
-const CLUSTER_STEPS = [
-  { label: '1 – 99 tickets', size: 'sm' },
-  { label: '100 – 749 tickets', size: 'md' },
-  { label: '750 – 4,999 tickets', size: 'lg' },
-  { label: '5,000+ tickets', size: 'xl' },
-];
+const DATASET_LEGEND_CONTENT = {
+  parking_tickets: {
+    title: 'Parking Tickets',
+    items: [
+      {
+        label: 'Ticket location',
+        color: STYLE_CONSTANTS.COLORS.TICKET_POINT,
+      },
+    ],
+    note: 'Zoom in to reveal individual tickets plotted at their recorded location.',
+  },
+  red_light_locations: {
+    title: 'Red Light Cameras',
+    items: [
+      {
+        label: 'Camera site',
+        color: STYLE_CONSTANTS.COLORS.RED_LIGHT_POINT,
+        strokeColor: STYLE_CONSTANTS.COLORS.RED_LIGHT_STROKE,
+      },
+    ],
+    note: 'Each point marks an active red light camera. Tap for annual charge totals.',
+  },
+  ase_locations: {
+    title: 'Speed Enforcement Cameras',
+    items: [
+      {
+        label: 'Camera site',
+        color: STYLE_CONSTANTS.COLORS.ASE_POINT,
+        strokeColor: STYLE_CONSTANTS.COLORS.ASE_STROKE,
+      },
+    ],
+    note: 'These cameras monitor school/community safety zones. Tap for offence counts.',
+  },
+  cameras_combined: {
+    title: 'Traffic Enforcement Cameras',
+    items: [
+      {
+        label: 'ASE camera site',
+        color: STYLE_CONSTANTS.COLORS.ASE_POINT,
+        strokeColor: STYLE_CONSTANTS.COLORS.ASE_STROKE,
+      },
+      {
+        label: 'Red-light camera site',
+        color: STYLE_CONSTANTS.COLORS.RED_LIGHT_POINT,
+        strokeColor: STYLE_CONSTANTS.COLORS.RED_LIGHT_STROKE,
+      },
+    ],
+    note: 'Combined view of automated speed enforcement and red-light camera locations.',
+  },
+};
 
-export function Legend({ visible = true }) {
+export function Legend({ visible = true, dataset = 'parking_tickets' }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const clusterSteps = useMemo(() => CLUSTER_STEPS, []);
   const glowStops = useMemo(() => STYLE_CONSTANTS.CITY_GLOW_STOPS, []);
   const glowGradient = useMemo(() => {
     if (!glowStops.length) {
@@ -34,6 +77,9 @@ export function Legend({ visible = true }) {
     () => glowStops[glowStops.length - 1]?.color ?? '#ffffff',
     [glowStops],
   );
+
+  const datasetLegend = DATASET_LEGEND_CONTENT[dataset] || DATASET_LEGEND_CONTENT.parking_tickets;
+  const showGlowSection = dataset === 'parking_tickets';
 
   if (!visible) return null;
 
@@ -56,9 +102,16 @@ export function Legend({ visible = true }) {
         onClick={() => setIsExpanded(!isExpanded)}
         aria-label="Toggle legend"
       >
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5"/>
-          <path d="M10 14V10M10 6H10.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+          suppressHydrationWarning
+        >
+          <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" suppressHydrationWarning />
+          <path d="M10 14V10M10 6H10.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" suppressHydrationWarning />
         </svg>
         {isExpanded && (
           <span className="legend-attribution">
@@ -86,35 +139,27 @@ export function Legend({ visible = true }) {
           </div>
 
           <div className="legend-section">
-            <div className="legend-title">Parking Tickets</div>
-            <div className="legend-item">
-              <div
-                className="legend-color circle"
-                style={{ backgroundColor: STYLE_CONSTANTS.COLORS.TICKET_CLUSTER }}
-              />
-              <span>Cluster (grouped tickets)</span>
-            </div>
-            <div className="legend-item">
-              <div
-                className="legend-color circle"
-                style={{ backgroundColor: STYLE_CONSTANTS.COLORS.TICKET_POINT }}
-              />
-              <span>Individual ticket</span>
-            </div>
-            <ul className="legend-clusters">
-              {clusterSteps.map((step) => (
-                <li key={step.label} className="legend-cluster-item">
-                  <span className={`legend-dot legend-dot--${step.size}`} />
-                  <span>{step.label}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="legend-note">
-              Clusters compress nearby tickets so the map stays readable. Zoom in past neighbourhood level to reveal individual streets and addresses.
-            </p>
+            <div className="legend-title">{datasetLegend.title}</div>
+            {datasetLegend.items.map((item) => (
+              <div className="legend-item" key={item.label}>
+                <div
+                  className="legend-color circle"
+                  style={{
+                    backgroundColor: item.color,
+                    borderColor: item.strokeColor || 'rgba(255, 255, 255, 0.2)',
+                    borderWidth: item.strokeColor ? 2 : 1,
+                    borderStyle: 'solid',
+                  }}
+                />
+                <span>{item.label}</span>
+              </div>
+            ))}
+            {datasetLegend.note ? (
+              <p className="legend-note">{datasetLegend.note}</p>
+            ) : null}
           </div>
 
-          {glowGradient && (
+          {showGlowSection && glowGradient && (
             <div className="legend-section">
               <div className="legend-title">Street glow (tickets / 100m)</div>
               <div

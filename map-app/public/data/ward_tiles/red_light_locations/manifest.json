@@ -1,0 +1,10 @@
+{
+  "dataset": "red_light_locations",
+  "generatedAt": "2025-10-09T14:39:24.997Z",
+  "minZoom": 0,
+  "maxZoom": 12,
+  "tileCount": 44,
+  "checksum": "c57e36d49b00f9bb058cf5511145a8d8ab7ecedf0d61eed06f5f7d068fd42d38",
+  "version": 217145876454144,
+  "etag": "W/\"red_light_locations:ward-tiles:c57e36d49b00f9bb058cf5511145a8d8ab7ecedf0d61eed06f5f7d068fd42d38\""
+}
