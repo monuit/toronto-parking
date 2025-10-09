@@ -54,13 +54,23 @@ export function CityGlowLayer({
   filter = null,
   onStreetClick,
   highlightCentrelineIds = [],
+  dataset = 'parking_tickets',
 }) {
   const [glowData, setGlowData] = useState(EMPTY_FEATURE_COLLECTION);
+  const dataPath = useMemo(() => {
+    if (dataset === 'red_light_locations') {
+      return MAP_CONFIG.DATA_PATHS.RED_LIGHT_GLOW_LINES;
+    }
+    if (dataset === 'ase_locations') {
+      return MAP_CONFIG.DATA_PATHS.ASE_GLOW_LINES;
+    }
+    return MAP_CONFIG.DATA_PATHS.CITY_GLOW_LINES;
+  }, [dataset]);
 
   useEffect(() => {
     let isCancelled = false;
 
-    fetch(MAP_CONFIG.DATA_PATHS.CITY_GLOW_LINES)
+    fetch(dataPath)
       .then((response) => {
         if (!response.ok) {
           throw new Error(`Failed to load glow dataset: ${response.status}`);
@@ -81,7 +91,7 @@ export function CityGlowLayer({
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [dataPath]);
 
   const filterExpression = useMemo(() => buildFilterExpression(filter), [filter]);
 
@@ -197,13 +207,13 @@ export function CityGlowLayer({
   }, []);
 
   const highlightValues = useMemo(() => {
-    if (!Array.isArray(highlightCentrelineIds)) {
+    if (dataset !== 'parking_tickets' || !Array.isArray(highlightCentrelineIds)) {
       return [];
     }
     return highlightCentrelineIds
       .map((value) => (value === null || value === undefined ? null : String(value)))
       .filter((value) => Boolean(value));
-  }, [highlightCentrelineIds]);
+  }, [highlightCentrelineIds, dataset]);
 
   const highlightFilter = useMemo(() => {
     if (highlightValues.length === 0) {
@@ -216,10 +226,10 @@ export function CityGlowLayer({
   }, [highlightValues]);
 
   const highlightLayout = useMemo(() => ({
-    visibility: visible && highlightValues.length > 0 ? 'visible' : 'none',
+    visibility: visible && dataset === 'parking_tickets' && highlightValues.length > 0 ? 'visible' : 'none',
     'line-cap': 'round',
     'line-join': 'round',
-  }), [visible, highlightValues]);
+  }), [visible, dataset, highlightValues]);
 
   const highlightPaint = useMemo(() => ({
     'line-color': 'rgba(255, 255, 255, 0.95)',
@@ -237,7 +247,7 @@ export function CityGlowLayer({
   }), []);
 
   useEffect(() => {
-    if (!map || !visible || typeof onStreetClick !== 'function') {
+    if (!map || !visible || dataset !== 'parking_tickets' || typeof onStreetClick !== 'function') {
       return undefined;
     }
 
@@ -283,7 +293,7 @@ export function CityGlowLayer({
         map.off('mouseleave', layerId, handleMouseLeave);
       });
     };
-  }, [map, visible, onStreetClick]);
+  }, [map, visible, onStreetClick, dataset]);
 
   if (!map) {
     return null;

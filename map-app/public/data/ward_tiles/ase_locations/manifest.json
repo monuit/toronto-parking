@@ -1,0 +1,10 @@
+{
+  "dataset": "ase_locations",
+  "generatedAt": "2025-10-09T14:39:24.940Z",
+  "minZoom": 0,
+  "maxZoom": 12,
+  "tileCount": 44,
+  "checksum": "0b841c4d8e67e80b710165111f819190f9fcdf3b4a5ec6ce11beccbad3d25c7a",
+  "version": 12662038433383,
+  "etag": "W/\"ase_locations:ward-tiles:0b841c4d8e67e80b710165111f819190f9fcdf3b4a5ec6ce11beccbad3d25c7a\""
+}

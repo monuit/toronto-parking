@@ -1,16 +1,12 @@
-import { readFile, stat } from 'fs/promises';
-import path from 'path';
-import process from 'node:process';
-import { fileURLToPath } from 'url';
-import { normalizeStreetName } from '../shared/streetUtils.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-// Use DATA_DIR from environment (set by index.js)
-const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../public/data');
-const STREET_STATS_FILE = path.join(DATA_DIR, 'street_stats.json');
-const NEIGHBOURHOOD_STATS_FILE = path.join(DATA_DIR, 'neighbourhood_stats.json');
-const SUMMARY_FILE = path.join(DATA_DIR, 'tickets_summary.json');
+import {
+  loadTicketsSummary,
+  loadStreetStats,
+  loadNeighbourhoodStats,
+  loadDatasetSummary,
+  loadCameraWardSummary,
+} from './ticketsDataStore.js';
+import { getDatasetYears } from './yearlyMetricsService.js';
+import { getDatasetTotals } from './datasetTotalsService.js';
 
 let cachedSnapshot = null;
 
@@ -20,37 +16,47 @@ function mapToSerializableList(map, transform, sortKey = 'totalRevenue') {
     .sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0));
 }
 
-async function readJson(filePath, fallbackValue) {
-  try {
-    const raw = await readFile(filePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (error) {
-    if (fallbackValue !== undefined) {
-      console.warn(`Failed to read ${filePath}, using fallback:`, error.message);
-      return fallbackValue;
-    }
-    throw error;
-  }
-}
-
 export async function createAppData() {
-  let version = null;
-  try {
-    const stats = await stat(SUMMARY_FILE);
-    version = Math.trunc(stats.mtimeMs);
-  } catch (error) {
-    console.warn('Unable to stat tickets summary file:', error.message);
-  }
-
-  if (cachedSnapshot && version !== null && cachedSnapshot.version === version) {
-    return cachedSnapshot.payload;
-  }
-
-  const [summary, streetStats, neighbourhoodStats] = await Promise.all([
-    readJson(SUMMARY_FILE, { featureCount: 0, ticketCount: 0, totalRevenue: 0 }),
-    readJson(STREET_STATS_FILE, {}),
-    readJson(NEIGHBOURHOOD_STATS_FILE, {}),
+  const [
+    summaryResult,
+    streetStatsResult,
+    neighbourhoodStatsResult,
+    redLightSummaryResult,
+    aseSummaryResult,
+    redLightWardSummaryResult,
+    aseWardSummaryResult,
+    combinedWardSummaryResult,
+  ] = await Promise.all([
+    loadTicketsSummary(),
+    loadStreetStats(),
+    loadNeighbourhoodStats(),
+    loadDatasetSummary('red_light_locations'),
+    loadDatasetSummary('ase_locations'),
+    loadCameraWardSummary('red_light_locations'),
+    loadCameraWardSummary('ase_locations'),
+    loadCameraWardSummary('cameras_combined'),
   ]);
+
+  const [parkingLiveTotals, redLiveTotals, aseLiveTotals] = await Promise.all([
+    getDatasetTotals('parking_tickets').catch(() => null),
+    getDatasetTotals('red_light_locations').catch(() => null),
+    getDatasetTotals('ase_locations').catch(() => null),
+  ]);
+
+  const versionComponents = [
+    summaryResult?.version ?? null,
+    streetStatsResult?.version ?? null,
+    neighbourhoodStatsResult?.version ?? null,
+    redLightSummaryResult?.version ?? null,
+    aseSummaryResult?.version ?? null,
+    redLightWardSummaryResult?.version ?? null,
+    aseWardSummaryResult?.version ?? null,
+    combinedWardSummaryResult?.version ?? null,
+  ];
+
+  const summary = summaryResult?.data || { featureCount: 0, ticketCount: 0, totalRevenue: 0 };
+  const streetStats = streetStatsResult?.data || {};
+  const neighbourhoodStats = neighbourhoodStatsResult?.data || {};
 
   const totals = {
     featureCount: Number(summary.featureCount) || 0,
@@ -58,27 +64,21 @@ export async function createAppData() {
     totalRevenue: Number(summary.totalRevenue) || 0,
   };
 
-  const streetMap = new Map();
-  for (const [location, stats] of Object.entries(streetStats)) {
-    const streetKey = normalizeStreetName(location);
-    const neighbourhoodSet = new Set();
-    if (Array.isArray(stats.neighbourhoods)) {
-      for (const value of stats.neighbourhoods) {
-        if (value && value !== 'Unknown') {
-          neighbourhoodSet.add(value);
-        }
-      }
-    } else if (stats.neighbourhood && stats.neighbourhood !== 'Unknown') {
-      neighbourhoodSet.add(stats.neighbourhood);
-    }
-    streetMap.set(streetKey, {
-      name: streetKey,
-      ticketCount: Number(stats.ticketCount) || 0,
-      totalRevenue: Number(stats.totalRevenue) || 0,
-      sampleLocation: location,
-      neighbourhoods: neighbourhoodSet,
-    });
-  }
+  const streetEntries = Object.entries(streetStats).map(([name, stats]) => {
+    const ticketCount = Number(stats.ticketCount) || 0;
+    const totalRevenue = Number(stats.totalRevenue ?? stats.totalFines ?? 0) || 0;
+    const neighbourhoods = Array.isArray(stats.neighbourhoods)
+      ? stats.neighbourhoods.filter((value) => value && value !== 'Unknown')
+      : [];
+    return {
+      name,
+      ticketCount,
+      totalRevenue,
+      neighbourhoods,
+      sampleLocation: stats.sampleLocation || name,
+      topInfraction: stats.topInfraction || null,
+    };
+  });
 
   const neighbourhoodMap = new Map();
   for (const [name, stats] of Object.entries(neighbourhoodStats)) {
@@ -89,13 +89,13 @@ export async function createAppData() {
     });
   }
 
-  const topStreets = mapToSerializableList(streetMap, (entry) => ({
-    name: entry.name,
-    ticketCount: entry.ticketCount,
-    totalRevenue: Number(entry.totalRevenue.toFixed(2)),
-    neighbourhoods: Array.from(entry.neighbourhoods),
-    sampleLocation: entry.sampleLocation,
-  })).slice(0, 10);
+  const topStreets = streetEntries
+    .sort((a, b) => (b.totalRevenue || 0) - (a.totalRevenue || 0))
+    .slice(0, 10)
+    .map((entry) => ({
+      ...entry,
+      totalRevenue: Number(entry.totalRevenue.toFixed(2)),
+    }));
 
   const topNeighbourhoods = mapToSerializableList(
     neighbourhoodMap,
@@ -109,20 +109,203 @@ export async function createAppData() {
     .filter((entry) => entry.name && entry.name !== 'Unknown')
     .slice(0, 10);
 
+  const normalizeTotals = (source) => {
+    if (!source) {
+      return null;
+    }
+    const locationCount = Number(source.locationCount ?? source.featureCount ?? 0) || 0;
+    const ticketCount = Number(source.ticketCount ?? source.featureCount ?? 0) || 0;
+    const totalRevenue = Number(Number(source.totalRevenue ?? 0).toFixed(2));
+    return { locationCount, ticketCount, totalRevenue };
+  };
+
+  const parkingCurrentTotals = parkingLiveTotals
+    ? {
+        featureCount: Number(parkingLiveTotals.featureCount ?? parkingLiveTotals.ticketCount ?? 0),
+        ticketCount: Number(parkingLiveTotals.ticketCount ?? parkingLiveTotals.featureCount ?? 0),
+        totalRevenue: Number(Number(parkingLiveTotals.totalRevenue ?? 0).toFixed(2)),
+      }
+    : {
+        featureCount: totals.featureCount,
+        ticketCount: totals.ticketCount,
+        totalRevenue: Number(totals.totalRevenue.toFixed(2)),
+      };
+
+  const parkingLegacyTotals = {
+    featureCount: totals.featureCount,
+    ticketCount: totals.ticketCount,
+    totalRevenue: Number(Number(totals.totalRevenue ?? 0).toFixed(2)),
+  };
+
+  const datasets = {
+    parking_tickets: {
+      totals: parkingCurrentTotals,
+      summary,
+      topStreets,
+      topNeighbourhoods,
+      sources: {
+        summary: summaryResult?.source || 'unknown',
+        streetStats: streetStatsResult?.source || 'unknown',
+        neighbourhoodStats: neighbourhoodStatsResult?.source || 'unknown',
+      },
+    },
+  };
+
+  datasets.parking_tickets.legacyTotals = parkingLegacyTotals;
+
+  if (redLightSummaryResult?.data) {
+    const redSummary = redLightSummaryResult.data;
+    const redTotals = redSummary?.totals || {};
+    const redLegacyTotals = {
+      locationCount: Number(redTotals.locationCount) || 0,
+      ticketCount: Number(redTotals.ticketCount) || 0,
+      totalRevenue: Number(Number(redTotals.totalRevenue ?? 0).toFixed(2)),
+    };
+    const redLive = redLiveTotals
+      ? {
+          locationCount: Number(redLiveTotals.locationCount ?? redLiveTotals.featureCount ?? 0) || 0,
+          ticketCount: Number(redLiveTotals.ticketCount) || 0,
+          totalRevenue: Number(Number(redLiveTotals.totalRevenue ?? 0).toFixed(2)),
+        }
+      : null;
+    const redRevenue = Number((redLive?.totalRevenue ?? redLegacyTotals.totalRevenue) || 0);
+    datasets.red_light_locations = {
+      totals: {
+        locationCount: redLive?.locationCount ?? redLegacyTotals.locationCount,
+        ticketCount: redLive?.ticketCount ?? redLegacyTotals.ticketCount,
+        totalRevenue: Number(redRevenue.toFixed(2)),
+      },
+      summary: redSummary,
+      topLocations: Array.isArray(redSummary.topLocations)
+        ? redSummary.topLocations.slice(0, 10)
+        : [],
+      topGroups: redSummary.topGroups || {},
+      locationsById: redSummary.locationsById || {},
+      sources: {
+        summary: redLightSummaryResult.source || 'unknown',
+      },
+    };
+    datasets.red_light_locations.legacyTotals = redLegacyTotals;
+    if (redLightWardSummaryResult?.data) {
+      datasets.red_light_locations.wardSummary = redLightWardSummaryResult.data;
+      datasets.red_light_locations.sources.wardSummary = redLightWardSummaryResult.source || 'unknown';
+    }
+  }
+
+  if (aseSummaryResult?.data) {
+    const aseSummary = aseSummaryResult.data;
+    const aseTotals = aseSummary?.totals || {};
+    const aseLegacyTotals = {
+      locationCount: Number(aseTotals.locationCount) || 0,
+      ticketCount: Number(aseTotals.ticketCount) || 0,
+      totalRevenue: Number(Number(aseTotals.totalRevenue ?? 0).toFixed(2)),
+    };
+    const aseWardTotals = normalizeTotals(aseWardSummaryResult?.data?.totals || null);
+    const aseLive = normalizeTotals(aseLiveTotals);
+    const aseDisplayTotals = aseLive && aseLive.ticketCount > 0
+      ? aseLive
+      : aseWardTotals && aseWardTotals.ticketCount > 0
+        ? aseWardTotals
+        : aseLegacyTotals;
+    datasets.ase_locations = {
+      totals: {
+        locationCount: aseDisplayTotals.locationCount,
+        ticketCount: aseDisplayTotals.ticketCount,
+        totalRevenue: aseDisplayTotals.totalRevenue,
+      },
+      summary: aseSummary,
+      topLocations: Array.isArray(aseSummary.topLocations)
+        ? aseSummary.topLocations.slice(0, 10)
+        : [],
+      topGroups: aseSummary.topGroups || {},
+      statusBreakdown: Array.isArray(aseSummary.statusBreakdown) ? aseSummary.statusBreakdown : [],
+      locationsById: aseSummary.locationsById || {},
+      sources: {
+        summary: aseSummaryResult.source || 'unknown',
+      },
+    };
+    datasets.ase_locations.legacyTotals = aseLegacyTotals;
+    if (aseWardSummaryResult?.data) {
+      datasets.ase_locations.wardSummary = aseWardSummaryResult.data;
+      datasets.ase_locations.sources.wardSummary = aseWardSummaryResult.source || 'unknown';
+    }
+  }
+
+  if (combinedWardSummaryResult?.data) {
+    const combinedSummary = combinedWardSummaryResult.data;
+    const combinedTotals = combinedSummary?.totals || {};
+    const combinedRevenue = Number(combinedTotals.totalRevenue ?? 0);
+    datasets.cameras_combined = {
+      totals: {
+        ticketCount: Number(combinedTotals.ticketCount) || 0,
+        locationCount: Number(combinedTotals.locationCount) || 0,
+        totalRevenue: Number(combinedRevenue.toFixed(2)),
+      },
+      wardSummary: combinedSummary,
+      sources: {
+        wardSummary: combinedWardSummaryResult.source || 'unknown',
+      },
+      breakdown: {
+        ase: {
+          ticketCount: Number(datasets.ase_locations?.totals?.ticketCount) || 0,
+          locationCount: Number(datasets.ase_locations?.totals?.locationCount) || 0,
+          totalRevenue: Number(datasets.ase_locations?.totals?.totalRevenue) || 0,
+        },
+        redLight: {
+          ticketCount: Number(datasets.red_light_locations?.totals?.ticketCount) || 0,
+          locationCount: Number(datasets.red_light_locations?.totals?.locationCount) || 0,
+          totalRevenue: Number(datasets.red_light_locations?.totals?.totalRevenue) || 0,
+        },
+      },
+    };
+  }
+
+  const [parkingYears, redLightYears, aseYears] = await Promise.all([
+    getDatasetYears('parking_tickets').catch(() => []),
+    getDatasetYears('red_light_locations').catch(() => []),
+    getDatasetYears('ase_locations').catch(() => []),
+  ]);
+
+  versionComponents.push(
+    Array.isArray(parkingYears) ? `parking:${parkingYears.join(',')}` : 'parking:null',
+    Array.isArray(redLightYears) ? `red:${redLightYears.join(',')}` : 'red:null',
+    Array.isArray(aseYears) ? `ase:${aseYears.join(',')}` : 'ase:null',
+  );
+
+  const hasVersion = versionComponents.some((value) => value !== null && value !== undefined);
+  const version = hasVersion
+    ? versionComponents.map((value) => (value === null ? 'null' : String(value))).join('|')
+    : null;
+
+  if (cachedSnapshot && version !== null && cachedSnapshot.version === version) {
+    return cachedSnapshot.payload;
+  }
+
   const payload = {
     totals: {
-      ...totals,
-      totalRevenue: Number(totals.totalRevenue.toFixed(2)),
+      featureCount: parkingCurrentTotals.featureCount,
+      ticketCount: parkingCurrentTotals.ticketCount,
+      totalRevenue: parkingCurrentTotals.totalRevenue,
     },
     topStreets,
     topNeighbourhoods,
+    datasets,
     generatedAt: new Date().toISOString(),
+    yearlyMeta: {
+      parking_tickets: parkingYears,
+      red_light_locations: redLightYears,
+      ase_locations: aseYears,
+    },
   };
 
-  cachedSnapshot = {
-    version,
-    payload,
-  };
+  if (version !== null) {
+    cachedSnapshot = {
+      version,
+      payload,
+    };
+  } else {
+    cachedSnapshot = null;
+  }
 
   return payload;
 }

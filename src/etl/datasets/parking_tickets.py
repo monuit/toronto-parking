@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import os
 import sys
@@ -21,6 +22,7 @@ from ..utils import sha1sum
 from .base import DatasetETL, ExtractionResult
 
 STAGING_COLUMNS = (
+    "ticket_hash",
     "ticket_number",
     "date_of_infraction",
     "time_of_infraction",
@@ -38,6 +40,34 @@ STAGING_COLUMNS = (
 )
 
 _GEOCODE_MISS = object()
+
+
+def build_ticket_hash(
+    ticket_number: Optional[str],
+    parsed_date: Optional[str],
+    time_value: Optional[str],
+    infraction_code: Optional[str],
+    infraction_description: Optional[str],
+    set_fine: Optional[str],
+    location1: Optional[str],
+    location2: Optional[str],
+    location3: Optional[str],
+    location4: Optional[str],
+) -> str:
+    components = (
+        ticket_number or "",
+        parsed_date or "",
+        time_value or "",
+        infraction_code or "",
+        infraction_description or "",
+        set_fine or "",
+        location1 or "",
+        location2 or "",
+        location3 or "",
+        location4 or "",
+    )
+    raw = "|".join(components)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
 def _safe_decimal(value: Any) -> Optional[str]:
@@ -281,18 +311,40 @@ class ParkingTicketsETL(DatasetETL):
         geocode_result = self._geocode_record(record)
 
         set_fine = _safe_decimal(record.get("set_fine_amount") or record.get("setfineamount"))
+        infraction_code = record.get("infraction_code") or record.get("infractioncode")
+        infraction_description = (
+            record.get("infraction_description") or record.get("infractiondescription")
+        )
+        location1 = record.get("location1")
+        location2 = record.get("location2")
+        location3 = record.get("location3")
+        location4 = record.get("location4")
 
-        return (
+        ticket_hash = build_ticket_hash(
             ticket_number,
             parsed_date,
             time_value,
-            record.get("infraction_code") or record.get("infractioncode"),
-            record.get("infraction_description") or record.get("infractiondescription"),
+            infraction_code,
+            infraction_description,
             set_fine,
-            record.get("location1"),
-            record.get("location2"),
-            record.get("location3"),
-            record.get("location4"),
+            location1,
+            location2,
+            location3,
+            location4,
+        )
+
+        return (
+            ticket_hash,
+            ticket_number,
+            parsed_date,
+            time_value,
+            infraction_code,
+            infraction_description,
+            set_fine,
+            location1,
+            location2,
+            location3,
+            location4,
             geocode_result.street_normalized if geocode_result else None,
             geocode_result.centreline_id if geocode_result else None,
             geocode_result.latitude if geocode_result else None,
@@ -360,7 +412,8 @@ class ParkingTicketsETL(DatasetETL):
         self.pg.execute(
             """
             CREATE TABLE IF NOT EXISTS parking_tickets (
-                ticket_number TEXT PRIMARY KEY,
+                ticket_hash TEXT PRIMARY KEY,
+                ticket_number TEXT,
                 date_of_infraction DATE,
                 time_of_infraction TEXT,
                 infraction_code TEXT,
@@ -381,6 +434,7 @@ class ParkingTicketsETL(DatasetETL):
         self.pg.execute(
             """
             CREATE TABLE IF NOT EXISTS parking_tickets_staging (
+                ticket_hash TEXT,
                 ticket_number TEXT,
                 date_of_infraction TEXT,
                 time_of_infraction TEXT,
@@ -398,6 +452,71 @@ class ParkingTicketsETL(DatasetETL):
             )
             """
         )
+        self.pg.execute(
+            """
+            ALTER TABLE parking_tickets
+            ADD COLUMN IF NOT EXISTS ticket_hash TEXT
+            """
+        )
+        self.pg.execute(
+            """
+            ALTER TABLE parking_tickets_staging
+            ADD COLUMN IF NOT EXISTS ticket_hash TEXT
+            """
+        )
+        self.pg.execute(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.table_constraints
+                    WHERE table_schema = 'public'
+                      AND table_name = 'parking_tickets'
+                      AND constraint_type = 'PRIMARY KEY'
+                ) THEN
+                    EXECUTE 'ALTER TABLE parking_tickets DROP CONSTRAINT parking_tickets_pkey';
+                END IF;
+            END
+            $$
+            """
+        )
+        self.pg.execute(
+            """
+            UPDATE parking_tickets
+            SET ticket_hash = md5(
+                COALESCE(ticket_number, '') || '|' ||
+                COALESCE(date_of_infraction::TEXT, '') || '|' ||
+                COALESCE(time_of_infraction, '') || '|' ||
+                COALESCE(infraction_code, '') || '|' ||
+                COALESCE(infraction_description, '') || '|' ||
+                COALESCE(set_fine_amount::TEXT, '') || '|' ||
+                COALESCE(location1, '') || '|' ||
+                COALESCE(location2, '') || '|' ||
+                COALESCE(location3, '') || '|' ||
+                COALESCE(location4, '')
+            )
+            WHERE ticket_hash IS NULL
+            """
+        )
+        self.pg.execute("ALTER TABLE parking_tickets ALTER COLUMN ticket_hash SET NOT NULL")
+        self.pg.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.table_constraints
+                    WHERE table_schema = 'public'
+                      AND table_name = 'parking_tickets'
+                      AND constraint_type = 'PRIMARY KEY'
+                ) THEN
+                    EXECUTE 'ALTER TABLE parking_tickets ADD CONSTRAINT parking_tickets_pkey PRIMARY KEY (ticket_hash)';
+                END IF;
+            END
+            $$
+            """
+        )
 
     def _load_rows(self, rows: Iterable[Tuple[Any, ...]]) -> None:
         rows_list = list(rows)
@@ -408,6 +527,7 @@ class ParkingTicketsETL(DatasetETL):
         self.pg.execute(
             """
             INSERT INTO parking_tickets AS target (
+                ticket_hash,
                 ticket_number,
                 date_of_infraction,
                 time_of_infraction,
@@ -422,7 +542,8 @@ class ParkingTicketsETL(DatasetETL):
                 centreline_id,
                 geom
             )
-            SELECT DISTINCT ON (ticket_number)
+            SELECT DISTINCT ON (ticket_hash)
+                ticket_hash,
                 ticket_number,
                 NULLIF(date_of_infraction, '')::DATE,
                 time_of_infraction,
@@ -440,8 +561,9 @@ class ParkingTicketsETL(DatasetETL):
                     ELSE ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
                 END
             FROM parking_tickets_staging
-            ORDER BY ticket_number, NULLIF(date_of_infraction, '')::DATE DESC, time_of_infraction DESC
-            ON CONFLICT (ticket_number) DO UPDATE SET
+            ORDER BY ticket_hash, NULLIF(date_of_infraction, '')::DATE DESC, time_of_infraction DESC
+            ON CONFLICT (ticket_hash) DO UPDATE SET
+                ticket_number = EXCLUDED.ticket_number,
                 date_of_infraction = EXCLUDED.date_of_infraction,
                 time_of_infraction = EXCLUDED.time_of_infraction,
                 infraction_code = EXCLUDED.infraction_code,
@@ -451,8 +573,8 @@ class ParkingTicketsETL(DatasetETL):
                 location2 = EXCLUDED.location2,
                 location3 = EXCLUDED.location3,
                 location4 = EXCLUDED.location4,
-                street_normalized = EXCLUDED.street_normalized,
-                centreline_id = EXCLUDED.centreline_id,
+                street_normalized = COALESCE(EXCLUDED.street_normalized, target.street_normalized),
+                centreline_id = COALESCE(EXCLUDED.centreline_id, target.centreline_id),
                 geom = COALESCE(EXCLUDED.geom, target.geom),
                 updated_at = NOW()
             """

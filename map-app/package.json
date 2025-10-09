@@ -4,16 +4,17 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:ssr": "node server/index.js",
-    "build": "vite build",
-    "build:ssr": "vite build && vite build --ssr src/entry-server.jsx --outDir dist/server",
-    "start": "NODE_ENV=production node --max-old-space-size=8192 server/index.js",
+    "dev": "node scripts/run-with-heap.mjs node_modules/vite/bin/vite.js",
+    "dev:ssr": "node scripts/run-with-heap.mjs server/index.js",
+    "build": "node scripts/run-with-heap.mjs node_modules/vite/bin/vite.js build",
+    "build:ssr": "node scripts/run-with-heap.mjs node_modules/vite/bin/vite.js build && node scripts/run-with-heap.mjs node_modules/vite/bin/vite.js build --ssr src/entry-server.jsx --outDir dist/server",
+    "start": "cross-env NODE_ENV=production node scripts/run-with-heap.mjs server/index.js",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "serve:ssr": "cross-env NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 node server/index.js",
-    "smoke:overlay": "node scripts/run-overlay-smoke-test.mjs",
-    "cache:tickets": "node scripts/pushTicketsToRedis.mjs"
+    "preview": "node scripts/run-with-heap.mjs node_modules/vite/bin/vite.js preview",
+    "serve:ssr": "cross-env NODE_ENV=production node scripts/run-with-heap.mjs server/index.js",
+    "smoke:overlay": "node scripts/run-with-heap.mjs scripts/run-overlay-smoke-test.mjs",
+    "cache:tickets": "node scripts/run-with-heap.mjs scripts/pushTicketsToRedis.mjs",
+    "build:ward-tiles": "node scripts/run-with-heap.mjs scripts/build-ward-tiles.mjs"
   },
   "dependencies": {
     "@turf/boolean-point-in-polygon": "^7.0.0",
