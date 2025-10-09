@@ -183,6 +183,52 @@ body, html {
 .dataset-toggle-floating .dataset-toggle {
   pointer-events: auto;
 }
+.dataset-toggle-floating__secondary {
+  pointer-events: auto;
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+  filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.22));
+}
+
+.dataset-toggle-floating__secondary .ward-mode-toggle {
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.dataset-toggle-floating__secondary .ward-mode-toggle .toggle-group {
+  background: transparent;
+  border: none;
+  gap: 4px;
+}
+
+.dataset-toggle-floating__secondary .ward-mode-toggle .toggle-group button {
+  background: transparent;
+  color: #1c1c1e;
+  padding: 6px 14px;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.dataset-toggle-floating__secondary .ward-mode-toggle .toggle-group button.active {
+  background: rgba(10, 132, 255, 0.12);
+  color: #0a84ff;
+  transform: translateY(-1px);
+}
+
+.dataset-toggle-floating__secondary .ward-mode-toggle .toggle-group button:hover:not(.active) {
+  background: rgba(28, 28, 30, 0.08);
+}
+
+.dataset-toggle-floating__secondary .ward-mode-toggle .ward-dataset-group {
+  background: rgba(249, 250, 251, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
 
 @media (max-width: 1024px) {
   .insights-overlay {

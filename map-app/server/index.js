@@ -7,7 +7,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { createAppData } from './createAppData.js';
-import { createTileService } from './tileService.js';
+import { createTileService, getWardTile, prewarmWardTiles } from './tileService.js';
 import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
 import { getDatasetTotals } from './datasetTotalsService.js';
 import { wakeRemoteServices } from './wakeRemoteServices.js';
@@ -15,7 +15,23 @@ import {
   loadStreetStats,
   loadTicketsSummary,
   loadNeighbourhoodStats,
+  loadDatasetSummary,
+  loadCameraGlow,
+  loadCameraLocations,
+  loadCameraWardGeojson,
+  loadCameraWardSummary,
 } from './ticketsDataStore.js';
+import {
+  getDatasetYears,
+  getParkingTotals,
+  getParkingTopStreets,
+  getParkingTopNeighbourhoods,
+  getParkingLocationDetail,
+  getCameraTotals,
+  getCameraTopLocations,
+  getCameraLocationDetail,
+  getCameraTopGroups,
+} from './yearlyMetricsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,14 +58,73 @@ function resolveDataDirectory(isProduction) {
   return candidates[candidates.length - 1];
 }
 
+function resolveStylePath(isProduction) {
+  if (process.env.MAP_STYLE_PATH) {
+    return process.env.MAP_STYLE_PATH;
+  }
+
+  const candidates = [];
+  if (isProduction) {
+    candidates.push(resolve('dist/client/styles/basic-style.json'));
+  }
+  candidates.push(resolve('public/styles/basic-style.json'));
+
+  for (const filePath of candidates) {
+    if (existsSync(filePath)) {
+      return filePath;
+    }
+  }
+
+  return candidates[candidates.length - 1];
+}
+
 // Set data directory for bundled server modules
 const isProd = process.env.NODE_ENV === 'production';
 const dataDir = resolveDataDirectory(isProd);
+const stylePath = resolveStylePath(isProd);
 if (!process.env.DATA_DIR) {
   process.env.DATA_DIR = dataDir;
 }
 if (isProd && !dataDir.includes('dist/client/data')) {
   console.warn(`Using fallback data directory: ${dataDir}`);
+}
+
+const styleCache = {
+  key: null,
+  mtime: null,
+  body: null,
+};
+let loggedMissingMapKey = false;
+const WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
+
+async function loadBaseStyle() {
+  const key = process.env.MAPLIBRE_API_KEY || process.env.MAPTILER_API_KEY || '';
+  if (!key && !loggedMissingMapKey) {
+    console.warn('MAPLIBRE_API_KEY not set; serving MapTiler style with placeholder key.');
+    loggedMissingMapKey = true;
+  }
+
+  let fileStats = null;
+  try {
+    fileStats = await fs.stat(stylePath);
+  } catch (error) {
+    throw new Error(`Base style file not found at ${stylePath}: ${error.message}`);
+  }
+
+  const mtimeMs = fileStats ? fileStats.mtimeMs : null;
+  if (!styleCache.body || styleCache.key !== key || styleCache.mtime !== mtimeMs) {
+    let raw = await fs.readFile(stylePath, 'utf-8');
+    if (key) {
+      raw = raw
+        .replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, key)
+        .replace(/\{\{MAPLIBRE_API_KEY\}\}/g, key);
+    }
+    styleCache.body = raw;
+    styleCache.key = key;
+    styleCache.mtime = mtimeMs;
+  }
+
+  return styleCache.body;
 }
 
 // Merge split GeoJSON chunks at startup
@@ -64,13 +139,35 @@ await mergeGeoJSONChunks();
 const tileService = createTileService();
 
 function registerTileRoutes(app) {
+  app.get('/styles/basic-style.json', async (req, res) => {
+    try {
+      const style = await loadBaseStyle();
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.send(style);
+    } catch (error) {
+      console.error('Failed to load base style', error);
+      res.status(500).json({ error: 'Failed to load base map style' });
+    }
+  });
+
   app.get('/tiles/:z/:x/:y.pbf', async (req, res) => {
     const z = Number.parseInt(req.params.z, 10);
     const x = Number.parseInt(req.params.x, 10);
     const y = Number.parseInt(req.params.y, 10);
+    const dataset = typeof req.query.dataset === 'string' && req.query.dataset.trim().length > 0
+      ? req.query.dataset.trim()
+      : 'parking_tickets';
 
     if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y)) {
       res.status(400).json({ error: 'Invalid tile coordinates' });
+      return;
+    }
+
+    if (dataset !== 'parking_tickets') {
+      // Camera datasets are delivered via static GeoJSON sources on the client.
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      res.status(204).end();
       return;
     }
 
@@ -80,7 +177,7 @@ function registerTileRoutes(app) {
         res.status(204).end();
         return;
       }
-      res.setHeader('Content-Type', 'application/x-protobuf');
+      res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
       res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
       res.end(tile);
     } catch (error) {
@@ -129,7 +226,270 @@ function registerTileRoutes(app) {
     }
   });
 
+  app.get('/tiles/wards/:dataset/:z/:x/:y.pbf', async (req, res) => {
+    const { dataset } = req.params;
+    const z = Number.parseInt(req.params.z, 10);
+    const x = Number.parseInt(req.params.x, 10);
+    const y = Number.parseInt(req.params.y, 10);
+
+    if (!WARD_DATASETS.has(dataset)) {
+      res.status(400).json({ error: 'Invalid ward dataset' });
+      return;
+    }
+    if (![z, x, y].every(Number.isInteger)) {
+      res.status(400).json({ error: 'Invalid tile coordinates' });
+      return;
+    }
+
+    try {
+      const tile = await getWardTile(dataset, z, x, y);
+      const etag = tile?.version || null;
+      if (etag && req.headers['if-none-match'] === etag) {
+        res.status(304).end();
+        return;
+      }
+      if (!tile || !tile.buffer) {
+        res.status(204).end();
+        return;
+      }
+      res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
+      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=180');
+      if (etag) {
+        res.setHeader('ETag', etag);
+      }
+      res.end(tile.buffer);
+    } catch (error) {
+      console.error('Failed to serve ward tile', error);
+      res.status(500).json({ error: 'Failed to load ward tile' });
+    }
+  });
+
+  app.get('/api/yearly/years', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'parking_tickets';
+    try {
+      const years = await getDatasetYears(dataset);
+      res.setHeader('Cache-Control', 'public, max-age=600, stale-while-revalidate=120');
+      res.json({ dataset, years });
+    } catch (error) {
+      console.error('Failed to load yearly metadata', error);
+      res.status(500).json({ error: 'Failed to load yearly metadata' });
+    }
+  });
+
+  app.get('/api/yearly/totals', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'parking_tickets';
+    const year = Number.parseInt(req.query.year, 10);
+    const yearValue = Number.isFinite(year) ? year : null;
+    try {
+      if (dataset === 'parking_tickets') {
+        const totals = await getParkingTotals(yearValue);
+        res.json({
+          dataset,
+          year: yearValue,
+          ticketCount: totals.ticketCount,
+          totalRevenue: Number(totals.totalRevenue.toFixed(2)),
+          locationCount: totals.locationCount,
+        });
+        return;
+      }
+      const totals = await getCameraTotals(dataset, yearValue);
+      res.json({
+        dataset,
+        year: yearValue,
+        ticketCount: totals.ticketCount,
+        totalRevenue: Number(totals.totalRevenue.toFixed(2)),
+        locationCount: totals.locationCount,
+      });
+    } catch (error) {
+      console.error('Failed to compute yearly totals', error);
+      res.status(500).json({ error: 'Failed to compute yearly totals' });
+    }
+  });
+
+  app.get('/api/yearly/top-streets', async (req, res) => {
+    const year = Number.parseInt(req.query.year, 10);
+    const limit = Number.isFinite(Number(req.query.limit)) ? Number(req.query.limit) : 10;
+    if (req.query.dataset && req.query.dataset !== 'parking_tickets') {
+      res.status(400).json({ error: 'Dataset must be parking_tickets for top streets' });
+      return;
+    }
+    try {
+      const streets = await getParkingTopStreets(Number.isFinite(year) ? year : null, limit);
+      res.json({ dataset: 'parking_tickets', year: Number.isFinite(year) ? year : null, items: streets });
+    } catch (error) {
+      console.error('Failed to load yearly street rankings', error);
+      res.status(500).json({ error: 'Failed to load yearly street rankings' });
+    }
+  });
+
+  app.get('/api/yearly/top-neighbourhoods', async (req, res) => {
+    const year = Number.parseInt(req.query.year, 10);
+    const limit = Number.isFinite(Number(req.query.limit)) ? Number(req.query.limit) : 10;
+    if (req.query.dataset && req.query.dataset !== 'parking_tickets') {
+      res.status(400).json({ error: 'Dataset must be parking_tickets for neighbourhood rankings' });
+      return;
+    }
+    try {
+      const neighbourhoods = await getParkingTopNeighbourhoods(Number.isFinite(year) ? year : null, limit);
+      res.json({ dataset: 'parking_tickets', year: Number.isFinite(year) ? year : null, items: neighbourhoods });
+    } catch (error) {
+      console.error('Failed to load yearly neighbourhood rankings', error);
+      res.status(500).json({ error: 'Failed to load yearly neighbourhood rankings' });
+    }
+  });
+
+  app.get('/api/yearly/top-locations', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'red_light_locations';
+    const year = Number.parseInt(req.query.year, 10);
+    const limit = Number.isFinite(Number(req.query.limit)) ? Number(req.query.limit) : 10;
+    try {
+      const items = await getCameraTopLocations(dataset, Number.isFinite(year) ? year : null, limit);
+      res.json({ dataset, year: Number.isFinite(year) ? year : null, items });
+    } catch (error) {
+      console.error('Failed to load yearly camera rankings', error);
+      res.status(500).json({ error: 'Failed to load yearly camera rankings' });
+    }
+  });
+
+  app.get('/api/yearly/top-groups', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'red_light_locations';
+    const year = Number.parseInt(req.query.year, 10);
+    const limit = Number.isFinite(Number(req.query.limit)) ? Number(req.query.limit) : 10;
+    try {
+      const items = await getCameraTopGroups(dataset, Number.isFinite(year) ? year : null, limit);
+      res.json({ dataset, year: Number.isFinite(year) ? year : null, items });
+    } catch (error) {
+      console.error('Failed to load yearly group rankings', error);
+      res.status(500).json({ error: 'Failed to load yearly group rankings' });
+    }
+  });
+
+  app.get('/api/yearly/location', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'parking_tickets';
+    const year = Number.parseInt(req.query.year, 10);
+    const yearValue = Number.isFinite(year) ? year : null;
+    try {
+      if (dataset === 'parking_tickets') {
+        const location = typeof req.query.location === 'string' ? req.query.location : null;
+        if (!location) {
+          res.status(400).json({ error: 'location parameter is required for parking dataset' });
+          return;
+        }
+        const detail = await getParkingLocationDetail(location.toUpperCase(), yearValue);
+        if (!detail) {
+          res.status(404).json({ error: 'Location not found' });
+          return;
+        }
+        res.json({ dataset, year: yearValue, detail });
+        return;
+      }
+
+      const code = typeof req.query.location === 'string' ? req.query.location : null;
+      if (!code) {
+        res.status(400).json({ error: 'location parameter is required' });
+        return;
+      }
+      const detail = await getCameraLocationDetail(dataset, code, yearValue);
+      if (!detail) {
+        res.status(404).json({ error: 'Location not found' });
+        return;
+      }
+      res.json({ dataset, year: yearValue, detail });
+    } catch (error) {
+      console.error('Failed to load location detail', error);
+      res.status(500).json({ error: 'Failed to load location detail' });
+    }
+  });
+
+  app.get('/api/wards/summary', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'red_light_locations';
+    if (!WARD_DATASETS.has(dataset)) {
+      res.status(400).json({ error: 'Dataset must be red_light_locations, ase_locations, or cameras_combined' });
+      return;
+    }
+    try {
+      const summary = await loadCameraWardSummary(dataset);
+      if (!summary) {
+        res.status(503).json({ error: 'Ward summary unavailable' });
+        return;
+      }
+      const etag = summary.etag || (summary.version ? `W/"${summary.version}"` : null);
+      if (etag && req.headers['if-none-match'] === etag) {
+        res.status(304).end();
+        return;
+      }
+      res.setHeader('Cache-Control', 'public, max-age=600, stale-while-revalidate=120');
+      if (etag) {
+        res.setHeader('ETag', etag);
+      }
+      res.json(summary.data);
+    } catch (error) {
+      console.error('Failed to load ward summary', error);
+      res.status(500).json({ error: 'Failed to load ward summary' });
+    }
+  });
+
+  app.get('/api/wards/geojson', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : 'red_light_locations';
+    if (!WARD_DATASETS.has(dataset)) {
+      res.status(400).json({ error: 'Dataset must be red_light_locations, ase_locations, or cameras_combined' });
+      return;
+    }
+    try {
+      const geojson = await loadCameraWardGeojson(dataset);
+      if (!geojson) {
+        res.status(503).json({ error: 'Ward geojson unavailable' });
+        return;
+      }
+      const etag = geojson.etag || (geojson.version ? `W/"${geojson.version}"` : null);
+      if (etag && req.headers['if-none-match'] === etag) {
+        res.status(304).end();
+        return;
+      }
+      res.setHeader('Cache-Control', 'public, max-age=600, stale-while-revalidate=120');
+      if (etag) {
+        res.setHeader('ETag', etag);
+      }
+      let payload;
+      if (typeof geojson.raw === 'string') {
+        payload = geojson.raw;
+      } else if (typeof geojson.data === 'string') {
+        payload = geojson.data;
+      } else if (geojson.data) {
+        payload = JSON.stringify(geojson.data);
+      } else {
+        payload = '{}';
+      }
+      res.type('application/json').send(payload);
+    } catch (error) {
+      console.error('Failed to load ward geojson', error);
+      res.status(500).json({ error: 'Failed to load ward geojson' });
+    }
+  });
+
+  app.post('/api/wards/prewarm', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' ? req.query.dataset : null;
+    if (!dataset || !WARD_DATASETS.has(dataset)) {
+      res.status(400).json({ error: 'Dataset must be red_light_locations, ase_locations, or cameras_combined' });
+      return;
+    }
+    try {
+      await prewarmWardTiles(dataset);
+      res.status(204).end();
+    } catch (error) {
+      console.error('Failed to prewarm ward tiles', error);
+      res.status(500).json({ error: 'Failed to prewarm ward tiles' });
+    }
+  });
+
   app.get('/api/map-summary', async (req, res) => {
+    const dataset = typeof req.query.dataset === 'string' && req.query.dataset.trim().length > 0
+      ? req.query.dataset.trim()
+      : 'parking_tickets';
+    if (dataset !== 'parking_tickets') {
+      res.status(204).end();
+      return;
+    }
     const west = Number(req.query.west);
     const south = Number(req.query.south);
     const east = Number(req.query.east);
@@ -267,6 +627,34 @@ function registerDataRoutes(app, dataDirectory) {
     res.status(503).json({ error: 'Street stats unavailable' });
   });
 
+  app.get('/data/red_light_summary.json', async (req, res) => {
+    try {
+      const summary = await loadDatasetSummary('red_light_locations');
+      if (summary?.data) {
+        res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=120');
+        res.json(summary.data);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load red light summary for /data route:', error.message);
+    }
+    res.status(503).json({ error: 'Red light summary unavailable' });
+  });
+
+  app.get('/data/ase_summary.json', async (req, res) => {
+    try {
+      const summary = await loadDatasetSummary('ase_locations');
+      if (summary?.data) {
+        res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=120');
+        res.json(summary.data);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load ASE summary for /data route:', error.message);
+    }
+    res.status(503).json({ error: 'ASE summary unavailable' });
+  });
+
   app.get('/data/neighbourhood_stats.json', async (req, res) => {
     try {
       const stats = await loadNeighbourhoodStats();
@@ -279,6 +667,62 @@ function registerDataRoutes(app, dataDirectory) {
       console.warn('Failed to load neighbourhood stats for /data route:', error.message);
     }
     res.status(503).json({ error: 'Neighbourhood stats unavailable' });
+  });
+
+  app.get('/data/red_light_glow_lines.geojson', async (req, res) => {
+    try {
+      const glow = await loadCameraGlow('red_light_locations');
+      if (glow?.raw) {
+        res.setHeader('Cache-Control', 'public, max-age=1200, stale-while-revalidate=300');
+        res.type('application/json').send(glow.raw);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load red light glow lines from data store:', error.message);
+    }
+    res.status(404).json({ error: 'Red light glow dataset unavailable' });
+  });
+
+  app.get('/data/ase_glow_lines.geojson', async (req, res) => {
+    try {
+      const glow = await loadCameraGlow('ase_locations');
+      if (glow?.raw) {
+        res.setHeader('Cache-Control', 'public, max-age=1200, stale-while-revalidate=300');
+        res.type('application/json').send(glow.raw);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load ASE glow lines from data store:', error.message);
+    }
+    res.status(404).json({ error: 'ASE glow dataset unavailable' });
+  });
+
+  app.get('/data/red_light_locations.geojson', async (req, res) => {
+    try {
+      const payload = await loadCameraLocations('red_light_locations');
+      if (payload?.raw) {
+        res.setHeader('Cache-Control', 'public, max-age=1200, stale-while-revalidate=300');
+        res.type('application/json').send(payload.raw);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load red light locations from data store:', error.message);
+    }
+    res.status(404).json({ error: 'Red light locations unavailable' });
+  });
+
+  app.get('/data/ase_locations.geojson', async (req, res) => {
+    try {
+      const payload = await loadCameraLocations('ase_locations');
+      if (payload?.raw) {
+        res.setHeader('Cache-Control', 'public, max-age=1200, stale-while-revalidate=300');
+        res.type('application/json').send(payload.raw);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to load ASE locations from data store:', error.message);
+    }
+    res.status(404).json({ error: 'ASE locations unavailable' });
   });
 
   app.get('/data/tickets_glow_lines.geojson', async (req, res) => {

@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 import { formatNumber, formatCurrency } from '../lib/dataTransforms';
 import '../styles/Controls.css';
 
-export function InfoPopup({ data, position, onClose, variant = 'floating' }) {
+export function InfoPopup({ data, position, onClose, variant = 'floating', yearFilter = null }) {
   const popupRef = useRef(null);
 
   useEffect(() => {
@@ -31,13 +31,27 @@ export function InfoPopup({ data, position, onClose, variant = 'floating' }) {
 
   if (!data) return null;
 
-  const floatingStyle = position ? {
-    position: 'fixed',
-    left: `${position.x}px`,
-    top: `${position.y}px`,
-    transform: 'translate(-50%, -50%)',
-    zIndex: 10000
-  } : {};
+  const floatingStyle = position ? (() => {
+    let left = position.x;
+    let top = position.y;
+
+    if (typeof window !== 'undefined') {
+      const minLeft = 80;
+      const maxLeft = window.innerWidth - 80;
+      const minTop = 80;
+      const maxTop = window.innerHeight - 240;
+      left = Math.min(Math.max(left, minLeft), maxLeft);
+      top = Math.min(Math.max(top, minTop), maxTop);
+    }
+
+    return {
+      position: 'fixed',
+      left,
+      top,
+      transform: 'translate(-50%, -50%)',
+      zIndex: 10000,
+    };
+  })() : {};
   const isFloatingVariant = variant === 'floating';
   const style = isFloatingVariant ? floatingStyle : {};
   const isTicketLocation = Boolean(data?.location);
@@ -72,9 +86,14 @@ export function InfoPopup({ data, position, onClose, variant = 'floating' }) {
         ? data.name
         : 'Details';
 
+  const activeYearValue = yearFilter ?? data?.yearFilter ?? null;
+
   const renderTicketStats = () => {
     const years = data?.years ?? [];
     const months = data?.months ?? [];
+    const hasWard = typeof data?.ward === 'string' && data.ward.trim().length > 0;
+    const hasDivision = typeof data?.policeDivision === 'string' && data.policeDivision.trim().length > 0;
+    const hasStatus = typeof data?.status === 'string' && data.status.trim().length > 0;
     return (
       <div className="popup-stats">
         <div className="popup-stat">
@@ -86,6 +105,31 @@ export function InfoPopup({ data, position, onClose, variant = 'floating' }) {
         {data?.top_infraction && (
           <div className="popup-stat">
             <strong>Most Common Infraction:</strong> Code {data.top_infraction}
+          </div>
+        )}
+        {hasStatus && (
+          <div className="popup-stat">
+            <strong>Status:</strong> {data.status}
+          </div>
+        )}
+        {activeYearValue !== null && (
+          <div className="popup-stat">
+            <strong>Year filter:</strong> {activeYearValue}
+          </div>
+        )}
+        {hasWard && (
+          <div className="popup-stat">
+            <strong>Ward:</strong> {data.ward}
+          </div>
+        )}
+        {hasDivision && (
+          <div className="popup-stat">
+            <strong>Police Division:</strong> {data.policeDivision}
+          </div>
+        )}
+        {data?.activationDate && (
+          <div className="popup-stat">
+            <strong>Activation Date:</strong> {data.activationDate}
           </div>
         )}
         {years.length > 0 && (
@@ -124,6 +168,11 @@ export function InfoPopup({ data, position, onClose, variant = 'floating' }) {
             <strong>Total Revenue:</strong> {formatCurrency(summary.totalRevenue)}
           </div>
         )}
+        {activeYearValue !== null && (
+          <div className="popup-stat">
+            <strong>Year filter:</strong> {activeYearValue}
+          </div>
+        )}
         {typeof centrelineCount === 'number' && (
           <div className="popup-stat">
             <strong>Segments tracked:</strong> {formatNumber(centrelineCount)}
@@ -150,9 +199,44 @@ export function InfoPopup({ data, position, onClose, variant = 'floating' }) {
           <strong>Total Tickets:</strong> {formatNumber(data.ticketCount)}
         </div>
       )}
+      {data?.totalRevenue !== undefined && (
+        <div className="popup-stat">
+          <strong>Total Revenue:</strong> {formatCurrency(data.totalRevenue)}
+        </div>
+      )}
+      {data?.dataset === 'cameras_combined' && data?.aseTicketCount !== undefined && (
+        <div className="popup-stat">
+          <strong>ASE Tickets:</strong> {formatNumber(data.aseTicketCount)}
+        </div>
+      )}
+      {data?.dataset === 'cameras_combined' && data?.aseTotalRevenue !== undefined && (
+        <div className="popup-stat">
+          <strong>ASE Fines:</strong> {formatCurrency(data.aseTotalRevenue)}
+        </div>
+      )}
+      {data?.dataset === 'cameras_combined' && data?.redLightTicketCount !== undefined && (
+        <div className="popup-stat">
+          <strong>RLC Tickets:</strong> {formatNumber(data.redLightTicketCount)}
+        </div>
+      )}
+      {data?.dataset === 'cameras_combined' && data?.redLightTotalRevenue !== undefined && (
+        <div className="popup-stat">
+          <strong>RLC Fines:</strong> {formatCurrency(data.redLightTotalRevenue)}
+        </div>
+      )}
+      {data?.locationCount !== undefined && data.locationCount !== null && (
+        <div className="popup-stat">
+          <strong>Locations tracked:</strong> {formatNumber(data.locationCount)}
+        </div>
+      )}
       {data?.totalFines !== undefined && (
         <div className="popup-stat">
           <strong>Total Fines:</strong> {formatCurrency(data.totalFines)}
+        </div>
+      )}
+      {activeYearValue !== null && (
+        <div className="popup-stat">
+          <strong>Year filter:</strong> {activeYearValue}
         </div>
       )}
       {data?.ticketsPerCapita !== undefined && (
@@ -253,7 +337,26 @@ export function InfoPopup({ data, position, onClose, variant = 'floating' }) {
 
   return (
     <div ref={popupRef} className={classNames.join(' ')} style={style}>
-      <button className="close-btn" onClick={onClose}>×</button>
+      <div className="popup-traffic-lights">
+        <button
+          type="button"
+          className="popup-light popup-light--red"
+          aria-label="Close"
+          onClick={onClose}
+        />
+        <button
+          type="button"
+          className="popup-light popup-light--yellow"
+          aria-label="Minimize"
+          disabled
+        />
+        <button
+          type="button"
+          className="popup-light popup-light--green"
+          aria-label="Maximize"
+          disabled
+        />
+      </div>
       <h3>{popupTitle}</h3>
       {statsContent}
       {insights}

@@ -55,14 +55,21 @@ export function getRedisConfig() {
 
 export function getPostgresConfig() {
   const connectionString =
-    process.env.DATABASE_PUBLIC_URL ||
     process.env.DATABASE_URL ||
+    process.env.DATABASE_PUBLIC_URL ||
     process.env.POSTGRES_URL ||
     null;
   if (!connectionString) {
     return { enabled: false, connectionString: null };
   }
-  const enabled = !isLocalDevServer();
+  const forceDisable = process.env.FORCE_LOCAL_DB === '1';
+  const disableInDev = process.env.DISABLE_DB_IN_DEV === '1';
+  let enabled = true;
+  if (forceDisable) {
+    enabled = false;
+  } else if (isLocalDevServer()) {
+    enabled = !disableInDev;
+  }
   const sslRequired =
     process.env.DATABASE_SSL === '1' ||
     process.env.PGSSLMODE === 'require' ||

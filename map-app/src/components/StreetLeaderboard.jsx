@@ -7,12 +7,8 @@ import { formatNumber, formatCurrency } from '../lib/dataTransforms';
 import { useAppData } from '../context/AppDataContext.jsx';
 import '../styles/Leaderboard.css';
 
-export function StreetLeaderboard({ visible = true, initialStreets = [], onStreetSelect }) {
-  const { totals, topStreets = [] } = useAppData();
-  const [streets, setStreets] = useState(() => (topStreets.length > 0 ? topStreets : initialStreets));
-  const [loading, setLoading] = useState(() => (topStreets.length === 0 && initialStreets.length === 0));
-
-  const summaryCopy = useMemo(() => {
+const SUMMARY_COPY = {
+  parking_tickets: (totals) => {
     const totalTickets = totals?.ticketCount ? formatNumber(totals.ticketCount) : null;
     const totalRevenue = totals?.totalRevenue ? formatCurrency(totals.totalRevenue) : null;
 
@@ -26,75 +22,166 @@ export function StreetLeaderboard({ visible = true, initialStreets = [], onStree
       return `Ranking streets by total fines — ${totalRevenue} collected across Toronto.`;
     }
     return 'Ranking streets by total fines issued across Toronto.';
-  }, [totals]);
+  },
+  red_light_locations: (totals) => {
+    const ticketCount = totals?.ticketCount ? formatNumber(totals.ticketCount) : null;
+    const locations = totals?.locationCount ? formatNumber(totals.locationCount) : null;
+    if (ticketCount && locations) {
+      return `Top camera intersections by tickets issued — ${ticketCount} tickets across ${locations} sites.`;
+    }
+    return 'Top red light camera intersections by tickets issued.';
+  },
+  ase_locations: (totals) => {
+    const ticketCount = totals?.ticketCount ? formatNumber(totals.ticketCount) : null;
+    const locations = totals?.locationCount ? formatNumber(totals.locationCount) : null;
+    if (ticketCount && locations) {
+      return `Top ASE camera sites — ${ticketCount} tickets across ${locations} locations.`;
+    }
+    return 'Top automated speed enforcement camera sites by tickets issued.';
+  },
+};
+
+function deriveDatasetItems(dataset, contextEntry, initialItems) {
+  if (dataset === 'parking_tickets') {
+    const contextList = Array.isArray(contextEntry?.topStreets) ? contextEntry.topStreets : [];
+    return contextList.length > 0 ? contextList.slice(0, 10) : initialItems.slice(0, 10);
+  }
+  const contextList = Array.isArray(contextEntry?.topLocations) ? contextEntry.topLocations : [];
+  return contextList.length > 0 ? contextList.slice(0, 10) : initialItems.slice(0, 10);
+}
+
+export function StreetLeaderboard({
+  visible = true,
+  dataset = 'parking_tickets',
+  initialItems = [],
+  onStreetSelect,
+  overrideItems = null,
+  overrideLoading = false,
+  totalsOverride = null,
+}) {
+  const appData = useAppData();
+  const datasetEntry = (appData?.datasets && appData.datasets[dataset]) || null;
+  const totalsValue = appData?.totals || null;
+  const totals = useMemo(
+    () => (
+      (totalsOverride && Object.keys(totalsOverride).length > 0)
+        ? totalsOverride
+        : datasetEntry?.totals || totalsValue || {}
+    ),
+    [datasetEntry, totalsValue, totalsOverride],
+  );
+  const [items, setItems] = useState(() => deriveDatasetItems(dataset, datasetEntry, initialItems));
+  const [loading, setLoading] = useState(() => items.length === 0);
 
   useEffect(() => {
-    if (topStreets.length > 0) {
-      setStreets(topStreets);
+    if (overrideItems !== null) {
       setLoading(false);
-    } else if (initialStreets.length > 0) {
-      setStreets(initialStreets);
+      return;
+    }
+    const resolved = deriveDatasetItems(dataset, datasetEntry, initialItems);
+    if (resolved.length > 0) {
+      setItems(resolved);
       setLoading(false);
     }
-  }, [topStreets, initialStreets]);
+  }, [dataset, datasetEntry, initialItems, overrideItems]);
 
   useEffect(() => {
-    if (topStreets.length > 0 || initialStreets.length > 0) {
+    if (overrideItems !== null) {
+      return;
+    }
+    if (dataset !== 'parking_tickets') {
+      return;
+    }
+    if ((datasetEntry?.topStreets?.length ?? 0) > 0 || initialItems.length > 0) {
       return;
     }
 
     fetch('/data/street_stats.json')
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) {
+          throw new Error('Empty response');
+        }
         const sorted = Object.entries(data)
           .map(([name, stats]) => ({ name, ...stats }))
           .sort((a, b) => b.totalRevenue - a.totalRevenue)
           .slice(0, 10);
-        setStreets(sorted);
+        setItems(sorted);
         setLoading(false);
       })
-      .catch(err => {
-        console.error('Failed to load street stats:', err);
+      .catch((error) => {
+        console.error('Failed to load street stats:', error);
         setLoading(false);
       });
-  }, [topStreets, initialStreets]);
+  }, [dataset, datasetEntry, initialItems, overrideItems]);
 
-  if (!visible) return null;
+  const summaryCopyFactory = SUMMARY_COPY[dataset] || SUMMARY_COPY.parking_tickets;
+  const summaryCopy = useMemo(() => summaryCopyFactory(totals), [summaryCopyFactory, totals]);
+
+  const resolvedItems = overrideItems ?? items;
+  const resolvedLoading = overrideItems !== null
+    ? Boolean(overrideLoading && (overrideItems?.length === 0))
+    : loading;
+
+  if (!visible) {
+    return null;
+  }
+
+  const handleSelect = (item) => {
+    if (typeof onStreetSelect === 'function') {
+      onStreetSelect(item);
+    }
+  };
 
   return (
     <div className="leaderboard street-leaderboard">
       <p className="subtitle">{summaryCopy}</p>
 
-      {loading ? (
+      {resolvedLoading ? (
         <div className="loading">Loading...</div>
       ) : (
         <div className="leaderboard-list">
-          {streets.map((street, index) => (
-            <button
-              key={street.name || street.sampleLocation || street.address || index}
-              type="button"
-              className="leaderboard-item"
-              onClick={() => onStreetSelect?.(street)}
-            >
-              <div className="rank">{index + 1}</div>
-              <div className="details">
-                <div className="name">{street.sampleLocation || street.address || street.name}</div>
-                <div className="stats">
-                  <span className="ticket-count">
-                    {formatNumber(street.ticketCount)} tickets
-                  </span>
-                  <span className="revenue">
-                    {formatCurrency(street.totalRevenue)}
-                  </span>
-                </div>
-                {street.topInfraction && (
-                  <div className="top-infraction">
-                    Most common: Code {parseFloat(street.topInfraction).toString()}
+          {resolvedItems.map((entry, index) => {
+            const name = entry.sampleLocation || entry.address || entry.name;
+            const revenueCandidate = Number(entry.totalRevenue ?? entry.total_revenue ?? 0);
+            const revenue = Number.isFinite(revenueCandidate) && revenueCandidate !== 0
+              ? revenueCandidate
+              : (Number.isFinite(Number(entry.totalRevenue)) ? Number(entry.totalRevenue) : null);
+            const ticketCountValue = Number(entry.ticketCount ?? entry.count ?? 0);
+            const interactive = typeof onStreetSelect === 'function';
+            return (
+              <button
+                key={entry.id || name || index}
+                type="button"
+                className={`leaderboard-item ${interactive ? '' : 'disabled'}`}
+                onClick={() => handleSelect(entry)}
+                disabled={!interactive}
+              >
+                <div className="rank">{index + 1}</div>
+                <div className="details">
+                  <div className="name">{name}</div>
+                  <div className="stats">
+                    <span className="ticket-count">
+                        {formatNumber(ticketCountValue)} tickets
+                    </span>
+                    {revenue !== null ? (
+                      <span className="revenue">{formatCurrency(revenue)}</span>
+                    ) : null}
                   </div>
-                )}
-              </div>
-            </button>
-          ))}
+                  {dataset === 'parking_tickets' && entry.topInfraction ? (
+                    <div className="top-infraction">
+                      Most common: Code {parseFloat(entry.topInfraction).toString()}
+                    </div>
+                  ) : null}
+                  {dataset !== 'parking_tickets' && (entry.ward || entry.status || entry.policeDivision) ? (
+                    <div className="top-infraction">
+                      {[entry.status, entry.ward, entry.policeDivision].filter(Boolean).join(' • ')}
+                    </div>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
