@@ -53,7 +53,7 @@ DATASET_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             ("total_fine_amount", "COALESCE(data.total_fine_amount, 0)"),
             ("years", "COALESCE(data.years, ARRAY[]::INT[])"),
             ("months", "COALESCE(data.months, ARRAY[]::INT[])"),
-            "monthly_counts",
+            "yearly_counts",
         ],
         "date_field": None,
     },

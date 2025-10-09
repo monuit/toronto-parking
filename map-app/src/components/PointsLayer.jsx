@@ -2,7 +2,7 @@
  * PointsLayer - Ticket points with server-driven clustering
  * Single responsibility: render ticket data from vector tiles and handle interactions
  */
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources';
 
@@ -23,6 +23,7 @@ function buildFilterExpression(isCluster, filter) {
 
 const SUMMARY_ZOOM_THRESHOLD = MAP_CONFIG.ZOOM_THRESHOLDS.SUMMARY_MIN;
 const TILE_LAYER_NAME = MAP_CONFIG.SOURCE_LAYERS.TICKETS;
+const RAW_POINT_ZOOM = MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_INDIVIDUAL_TICKETS;
 
 function parsePgArray(raw) {
   if (Array.isArray(raw)) {
@@ -79,12 +80,17 @@ export function PointsLayer({
 }) {
   const summaryAbortRef = useRef(null);
   const summaryTimeoutRef = useRef(null);
+  const [geojsonData, setGeojsonData] = useState(null);
 
-  const clusterFilter = useMemo(() => buildFilterExpression(true, filter), [filter]);
   const pointFilter = useMemo(() => buildFilterExpression(false, filter), [filter]);
 
   const scheduleSummaryFetch = useCallback(() => {
     if (!map || !onViewportSummaryChange) {
+      return;
+    }
+
+    if (dataset !== 'parking_tickets') {
+      onViewportSummaryChange({ zoomRestricted: true, topStreets: [] });
       return;
     }
 
@@ -134,6 +140,11 @@ export function PointsLayer({
 
   useEffect(() => {
     if (!map || !visible || !onViewportSummaryChange) {
+      return undefined;
+    }
+
+    if (dataset !== 'parking_tickets') {
+      onViewportSummaryChange({ zoomRestricted: true, topStreets: [] });
       return undefined;
     }
 
@@ -187,14 +198,32 @@ export function PointsLayer({
       properties.years = parseIntArray(properties.years);
       properties.months = parseIntArray(properties.months);
 
-      const yearlyCounts = parseJsonProperty(properties.yearly_counts);
-      if (yearlyCounts) {
-        properties.yearly_counts = yearlyCounts;
+      const monthlyCounts = parseJsonProperty(properties.monthly_counts ?? properties.monthlyCounts);
+      let yearlyCounts = parseJsonProperty(properties.yearly_counts ?? properties.yearlyCounts);
+
+      if (!yearlyCounts && monthlyCounts && typeof monthlyCounts === 'object') {
+        yearlyCounts = Object.entries(monthlyCounts).reduce((acc, [key, value]) => {
+          if (typeof key !== 'string') {
+            return acc;
+          }
+          const yearKey = key.slice(0, 4);
+          const numericValue = Number(value);
+          if (!Number.isFinite(numericValue) || yearKey.length !== 4) {
+            return acc;
+          }
+          acc[yearKey] = (acc[yearKey] || 0) + numericValue;
+          return acc;
+        }, {});
       }
 
-      const monthlyCounts = parseJsonProperty(properties.monthly_counts);
+      if (yearlyCounts) {
+        properties.yearly_counts = yearlyCounts;
+        properties.yearlyCounts = yearlyCounts;
+      }
+
       if (monthlyCounts) {
-        properties.monthly_counts = monthlyCounts;
+        delete properties.monthly_counts;
+        delete properties.monthlyCounts;
       }
 
       if (!properties.location) {
@@ -207,10 +236,39 @@ export function PointsLayer({
           properties.location = fallback;
         }
       }
-    } else if (properties.set_fine_amount !== undefined) {
-      const normalizedSetFine = toNumeric(properties.set_fine_amount);
-      if (normalizedSetFine !== null) {
-        properties.set_fine_amount = normalizedSetFine;
+    } else {
+      if (properties.set_fine_amount !== undefined) {
+        const normalizedSetFine = toNumeric(properties.set_fine_amount);
+        if (normalizedSetFine !== null) {
+          properties.set_fine_amount = normalizedSetFine;
+        }
+      }
+
+      const yearCounts = parseJsonProperty(properties.year_counts);
+      if (yearCounts) {
+        properties.year_counts = yearCounts;
+        const yearKey = filter?.year ?? null;
+        if (yearKey !== null) {
+          const entry = yearCounts[yearKey] || yearCounts[String(yearKey)];
+          if (entry && typeof entry === 'object') {
+            const entryCount = toNumeric(entry.ticketCount ?? entry.count);
+            if (entryCount !== null) {
+              properties.count = entryCount;
+              properties.ticketCount = entryCount;
+            } else {
+              properties.count = 0;
+              properties.ticketCount = 0;
+            }
+            const entryRevenue = toNumeric(entry.totalRevenue ?? entry.total_revenue);
+            if (entryRevenue !== null) {
+              properties.total_revenue = entryRevenue;
+            }
+          } else {
+            properties.count = 0;
+            properties.ticketCount = 0;
+            properties.total_revenue = 0;
+          }
+        }
       }
     }
 
@@ -225,6 +283,37 @@ export function PointsLayer({
       );
       if (fallbackRevenue !== null) {
         properties.total_revenue = fallbackRevenue;
+      }
+    }
+
+    if (dataset !== 'parking_tickets') {
+      const rawId = properties.location_id
+        ?? properties.locationId
+        ?? properties.location_code
+        ?? properties.locationCode
+        ?? properties.intersection_id
+        ?? properties.intersectionId
+        ?? null;
+      if (rawId !== null && rawId !== undefined) {
+        properties.locationId = String(rawId);
+      }
+      if (typeof properties.location !== 'string' || properties.location.trim().length === 0) {
+        const fallbackLocation = properties.name
+          ?? properties.location_name
+          ?? [properties.streetA, properties.streetB].filter(Boolean).join(' & ');
+        if (fallbackLocation) {
+          properties.location = fallbackLocation;
+        }
+      }
+      if (!Number.isFinite(properties.longitude) || !Number.isFinite(properties.latitude)) {
+        const coords = feature?.geometry?.coordinates;
+        if (Array.isArray(coords) && coords.length >= 2) {
+          properties.longitude = Number(coords[0]);
+          properties.latitude = Number(coords[1]);
+        } else if (event?.lngLat) {
+          properties.longitude = event.lngLat.lng;
+          properties.latitude = event.lngLat.lat;
+        }
       }
     }
 
@@ -255,18 +344,20 @@ export function PointsLayer({
     }
 
     onPointClick?.(properties, event);
-  }, [map, onPointClick, dataset]);
+  }, [map, onPointClick, dataset, filter]);
 
   useEffect(() => {
     if (!map || !visible) {
       return undefined;
     }
 
-    const layerIds = [
-      MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER,
-      MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER_COUNT,
-      MAP_CONFIG.LAYER_IDS.TICKETS_POINTS,
-    ];
+    const layerIds = dataset === 'parking_tickets'
+      ? [
+        MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER,
+        MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER_COUNT,
+        MAP_CONFIG.LAYER_IDS.TICKETS_POINTS,
+      ]
+      : [MAP_CONFIG.LAYER_IDS.TICKETS_POINTS];
 
     const handleMouseEnter = () => {
       map.getCanvas().style.cursor = 'pointer';
@@ -288,65 +379,100 @@ export function PointsLayer({
         map.off('mouseleave', layerId, handleMouseLeave);
       }
     };
-  }, [map, visible, handleFeatureInteraction]);
+  }, [map, visible, handleFeatureInteraction, dataset]);
 
-  const tileUrl = useMemo(() => (
-    MAP_CONFIG.TILE_SOURCE.TICKETS.replace('{dataset}', dataset)
-  ), [dataset]);
-
-  if (!visible) {
-    return null;
-  }
-
-  const clusterLayer = {
-    id: MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER,
-    type: 'circle',
-    source: MAP_CONFIG.SOURCE_IDS.TICKETS,
-    'source-layer': dataset === 'parking_tickets' ? TILE_LAYER_NAME : dataset,
-    minzoom: 0,
-    maxzoom: MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_INDIVIDUAL_TICKETS,
-    paint: {
-      'circle-color': STYLE_CONSTANTS.COLORS.TICKET_CLUSTER,
-      'circle-radius': [
-        'step',
-        ['get', 'point_count'],
-        14,
-        50, 18,
-        250, 24,
-        1000, 30
-      ],
-      'circle-opacity': 0.7,
-      'circle-stroke-color': '#133337',
-      'circle-stroke-width': 1.2
-    },
-  };
-
-  const clusterCountLayer = {
-    id: MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER_COUNT,
-    type: 'symbol',
-    source: MAP_CONFIG.SOURCE_IDS.TICKETS,
-    'source-layer': dataset === 'parking_tickets' ? TILE_LAYER_NAME : dataset,
-    minzoom: 0,
-    maxzoom: MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_INDIVIDUAL_TICKETS,
-    layout: {
-      'text-field': '{point_count_abbreviated}',
-      'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-      'text-size': 12
-    },
-    paint: {
-      'text-color': '#ffffff'
+  const tileUrl = useMemo(() => {
+    const template = MAP_CONFIG.TILE_SOURCE.TICKETS.replace('{dataset}', dataset);
+    if (/^https?:\/\//i.test(template)) {
+      return template;
     }
-  };
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}${template}`;
+    }
+    return template;
+  }, [dataset]);
 
-  const pointLayer = {
-    id: MAP_CONFIG.LAYER_IDS.TICKETS_POINTS,
-    type: 'circle',
-    source: MAP_CONFIG.SOURCE_IDS.TICKETS,
-    'source-layer': dataset === 'parking_tickets' ? TILE_LAYER_NAME : dataset,
-    minzoom: MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_INDIVIDUAL_TICKETS - 0.01,
-    paint: {
-      'circle-color': STYLE_CONSTANTS.COLORS.TICKET_POINT,
-      'circle-radius': [
+  const isParkingDataset = dataset === 'parking_tickets';
+  const geojsonPath = useMemo(() => {
+    if (isParkingDataset) {
+      return null;
+    }
+    if (dataset === 'red_light_locations') {
+      return MAP_CONFIG.DATA_PATHS.RED_LIGHT_LOCATIONS;
+    }
+    if (dataset === 'ase_locations') {
+      return MAP_CONFIG.DATA_PATHS.ASE_LOCATIONS;
+    }
+    return null;
+  }, [dataset, isParkingDataset]);
+
+  useEffect(() => {
+    if (isParkingDataset || !geojsonPath) {
+      setGeojsonData(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    fetch(geojsonPath)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data) {
+          setGeojsonData(data);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load camera locations geojson', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [geojsonPath, isParkingDataset]);
+
+  const datasetStyle = useMemo(() => {
+    if (dataset === 'red_light_locations') {
+      return {
+        pointColor: STYLE_CONSTANTS.COLORS.RED_LIGHT_POINT,
+        strokeColor: STYLE_CONSTANTS.COLORS.RED_LIGHT_STROKE,
+        strokeWidth: 1.6,
+        opacity: 0.95,
+        minZoom: 7.5,
+        radiusExpression: [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          7.5, 6.5,
+          10, 8.5,
+          13, 11.5,
+          16, 14.5
+        ],
+      };
+    }
+    if (dataset === 'ase_locations') {
+      return {
+        pointColor: STYLE_CONSTANTS.COLORS.ASE_POINT,
+        strokeColor: STYLE_CONSTANTS.COLORS.ASE_STROKE,
+        strokeWidth: 1.6,
+        opacity: 0.96,
+        minZoom: 7.5,
+        radiusExpression: [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          7.5, 6,
+          10, 8,
+          13, 11,
+          16, 14
+        ],
+      };
+    }
+    return {
+      pointColor: STYLE_CONSTANTS.COLORS.TICKET_POINT,
+      strokeColor: '#fff',
+      strokeWidth: 1,
+      opacity: 0.85,
+      minZoom: Math.max(RAW_POINT_ZOOM - 1, MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_CLUSTERS + 1),
+      radiusExpression: [
         'interpolate',
         ['linear'],
         ['coalesce', ['get', 'count'], ['get', 'ticketCount'], ['get', 'ticket_count'], 1],
@@ -355,13 +481,31 @@ export function PointsLayer({
         75, 9,
         150, 12
       ],
-      'circle-stroke-width': 1,
-      'circle-stroke-color': '#fff',
-      'circle-opacity': 0.85
+    };
+  }, [dataset]);
+  const pointLayer = {
+    id: MAP_CONFIG.LAYER_IDS.TICKETS_POINTS,
+    type: 'circle',
+    ...(isParkingDataset ? { 'source-layer': TILE_LAYER_NAME } : {}),
+    minzoom: datasetStyle.minZoom,
+    paint: {
+      'circle-color': datasetStyle.pointColor,
+      'circle-radius': datasetStyle.radiusExpression,
+      'circle-stroke-width': datasetStyle.strokeWidth,
+      'circle-stroke-color': datasetStyle.strokeColor,
+      'circle-opacity': datasetStyle.opacity
     }
   };
 
-  return (
+  if (!isParkingDataset && !geojsonData) {
+    return null;
+  }
+
+  if (!visible) {
+    return null;
+  }
+
+  return isParkingDataset ? (
     <Source
       key={dataset}
       id={MAP_CONFIG.SOURCE_IDS.TICKETS}
@@ -370,12 +514,16 @@ export function PointsLayer({
       minzoom={0}
       maxzoom={18}
     >
-      {dataset === 'parking_tickets' ? (
-        <>
-          <Layer {...clusterLayer} filter={clusterFilter} />
-          <Layer {...clusterCountLayer} filter={clusterFilter} />
-        </>
-      ) : null}
+      <Layer {...pointLayer} filter={pointFilter} />
+    </Source>
+  ) : (
+    <Source
+      key={dataset}
+      id={MAP_CONFIG.SOURCE_IDS.TICKETS}
+      type="geojson"
+      data={geojsonData}
+      generateId
+    >
       <Layer {...pointLayer} filter={pointFilter} />
     </Source>
   );

@@ -1,0 +1,10 @@
+{
+  "dataset": "cameras_combined",
+  "generatedAt": "2025-10-09T14:39:25.054Z",
+  "minZoom": 0,
+  "maxZoom": 12,
+  "tileCount": 44,
+  "checksum": "2dc2a8c482cf9370673d2db21d614bea35cef317a18807ed39d8c4841e1e09df",
+  "version": 50314078356175,
+  "etag": "W/\"cameras_combined:ward-tiles:2dc2a8c482cf9370673d2db21d614bea35cef317a18807ed39d8c4841e1e09df\""
+}

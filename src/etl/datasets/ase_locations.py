@@ -16,7 +16,7 @@ from ..utils import iter_csv, sha1sum
 from .base import DatasetETL, ExtractionResult
 
 
-ASE_FINE_ESTIMATE = Decimal(os.getenv("ASE_FINE_AVG", "125"))
+ASE_FINE_ESTIMATE = Decimal(os.getenv("ASE_FINE_AVG", "50"))
 
 
 STAGING_COLUMNS = (
@@ -28,6 +28,7 @@ STAGING_COLUMNS = (
     "total_fine_amount",
     "years",
     "months",
+    "yearly_counts_json",
     "monthly_counts_json",
     "geometry_geojson",
 )
@@ -62,6 +63,7 @@ def _load_charges_summary(path: Path | None) -> Dict[str, Dict[str, Any]]:
             continue
 
         monthly_counts: Dict[str, int] = {}
+        yearly_counts: Dict[str, int] = {}
         years: List[int] = []
         months: List[int] = []
         total_tickets = 0
@@ -80,14 +82,49 @@ def _load_charges_summary(path: Path | None) -> Dict[str, Dict[str, Any]]:
             months.append(column.month)
             total_tickets += ticket_total
 
-        summary[site_code] = {
-            "location": str(row.get("Location*") or row.get("Location") or ""),
-            "ticket_count": total_tickets,
-            "total_fine_amount": (ASE_FINE_ESTIMATE * Decimal(total_tickets)).quantize(Decimal("0.01")),
-            "years": sorted(set(years)),
-            "months": sorted(set(months)),
-            "monthly_counts": monthly_counts,
-        }
+            year_key = f"{column.year:04d}"
+            yearly_counts[year_key] = yearly_counts.get(year_key, 0) + ticket_total
+
+        ward_value = row.get("Ward")
+        ward_name = None
+        if ward_value is not None and not (isinstance(ward_value, float) and pd.isna(ward_value)):
+            ward_name = str(ward_value).strip()
+
+        fine_amount = (ASE_FINE_ESTIMATE * Decimal(total_tickets)).quantize(Decimal("0.01"))
+
+        existing = summary.get(site_code)
+        if existing is None:
+            summary[site_code] = {
+                "location": str(row.get("Location*") or row.get("Location") or ""),
+                "ward": ward_name,
+                "ticket_count": total_tickets,
+                "total_fine_amount": fine_amount,
+                "years": sorted(set(years)),
+                "months": sorted(set(months)),
+                "monthly_counts": dict(monthly_counts),
+                "yearly_counts": dict(yearly_counts),
+            }
+        else:
+            existing["ticket_count"] += total_tickets
+            existing["total_fine_amount"] = (Decimal(existing["total_fine_amount"]) + fine_amount).quantize(Decimal("0.01"))
+            if ward_name and not existing.get("ward"):
+                existing["ward"] = ward_name
+            if existing.get("location") in (None, "") and row.get("Location*"):
+                existing["location"] = str(row.get("Location*"))
+            existing_years = set(existing.get("years", []))
+            existing_months = set(existing.get("months", []))
+            existing_years.update(years)
+            existing_months.update(months)
+            existing["years"] = sorted(existing_years)
+            existing["months"] = sorted(existing_months)
+            merged_counts = existing.get("monthly_counts", {})
+            for key, value in monthly_counts.items():
+                merged_counts[key] = merged_counts.get(key, 0) + value
+            existing["monthly_counts"] = merged_counts
+            merged_yearly = existing.get("yearly_counts", {})
+            for year_key, value in yearly_counts.items():
+                merged_yearly[year_key] = merged_yearly.get(year_key, 0) + value
+            existing["yearly_counts"] = merged_yearly
 
     return summary
 
@@ -178,7 +215,11 @@ class ASELocationsETL(DatasetETL):
             total_fine_amount = metrics.get("total_fine_amount") if metrics else None
             years = metrics.get("years", []) if metrics else []
             months = metrics.get("months", []) if metrics else []
+            yearly_counts = metrics.get("yearly_counts", {}) if metrics else {}
             monthly_counts = metrics.get("monthly_counts", {}) if metrics else {}
+
+            # We only persist yearly aggregates downstream to keep payloads compact.
+            monthly_counts = {}
 
             rows.append(
                 (
@@ -190,6 +231,7 @@ class ASELocationsETL(DatasetETL):
                     str(total_fine_amount) if total_fine_amount is not None else None,
                     _format_pg_array(years),
                     _format_pg_array(months),
+                    json.dumps(yearly_counts) if yearly_counts else None,
                     json.dumps(monthly_counts) if monthly_counts else None,
                     geometry_json,
                 )
@@ -214,6 +256,7 @@ class ASELocationsETL(DatasetETL):
                 total_fine_amount NUMERIC(18, 2),
                 years INTEGER[],
                 months INTEGER[],
+                yearly_counts JSONB,
                 monthly_counts JSONB,
                 geom geometry(POINT, 4326)
             )
@@ -226,6 +269,7 @@ class ASELocationsETL(DatasetETL):
                 ADD COLUMN IF NOT EXISTS total_fine_amount NUMERIC(18, 2),
                 ADD COLUMN IF NOT EXISTS years INTEGER[],
                 ADD COLUMN IF NOT EXISTS months INTEGER[],
+                ADD COLUMN IF NOT EXISTS yearly_counts JSONB,
                 ADD COLUMN IF NOT EXISTS monthly_counts JSONB
             """
         )
@@ -241,6 +285,7 @@ class ASELocationsETL(DatasetETL):
                 total_fine_amount TEXT,
                 years TEXT,
                 months TEXT,
+                yearly_counts_json TEXT,
                 monthly_counts_json TEXT,
                 geometry_geojson TEXT
             )
@@ -259,6 +304,7 @@ class ASELocationsETL(DatasetETL):
                 total_fine_amount,
                 years,
                 months,
+                yearly_counts,
                 monthly_counts,
                 geom
             )
@@ -277,6 +323,7 @@ class ASELocationsETL(DatasetETL):
                     WHEN months IS NULL OR months = '' THEN NULL
                     ELSE months::INT[]
                 END,
+                NULLIF(yearly_counts_json, '')::JSONB,
                 NULLIF(monthly_counts_json, '')::JSONB,
                 CASE
                     WHEN geometry_geojson IS NULL OR geometry_geojson = '' THEN NULL
@@ -292,6 +339,7 @@ class ASELocationsETL(DatasetETL):
                 total_fine_amount = EXCLUDED.total_fine_amount,
                 years = EXCLUDED.years,
                 months = EXCLUDED.months,
+                yearly_counts = EXCLUDED.yearly_counts,
                 monthly_counts = EXCLUDED.monthly_counts,
                 geom = EXCLUDED.geom
             """

@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { Pool } from 'pg';
 import { getPostgresConfig } from './runtimeConfig.js';
-import { loadTicketsSummary } from './ticketsDataStore.js';
+import { loadTicketsSummary, loadDatasetSummary } from './ticketsDataStore.js';
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1200;
@@ -121,10 +121,11 @@ async function fetchASETotals() {
   return withPgClient(async (client) => {
     const result = await client.query(
       `
-        SELECT COUNT(*)::BIGINT AS count,
-               COALESCE(SUM(ticket_count), 0)::BIGINT AS tickets,
-               COALESCE(SUM(total_fine_amount), 0)::NUMERIC AS revenue
-        FROM ase_camera_locations
+        SELECT
+          COUNT(DISTINCT location_code)::BIGINT AS count,
+          COALESCE(SUM(ticket_count), 0)::BIGINT AS tickets,
+          COALESCE(SUM(total_revenue), 0)::NUMERIC AS revenue
+        FROM ase_yearly_locations
       `,
     );
     const row = result?.rows?.[0];
@@ -174,13 +175,43 @@ export async function getDatasetTotals(dataset) {
       if (pgResult) {
         return pgResult;
       }
+      const summaryWrapper = await loadDatasetSummary('red_light_locations');
+      const summary = summaryWrapper?.data;
+      if (summary?.totals) {
+        return {
+          dataset: 'red_light_locations',
+          featureCount: Number(summary.totals.locationCount) || 0,
+          ticketCount: Number(summary.totals.ticketCount) || 0,
+          totalRevenue: Number(summary.totals.totalRevenue) || 0,
+          source: 'local-summary',
+        };
+      }
       return null;
     }
 
     if (normalised === 'ase_locations') {
-      const pgResult = await fetchASETotals();
+      const [pgResult, summaryWrapper] = await Promise.all([
+        fetchASETotals(),
+        loadDatasetSummary('ase_locations').catch(() => null),
+      ]);
+      const summaryTotals = summaryWrapper?.data?.totals;
       if (pgResult) {
-        return pgResult;
+        return {
+          dataset: 'ase_locations',
+          featureCount: Number(pgResult.featureCount) || Number(summaryTotals?.locationCount) || 0,
+          ticketCount: Number(pgResult.ticketCount) || Number(summaryTotals?.ticketCount) || 0,
+          totalRevenue: Number(pgResult.totalRevenue) || Number(summaryTotals?.totalRevenue) || 0,
+          source: 'postgres',
+        };
+      }
+      if (summaryTotals) {
+        return {
+          dataset: 'ase_locations',
+          featureCount: Number(summaryTotals.locationCount) || 0,
+          ticketCount: Number(summaryTotals.ticketCount) || 0,
+          totalRevenue: Number(summaryTotals.totalRevenue) || 0,
+          source: summaryWrapper?.source || 'local-summary',
+        };
       }
       return null;
     }
@@ -188,14 +219,26 @@ export async function getDatasetTotals(dataset) {
     if (isMissingRelation(error)) {
       console.warn(`Dataset totals fallback: missing relation for ${normalised}`);
       if (normalised === 'parking_tickets') {
-      const summaryWrapper = await loadTicketsSummary();
-      if (summaryWrapper?.data) {
-        const summary = summaryWrapper.data;
+        const summaryWrapper = await loadTicketsSummary();
+        if (summaryWrapper?.data) {
+          const summary = summaryWrapper.data;
           return {
             dataset: 'parking_tickets',
             featureCount: Number(summary.featureCount) || 0,
             ticketCount: Number(summary.ticketCount) || 0,
             totalRevenue: Number(summary.totalRevenue) || 0,
+            source: 'local-summary',
+          };
+        }
+      } else {
+        const summaryWrapper = await loadDatasetSummary(normalised);
+        const summary = summaryWrapper?.data;
+        if (summary?.totals) {
+          return {
+            dataset: normalised,
+            featureCount: Number(summary.totals.locationCount) || 0,
+            ticketCount: Number(summary.totals.ticketCount) || 0,
+            totalRevenue: Number(summary.totals.totalRevenue) || 0,
             source: 'local-summary',
           };
         }

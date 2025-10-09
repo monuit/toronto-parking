@@ -15,6 +15,18 @@ const TICKETS_FILE = path.join(DATA_DIR, 'tickets_aggregated.geojson');
 const SUMMARY_FILE = path.join(DATA_DIR, 'tickets_summary.json');
 const STREET_STATS_FILE = path.join(DATA_DIR, 'street_stats.json');
 const NEIGHBOURHOOD_STATS_FILE = path.join(DATA_DIR, 'neighbourhood_stats.json');
+const RED_LIGHT_SUMMARY_FILE = path.join(DATA_DIR, 'red_light_summary.json');
+const ASE_SUMMARY_FILE = path.join(DATA_DIR, 'ase_summary.json');
+const RED_LIGHT_GEOJSON_FILE = path.join(DATA_DIR, 'red_light_locations.geojson');
+const ASE_GEOJSON_FILE = path.join(DATA_DIR, 'ase_locations.geojson');
+const RED_LIGHT_GLOW_FILE = path.join(DATA_DIR, 'red_light_glow_lines.geojson');
+const ASE_GLOW_FILE = path.join(DATA_DIR, 'ase_glow_lines.geojson');
+const RED_LIGHT_WARD_GEOJSON_FILE = path.join(DATA_DIR, 'red_light_ward_choropleth.geojson');
+const ASE_WARD_GEOJSON_FILE = path.join(DATA_DIR, 'ase_ward_choropleth.geojson');
+const COMBINED_WARD_GEOJSON_FILE = path.join(DATA_DIR, 'cameras_combined_ward_choropleth.geojson');
+const RED_LIGHT_WARD_SUMMARY_FILE = path.join(DATA_DIR, 'red_light_ward_summary.json');
+const ASE_WARD_SUMMARY_FILE = path.join(DATA_DIR, 'ase_ward_summary.json');
+const COMBINED_WARD_SUMMARY_FILE = path.join(DATA_DIR, 'cameras_combined_ward_summary.json');
 const CHUNK_PREFIX = 'tickets_aggregated_part';
 
 const redisSettings = getRedisConfig();
@@ -27,6 +39,28 @@ const CHUNK_KEY_PREFIX = `${REDIS_NAMESPACE}:tickets:aggregated:v1:chunk:`;
 const REDIS_SUMMARY_KEY = `${REDIS_NAMESPACE}:tickets:summary:v1`;
 const REDIS_STREET_STATS_KEY = `${REDIS_NAMESPACE}:tickets:street-stats:v1`;
 const REDIS_NEIGHBOURHOOD_STATS_KEY = `${REDIS_NAMESPACE}:tickets:neighbourhood-stats:v1`;
+const REDIS_CAMERA_SUMMARY_KEYS = {
+  red_light_locations: `${REDIS_NAMESPACE}:red_light_locations:summary:v1`,
+  ase_locations: `${REDIS_NAMESPACE}:ase_locations:summary:v1`,
+};
+const REDIS_CAMERA_GLOW_KEYS = {
+  red_light_locations: `${REDIS_NAMESPACE}:red_light_locations:glow:v1`,
+  ase_locations: `${REDIS_NAMESPACE}:ase_locations:glow:v1`,
+};
+const REDIS_CAMERA_LOCATION_KEYS = {
+  red_light_locations: `${REDIS_NAMESPACE}:red_light_locations:locations:v1`,
+  ase_locations: `${REDIS_NAMESPACE}:ase_locations:locations:v1`,
+};
+const REDIS_CAMERA_WARD_GEO_KEYS = {
+  red_light_locations: `${REDIS_NAMESPACE}:red_light:wards:geojson:v1`,
+  ase_locations: `${REDIS_NAMESPACE}:ase:wards:geojson:v1`,
+  cameras_combined: `${REDIS_NAMESPACE}:cameras:wards:geojson:v1`,
+};
+const REDIS_CAMERA_WARD_SUMMARY_KEYS = {
+  red_light_locations: `${REDIS_NAMESPACE}:red_light:wards:summary:v1`,
+  ase_locations: `${REDIS_NAMESPACE}:ase:wards:summary:v1`,
+  cameras_combined: `${REDIS_NAMESPACE}:cameras:wards:summary:v1`,
+};
 const REDIS_TTL_SECONDS = Number.parseInt(process.env.MAP_DATA_REDIS_TTL || '86400', 10);
 
 let redisClientPromise = null;
@@ -93,14 +127,176 @@ async function readJsonFileWithMeta(filePath) {
     const raw = await readFile(filePath, 'utf-8');
     const json = JSON.parse(raw);
     const { mtimeMs } = await stat(filePath);
+    const version = Math.trunc(mtimeMs);
     return {
       data: json,
-      version: Math.trunc(mtimeMs),
+      version,
       source: filePath,
+      etag: `W/"${version}"`,
     };
   } catch {
     return null;
   }
+}
+
+async function readCameraSummaryFromDisk(dataset) {
+  if (dataset === 'red_light_locations') {
+    return readJsonFileWithMeta(RED_LIGHT_SUMMARY_FILE);
+  }
+  if (dataset === 'ase_locations') {
+    return readJsonFileWithMeta(ASE_SUMMARY_FILE);
+  }
+  return null;
+}
+
+function resolveGlowFile(dataset) {
+  if (dataset === 'red_light_locations') {
+    return RED_LIGHT_GLOW_FILE;
+  }
+  if (dataset === 'ase_locations') {
+    return ASE_GLOW_FILE;
+  }
+  return null;
+}
+
+async function readCameraGlowFromDisk(dataset) {
+  const filePath = resolveGlowFile(dataset);
+  if (!filePath) {
+    return null;
+  }
+  try {
+    const raw = await readFile(filePath, 'utf-8');
+    const { mtimeMs } = await stat(filePath);
+    const version = Math.trunc(mtimeMs);
+    return {
+      raw,
+      version,
+      source: filePath,
+      etag: `W/"${version}"`,
+    };
+  } catch (error) {
+    console.warn(`Failed to read glow file for ${dataset}:`, error.message);
+    return null;
+  }
+}
+
+function resolveCameraLocationsFile(dataset) {
+  if (dataset === 'red_light_locations') {
+    return RED_LIGHT_GEOJSON_FILE;
+  }
+  if (dataset === 'ase_locations') {
+    return ASE_GEOJSON_FILE;
+  }
+  return null;
+}
+
+function resolveWardGeojsonFile(dataset) {
+  if (dataset === 'red_light_locations') {
+    return RED_LIGHT_WARD_GEOJSON_FILE;
+  }
+  if (dataset === 'ase_locations') {
+    return ASE_WARD_GEOJSON_FILE;
+  }
+  if (dataset === 'cameras_combined') {
+    return COMBINED_WARD_GEOJSON_FILE;
+  }
+  return null;
+}
+
+function resolveWardSummaryFile(dataset) {
+  if (dataset === 'red_light_locations') {
+    return RED_LIGHT_WARD_SUMMARY_FILE;
+  }
+  if (dataset === 'ase_locations') {
+    return ASE_WARD_SUMMARY_FILE;
+  }
+  if (dataset === 'cameras_combined') {
+    return COMBINED_WARD_SUMMARY_FILE;
+  }
+  return null;
+}
+
+async function readCameraLocationsFromDisk(dataset) {
+  const filePath = resolveCameraLocationsFile(dataset);
+  if (!filePath) {
+    return null;
+  }
+  try {
+    const raw = await readFile(filePath, 'utf-8');
+    const { mtimeMs } = await stat(filePath);
+    return {
+      raw,
+      version: Math.trunc(mtimeMs),
+      source: filePath,
+    };
+  } catch (error) {
+    console.warn(`Failed to read camera locations for ${dataset}:`, error.message);
+    return null;
+  }
+}
+
+async function readWardGeojsonFromDisk(dataset) {
+  const filePath = resolveWardGeojsonFile(dataset);
+  if (!filePath) {
+    return null;
+  }
+  try {
+    const raw = await readFile(filePath, 'utf-8');
+    const { mtimeMs } = await stat(filePath);
+    let data = null;
+    try {
+      data = JSON.parse(raw);
+    } catch (error) {
+      console.warn(`Failed to parse ward geojson for ${dataset} from disk:`, error.message);
+    }
+    const version = Math.trunc(mtimeMs);
+    return {
+      raw,
+      data,
+      version,
+      source: filePath,
+      etag: `W/"${version}"`,
+    };
+  } catch (error) {
+    console.warn(`Failed to read ward geojson for ${dataset}:`, error.message);
+    return null;
+  }
+}
+
+async function readWardSummaryFromDisk(dataset) {
+  const filePath = resolveWardSummaryFile(dataset);
+  if (!filePath) {
+    return null;
+  }
+  return readJsonFileWithMeta(filePath);
+}
+
+function resolveNumericVersion(payload) {
+  if (!payload) {
+    return null;
+  }
+  const value = payload.version;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  if (payload.updatedAt) {
+    const parsedDate = Date.parse(payload.updatedAt);
+    if (Number.isFinite(parsedDate)) {
+      return parsedDate;
+    }
+  }
+  return null;
+}
+
+function hasWardFeatures(payload) {
+  const features = payload?.data?.features;
+  return Array.isArray(features) && features.length > 0;
 }
 
 function normaliseRedisWrapper(payload, fallbackSource) {
@@ -110,7 +306,18 @@ function normaliseRedisWrapper(payload, fallbackSource) {
   const versionFromPayload = Number.isFinite(payload.version) ? Number(payload.version) : null;
   const parsedUpdatedAt = payload.updatedAt ? Date.parse(payload.updatedAt) : null;
   const version = versionFromPayload ?? (Number.isFinite(parsedUpdatedAt) ? parsedUpdatedAt : null);
-  const data = payload.data ?? null;
+  const etag = typeof payload.etag === 'string'
+    ? payload.etag
+    : (version !== null ? `W/"${version}"` : null);
+  let data = payload.data ?? null;
+  if (typeof data === 'string' && payload.encoding === 'gzip+base64') {
+    try {
+      data = JSON.parse(decompress(data));
+    } catch (error) {
+      console.warn('Failed to parse compressed Redis payload:', error.message);
+      return null;
+    }
+  }
   if (data === null || data === undefined) {
     return null;
   }
@@ -118,6 +325,7 @@ function normaliseRedisWrapper(payload, fallbackSource) {
     data,
     version,
     source: fallbackSource || 'redis',
+    etag,
   };
 }
 
@@ -166,6 +374,79 @@ async function readJsonWrapperFromRedis(key) {
     console.warn(`Failed to read JSON blob from Redis (${key}):`, error.message);
     return null;
   }
+}
+
+async function readRawWrapperFromRedis(key) {
+  if (!REDIS_ENABLED) {
+    return null;
+  }
+  const client = await getRedisClient();
+  if (!client) {
+    return null;
+  }
+  try {
+    const payload = await client.get(key);
+    if (!payload) {
+      return null;
+    }
+    const parsed = JSON.parse(payload);
+    if (!parsed || typeof parsed.raw !== 'string') {
+      return null;
+    }
+    const raw = decompress(parsed.raw);
+    const versionFromPayload = Number.isFinite(parsed.version) ? Number(parsed.version) : null;
+    const parsedUpdatedAt = parsed.updatedAt ? Date.parse(parsed.updatedAt) : null;
+    const version = versionFromPayload ?? (Number.isFinite(parsedUpdatedAt) ? parsedUpdatedAt : null);
+    return {
+      raw,
+      version,
+      source: 'redis',
+      etag: typeof parsed.etag === 'string' ? parsed.etag : (version !== null ? `W/"${version}"` : null),
+    };
+  } catch (error) {
+    console.warn(`Failed to read raw blob from Redis (${key}):`, error.message);
+    return null;
+  }
+}
+
+async function readCameraSummaryFromRedis(dataset) {
+  const key = REDIS_CAMERA_SUMMARY_KEYS[dataset];
+  if (!key) {
+    return null;
+  }
+  return readJsonWrapperFromRedis(key);
+}
+
+async function readWardSummaryFromRedis(dataset) {
+  const key = REDIS_CAMERA_WARD_SUMMARY_KEYS[dataset];
+  if (!key) {
+    return null;
+  }
+  return readJsonWrapperFromRedis(key);
+}
+
+async function readCameraGlowFromRedis(dataset) {
+  const key = REDIS_CAMERA_GLOW_KEYS[dataset];
+  if (!key) {
+    return null;
+  }
+  return readRawWrapperFromRedis(key);
+}
+
+async function readCameraLocationsFromRedis(dataset) {
+  const key = REDIS_CAMERA_LOCATION_KEYS[dataset];
+  if (!key) {
+    return null;
+  }
+  return readRawWrapperFromRedis(key);
+}
+
+async function readWardGeojsonFromRedis(dataset) {
+  const key = REDIS_CAMERA_WARD_GEO_KEYS[dataset];
+  if (!key) {
+    return null;
+  }
+  return readJsonWrapperFromRedis(key);
 }
 
 async function writeAggregateToRedis(raw, version) {
@@ -409,14 +690,178 @@ export function clearTicketsCache() {
   cachedManifestVersion = null;
 }
 
-export async function loadTicketsSummary() {
-  const redisResult = await readJsonWrapperFromRedis(REDIS_SUMMARY_KEY);
+export async function loadDatasetSummary(dataset) {
+  if (dataset === 'parking_tickets') {
+    const redisResult = await readJsonWrapperFromRedis(REDIS_SUMMARY_KEY);
+    if (redisResult) {
+      return { ...redisResult, source: 'redis' };
+    }
+    const diskResult = await readJsonFileWithMeta(SUMMARY_FILE);
+    if (diskResult) {
+      return { ...diskResult, source: 'disk' };
+    }
+    return null;
+  }
+
+  if (dataset === 'ase_locations') {
+    const redisResult = await readCameraSummaryFromRedis(dataset);
+    if (redisResult?.data?.totals) {
+      const wardSummary = await loadCameraWardSummary('ase_locations');
+      const wardTotals = wardSummary?.data?.totals;
+      if (wardTotals) {
+        redisResult.data = {
+          ...redisResult.data,
+          totals: {
+            locationCount: Number(wardTotals.locationCount ?? redisResult.data.totals.locationCount) || 0,
+            ticketCount: Number(wardTotals.ticketCount ?? redisResult.data.totals.ticketCount) || 0,
+            totalRevenue: Number(wardTotals.totalRevenue ?? redisResult.data.totals.totalRevenue) || 0,
+          },
+        };
+      }
+      return { ...redisResult, source: 'redis' };
+    }
+
+    const diskResult = await readCameraSummaryFromDisk(dataset);
+    if (diskResult?.data?.totals) {
+      const wardSummary = await loadCameraWardSummary('ase_locations');
+      const wardTotals = wardSummary?.data?.totals;
+      if (wardTotals) {
+        diskResult.data = {
+          ...diskResult.data,
+          totals: {
+            locationCount: Number(wardTotals.locationCount ?? diskResult.data.totals.locationCount) || 0,
+            ticketCount: Number(wardTotals.ticketCount ?? diskResult.data.totals.ticketCount) || 0,
+            totalRevenue: Number(wardTotals.totalRevenue ?? diskResult.data.totals.totalRevenue) || 0,
+          },
+        };
+      }
+      return { ...diskResult, source: 'disk' };
+    }
+  }
+
+  const redisResult = await readCameraSummaryFromRedis(dataset);
   if (redisResult) {
     return { ...redisResult, source: 'redis' };
   }
-  const diskResult = await readJsonFileWithMeta(SUMMARY_FILE);
+  const diskResult = await readCameraSummaryFromDisk(dataset);
   if (diskResult) {
     return { ...diskResult, source: 'disk' };
+  }
+  return null;
+}
+
+export async function loadTicketsSummary() {
+  return loadDatasetSummary('parking_tickets');
+}
+
+export async function loadCameraGlow(dataset) {
+  if (dataset !== 'red_light_locations' && dataset !== 'ase_locations') {
+    return null;
+  }
+
+  const redisResult = await readCameraGlowFromRedis(dataset);
+  if (redisResult) {
+    return { ...redisResult, source: 'redis' };
+  }
+  const diskResult = await readCameraGlowFromDisk(dataset);
+  if (diskResult) {
+    return { ...diskResult, source: 'disk' };
+  }
+  return null;
+}
+
+export async function loadCameraLocations(dataset) {
+  if (dataset !== 'red_light_locations' && dataset !== 'ase_locations') {
+    return null;
+  }
+
+  const redisResult = await readCameraLocationsFromRedis(dataset);
+  if (redisResult) {
+    return { ...redisResult, source: 'redis' };
+  }
+  const diskResult = await readCameraLocationsFromDisk(dataset);
+  if (diskResult) {
+    return { ...diskResult, source: 'disk' };
+  }
+  return null;
+}
+
+export async function loadCameraWardGeojson(dataset) {
+  if (!REDIS_CAMERA_WARD_GEO_KEYS[dataset]) {
+    return null;
+  }
+
+  const [redisResult, diskResult] = await Promise.all([
+    readWardGeojsonFromRedis(dataset),
+    readWardGeojsonFromDisk(dataset),
+  ]);
+
+  if (redisResult && diskResult) {
+    const redisVersion = resolveNumericVersion(redisResult);
+    const diskVersion = resolveNumericVersion(diskResult);
+    const redisHasFeatures = hasWardFeatures(redisResult);
+    const diskHasFeatures = hasWardFeatures(diskResult);
+
+    if (diskHasFeatures && !redisHasFeatures) {
+      return { ...diskResult, source: diskResult.source || 'disk' };
+    }
+    if (diskVersion !== null && redisVersion !== null) {
+      if (diskVersion >= redisVersion) {
+        return { ...diskResult, source: diskResult.source || 'disk' };
+      }
+      return { ...redisResult, source: 'redis' };
+    }
+    if (diskVersion !== null && redisVersion === null) {
+      return { ...diskResult, source: diskResult.source || 'disk' };
+    }
+    if (redisVersion !== null && diskVersion === null) {
+      return { ...redisResult, source: 'redis' };
+    }
+    return { ...redisResult, source: 'redis' };
+  }
+
+  if (redisResult) {
+    return { ...redisResult, source: 'redis' };
+  }
+  if (diskResult) {
+    return { ...diskResult, source: diskResult.source || 'disk' };
+  }
+  return null;
+}
+
+export async function loadCameraWardSummary(dataset) {
+  if (!REDIS_CAMERA_WARD_SUMMARY_KEYS[dataset]) {
+    return null;
+  }
+
+  const [redisResult, diskResult] = await Promise.all([
+    readWardSummaryFromRedis(dataset),
+    readWardSummaryFromDisk(dataset),
+  ]);
+
+  if (redisResult && diskResult) {
+    const redisVersion = resolveNumericVersion(redisResult);
+    const diskVersion = resolveNumericVersion(diskResult);
+    if (diskVersion !== null && redisVersion !== null) {
+      if (diskVersion >= redisVersion) {
+        return { ...diskResult, source: diskResult.source || 'disk' };
+      }
+      return { ...redisResult, source: 'redis' };
+    }
+    if (diskVersion !== null && redisVersion === null) {
+      return { ...diskResult, source: diskResult.source || 'disk' };
+    }
+    if (redisVersion !== null && diskVersion === null) {
+      return { ...redisResult, source: 'redis' };
+    }
+    return { ...redisResult, source: 'redis' };
+  }
+
+  if (redisResult) {
+    return { ...redisResult, source: 'redis' };
+  }
+  if (diskResult) {
+    return { ...diskResult, source: diskResult.source || 'disk' };
   }
   return null;
 }
