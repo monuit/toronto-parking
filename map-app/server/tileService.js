@@ -72,6 +72,92 @@ const PARKING_TILE_SNAPSHOT_LIMIT = Number.parseInt(
 
 const BROTLI_LEGACY_REWRITE_KEYS = new Set();
 
+const TILE_HARD_TIMEOUT_MS = Number.parseInt(process.env.TILE_HARD_MS || '', 10)
+  || 450;
+const MAX_ACTIVE_RENDERS = (() => {
+  const parsed = Number.parseInt(process.env.MAX_ACTIVE_RENDERS || '', 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 6;
+})();
+const TILE_REVALIDATE_DELAY_MS = Number.parseInt(process.env.TILE_REVALIDATE_DELAY_MS || '', 10)
+  || 25;
+
+const EMPTY_TILE_BUFFER = vtpbf.fromGeojsonVt({}, { extent: 4096, version: 2 });
+
+function createAbortError(reason) {
+  const error = reason instanceof Error ? reason : new Error(reason || 'Tile request aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    throw createAbortError(signal.reason);
+  }
+}
+
+class AsyncSemaphore {
+  constructor(limit) {
+    this.limit = Number.isFinite(limit) && limit > 0 ? limit : 0;
+    this.active = 0;
+    this.queue = [];
+  }
+
+  async acquire(signal) {
+    if (this.limit <= 0) {
+      return () => {};
+    }
+    throwIfAborted(signal);
+    if (this.active < this.limit) {
+      this.active += 1;
+      return () => this._release();
+    }
+    return await new Promise((resolve, reject) => {
+      const entry = {
+        resolve,
+        reject,
+        signal,
+      };
+      const abortHandler = () => {
+        this.queue = this.queue.filter((item) => item !== entry);
+        reject(createAbortError(signal.reason));
+      };
+      if (signal) {
+        signal.addEventListener('abort', abortHandler, { once: true });
+        entry.abortHandler = abortHandler;
+      }
+      this.queue.push(entry);
+    });
+  }
+
+  _release() {
+    if (this.limit <= 0) {
+      return;
+    }
+    this.active = Math.max(0, this.active - 1);
+    if (this.queue.length === 0) {
+      return;
+    }
+    const next = this.queue.shift();
+    if (!next) {
+      return;
+    }
+    if (next.abortHandler && next.signal?.aborted) {
+      return;
+    }
+    if (next.abortHandler && next.signal) {
+      next.signal.removeEventListener('abort', next.abortHandler);
+    }
+    this.active += 1;
+    next.resolve(() => this._release());
+  }
+}
+
+const renderSemaphore = MAX_ACTIVE_RENDERS > 0
+  ? new AsyncSemaphore(MAX_ACTIVE_RENDERS)
+  : null;
 let tileRedisPromise = null;
 let tilePostgresPool = null;
 let tilePostgresSignature = null;
@@ -901,6 +987,8 @@ class TileService {
     this.summaryTree = null;
     this.tileCache = new Map();
     this.locationYearCounts = null;
+    this.inflightTiles = new Map();
+    this.revalidateQueue = new Set();
   }
 
   async ensureLoaded() {
@@ -1128,35 +1216,164 @@ class TileService {
     this.tileCache.clear();
   }
 
-  async getTile(z, x, y) {
+  async getTile(z, x, y, options = {}) {
+    const {
+      signal = null,
+      allowStale = true,
+      revalidate = true,
+    } = options;
+
     await this.ensureLoaded();
+    throwIfAborted(signal);
+
     if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y)) {
       return null;
     }
     if (z < TICKET_TILE_MIN_ZOOM) {
       return null;
     }
+
     const key = buildTileKey(z, x, y);
-    if (this.tileCache.has(key)) {
-      return this.tileCache.get(key);
-    }
     const cacheVersion = this.dataVersion ?? null;
+
+    const cached = this.tileCache.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const inflight = this.inflightTiles.get(key);
+    if (inflight) {
+      return inflight;
+    }
+
     const redisBuffer = await readTileFromRedis(cacheVersion, z, x, y);
+    throwIfAborted(signal);
     if (redisBuffer) {
       const payload = { buffer: redisBuffer, version: cacheVersion };
-      this.tileCache.set(key, payload);
-      return payload;
-    }
-    const snapshot = await readParkingTileSnapshot(z, x, y);
-    if (snapshot && snapshot.buffer) {
-      const payload = {
-        buffer: snapshot.buffer,
-        version: snapshot.version ?? cacheVersion,
-      };
-      this.tileCache.set(key, payload);
+      this.cacheTile(key, payload);
       return payload;
     }
 
+    if (allowStale) {
+      const snapshot = await readParkingTileSnapshot(z, x, y);
+      throwIfAborted(signal);
+      if (snapshot && snapshot.buffer) {
+        const payload = {
+          buffer: snapshot.buffer,
+          version: snapshot.version ?? cacheVersion,
+        };
+        this.cacheTile(key, payload);
+        if (revalidate) {
+          this.queueTileRevalidate(z, x, y);
+        }
+        return payload;
+      }
+    }
+
+    return this.generateFreshTile({
+      key,
+      z,
+      x,
+      y,
+      signal,
+    });
+  }
+
+  cacheTile(key, payload) {
+    if (!payload) {
+      return;
+    }
+    this.tileCache.set(key, payload);
+    if (this.tileCache.size > TILE_CACHE_LIMIT) {
+      const oldestKey = this.tileCache.keys().next().value;
+      if (oldestKey) {
+        this.tileCache.delete(oldestKey);
+      }
+    }
+  }
+
+  queueTileRevalidate(z, x, y) {
+    const key = buildTileKey(z, x, y);
+    if (this.revalidateQueue.has(key) || this.inflightTiles.has(key)) {
+      return;
+    }
+    this.revalidateQueue.add(key);
+    const run = () => {
+      this.generateFreshTile({
+        key,
+        z,
+        x,
+        y,
+        signal: null,
+        background: true,
+      })
+        .catch((error) => {
+          if (error?.name !== 'AbortError') {
+            console.warn('Tile revalidation failed:', error.message);
+          }
+        })
+        .finally(() => {
+          this.revalidateQueue.delete(key);
+        });
+    };
+    if (TILE_REVALIDATE_DELAY_MS > 0) {
+      const timer = setTimeout(run, TILE_REVALIDATE_DELAY_MS);
+      if (typeof timer?.unref === 'function') {
+        timer.unref();
+      }
+    } else {
+      const timer = setTimeout(run, 0);
+      if (typeof timer?.unref === 'function') {
+        timer.unref();
+      }
+    }
+  }
+
+  async generateFreshTile({ key, z, x, y, signal, background = false }) {
+    if (this.inflightTiles.has(key)) {
+      return this.inflightTiles.get(key);
+    }
+    const promise = (async () => {
+      let releaseFn = null;
+      try {
+        throwIfAborted(signal);
+        if (renderSemaphore) {
+          releaseFn = await renderSemaphore.acquire(signal);
+        }
+        throwIfAborted(signal);
+        const layers = this.buildTileLayers(z, x, y, signal);
+        if (!layers) {
+          return null;
+        }
+        const buffer = vtpbf.fromGeojsonVt(layers, { extent: 4096, version: 2 });
+        const cacheVersion = this.dataVersion ?? null;
+        const payload = { buffer, version: cacheVersion };
+        this.cacheTile(key, payload);
+        writeTileToRedis(cacheVersion, z, x, y, buffer);
+        writeParkingTileSnapshot(z, x, y, buffer, cacheVersion);
+        return payload;
+      } catch (error) {
+        if (background) {
+          if (error?.name !== 'AbortError') {
+            console.warn('Background tile generation failed:', error.message);
+          }
+          return null;
+        }
+        throw error;
+      } finally {
+        if (typeof releaseFn === 'function') {
+          releaseFn();
+        }
+        this.inflightTiles.delete(key);
+      }
+    })();
+
+    this.inflightTiles.set(key, promise);
+    return promise;
+  }
+
+  buildTileLayers(z, x, y, signal) {
+    throwIfAborted(signal);
     const layers = {};
 
     if (z < RAW_POINT_ZOOM_THRESHOLD) {
@@ -1189,17 +1406,8 @@ class TileService {
     if (Object.keys(layers).length === 0) {
       return null;
     }
-
-    const buffer = vtpbf.fromGeojsonVt(layers, { extent: 4096, version: 2 });
-    const payload = { buffer, version: cacheVersion };
-    this.tileCache.set(key, payload);
-    writeTileToRedis(cacheVersion, z, x, y, buffer);
-    writeParkingTileSnapshot(z, x, y, buffer, cacheVersion);
-    if (this.tileCache.size > TILE_CACHE_LIMIT) {
-      const oldestKey = this.tileCache.keys().next().value;
-      this.tileCache.delete(oldestKey);
-    }
-    return payload;
+    throwIfAborted(signal);
+    return layers;
   }
 
   async summarizeViewport({ west, south, east, north, zoom, filters }) {
@@ -1371,3 +1579,7 @@ export function createTileService() {
   scheduleTilePrewarm(service);
   return service;
 }
+
+
+export { TILE_HARD_TIMEOUT_MS, EMPTY_TILE_BUFFER };
+

@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 
-const connectionString = 'postgres://postgres:CA3DeGBF23F5C3Aag3Ecg4f2eDGD52Be@interchange.proxy.rlwy.net:57747/railway';
+const connectionString = 'postgres://postgres:REDACTED_POSTGRES_PASSWORD@interchange.proxy.rlwy.net:57747/railway';
 
 async function run() {
   const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });

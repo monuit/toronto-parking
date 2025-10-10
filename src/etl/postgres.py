@@ -30,9 +30,13 @@ class PostgresClient:
                 conn.execute(f"SET statement_timeout = {int(self.statement_timeout_ms)}")
             yield conn
 
-    def execute(self, sql: str, params: Sequence[object] | None = None) -> None:
+    def execute(self, sql: str, params: Sequence[object] | None = None) -> int | None:
         with self.connect(autocommit=True) as conn:
-            conn.execute(sql, params or ())
+            cursor = conn.execute(sql, params or ())
+            try:
+                return cursor.rowcount
+            except AttributeError:  # pragma: no cover - psycopg < 3 compatibility path
+                return None
 
     def fetch_one(self, sql: str, params: Sequence[object] | None = None) -> tuple | None:
         with self.connect() as conn:

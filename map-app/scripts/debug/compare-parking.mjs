@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { Client } from 'pg';
 
-const connectionString = 'postgres://postgres:CA3DeGBF23F5C3Aag3Ecg4f2eDGD52Be@interchange.proxy.rlwy.net:57747/railway';
+const connectionString = 'postgres://postgres:REDACTED_POSTGRES_PASSWORD@interchange.proxy.rlwy.net:57747/railway';
 const geojsonPath = 'C:/Users/boredbedouin/Desktop/toronto-parking/map-app/public/data/tickets_aggregated.geojson';
 
 function loadGeojsonCounts() {
