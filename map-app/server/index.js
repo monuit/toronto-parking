@@ -170,16 +170,27 @@ const redisSettings = getRedisConfig();
 const MAPTILER_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
 const MAPTILER_REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
 const MAPTILER_CACHE_PREFIX = `${MAPTILER_REDIS_NAMESPACE}:maptiler:v1`;
-const MAPTILER_PROXY_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_TIMEOUT_MS || '', 10) || 8_000;
+const MAPTILER_PROXY_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_TIMEOUT_MS || '', 10) || 12_000;
 const MAPTILER_PROXY_MAX_RETRIES = Number.parseInt(process.env.MAPTILER_PROXY_MAX_RETRIES || '', 10) || 2;
 const MAPTILER_PROXY_BACKOFF_MS = Number.parseInt(process.env.MAPTILER_PROXY_BACKOFF_MS || '', 10) || 500;
-const MAPTILER_CACHEABLE_METHODS = new Set(['GET']);
 const MAPTILER_TILE_CACHE_CONTROL = 'public, max-age=21600, stale-while-revalidate=600';
 const MAPTILER_FONT_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=3600';
 const MAPTILER_DEFAULT_CACHE_CONTROL = 'public, max-age=3600, stale-while-revalidate=600';
+const MAPTILER_FALLBACK_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_FALLBACK_TIMEOUT_MS || '', 10) || 20_000;
 
 let maptilerRedisPromise = null;
 const maptilerInflight = new Map();
+const TEXT_CONTENT_TYPE_REGEX = /json|text|javascript|xml/i;
+
+class MaptilerHttpError extends Error {
+  constructor(status, body = '', headers = {}) {
+    super(`MapTiler responded with ${status}`);
+    this.name = 'MaptilerHttpError';
+    this.status = status;
+    this.body = body;
+    this.headers = headers;
+  }
+}
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -192,6 +203,63 @@ function randomJitter(ms) {
     return 0;
   }
   return Math.floor(Math.random() * ms);
+}
+
+function isTextLikeContentType(contentType) {
+  if (!contentType) {
+    return false;
+  }
+  return TEXT_CONTENT_TYPE_REGEX.test(contentType);
+}
+
+async function formatMaptilerResponse(response, originHint = '') {
+  const headerEntries = {};
+  response.headers.forEach((value, header) => {
+    headerEntries[header.toLowerCase()] = value;
+  });
+  const contentType = response.headers.get('content-type') || '';
+  let bodyBuffer;
+  if (isTextLikeContentType(contentType)) {
+    const text = await response.text();
+    bodyBuffer = Buffer.from(sanitizeMaptilerText(text, originHint || ''));
+  } else {
+    const arrayBuffer = await response.arrayBuffer();
+    bodyBuffer = Buffer.from(arrayBuffer);
+  }
+  return {
+    status: response.status,
+    headers: filterUpstreamHeaders(headerEntries),
+    body: bodyBuffer,
+  };
+}
+
+async function fetchMaptilerDirect(url, headers, originHint, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const bodyText = await response.text().catch(() => '');
+      throw new MaptilerHttpError(response.status, bodyText);
+    }
+    return formatMaptilerResponse(response, originHint);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isAbortError(error) {
+  if (!error) {
+    return false;
+  }
+  return error.name === 'AbortError' || (typeof error.message === 'string' && error.message.toLowerCase().includes('abort'));
 }
 
 async function getMaptilerRedisClient() {
@@ -385,12 +453,16 @@ async function fetchMaptilerWithRetry(url, initHeaders = {}) {
         method: 'GET',
         headers: initHeaders,
         signal: controller.signal,
+        redirect: 'follow',
       });
       clearTimeout(timeout);
       if (response.status === 429 && attempt < maxAttempts - 1) {
         lastError = new Error('MapTiler responded with 429');
       } else if (response.status >= 500 && response.status < 600 && attempt < maxAttempts - 1) {
         lastError = new Error(`MapTiler responded with ${response.status}`);
+      } else if (!response.ok) {
+        const bodyText = await response.text().catch(() => '');
+        throw new MaptilerHttpError(response.status, bodyText);
       } else {
         return response;
       }
@@ -633,23 +705,53 @@ function registerTileRoutes(app) {
         proxyHeaders.Referer = originHint;
       }
 
-      const payload = await resolveMaptilerResource(descriptor, async () => {
-        const response = await fetchMaptilerWithRetry(upstreamUrl, proxyHeaders);
-        const headerEntries = {};
-        response.headers.forEach((value, header) => {
-          headerEntries[header.toLowerCase()] = value;
+      let payload;
+      try {
+        payload = await resolveMaptilerResource(descriptor, async () => {
+          const response = await fetchMaptilerWithRetry(upstreamUrl, proxyHeaders);
+          if (!response.ok) {
+            const bodyText = await response.text().catch(() => '');
+            throw new MaptilerHttpError(response.status, bodyText);
+          }
+          return formatMaptilerResponse(response, originHint);
         });
-        const contentType = response.headers.get('content-type') || '';
-        const isTextLike = /json|text|javascript|xml/i.test(contentType);
-        const bodyBuffer = isTextLike
-          ? Buffer.from(sanitizeMaptilerText(await response.text(), originHint || ''))
-          : Buffer.from(await response.arrayBuffer());
-        return {
-          status: response.status,
-          headers: filterUpstreamHeaders(headerEntries),
-          body: bodyBuffer,
-        };
-      });
+      } catch (error) {
+        if (error instanceof MaptilerHttpError && error.status >= 400 && error.status < 500 && error.status !== 429) {
+          res.status(error.status).send(error.body || '');
+          return;
+        }
+
+        console.warn(`MapTiler proxy primary fetch failed for ${resourcePath}:`, error.message);
+        let fallbackPayload = null;
+        try {
+          const fallbackResponse = await fetchMaptilerDirect(
+            upstreamUrl,
+            proxyHeaders,
+            originHint,
+            MAPTILER_FALLBACK_TIMEOUT_MS,
+          );
+          fallbackPayload = {
+            ...fallbackResponse,
+            cacheControl: descriptor.downstreamCacheControl,
+            fromCache: false,
+          };
+        } catch (fallbackError) {
+          const status = fallbackError instanceof MaptilerHttpError && Number.isInteger(fallbackError.status)
+            ? fallbackError.status
+            : 502;
+          const body = fallbackError instanceof MaptilerHttpError ? fallbackError.body : '';
+          const reason = isAbortError(error) ? 'aborted' : fallbackError.message;
+          console.error(`MapTiler fallback fetch failed for ${resourcePath}:`, reason);
+          if (body) {
+            res.status(status).send(body);
+          } else {
+            res.status(status).json({ error: 'Failed to proxy map resource' });
+          }
+          return;
+        }
+
+        payload = fallbackPayload;
+      }
 
       res.status(payload.status);
       res.setHeader('Cache-Control', payload.cacheControl);
