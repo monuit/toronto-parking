@@ -69,12 +69,93 @@ const CAMERA_LOCATIONS_CACHE_SECONDS = Number.parseInt(process.env.CAMERA_LOCATI
 const CAMERA_LOCATIONS_CACHE_MS = Number.isFinite(CAMERA_LOCATIONS_CACHE_SECONDS) && CAMERA_LOCATIONS_CACHE_SECONDS > 0
   ? CAMERA_LOCATIONS_CACHE_SECONDS * 1000
   : 300_000;
+const CAMERA_WARD_CACHE_SECONDS = Number.parseInt(process.env.CAMERA_WARD_CACHE_SECONDS || '300', 10);
+const CAMERA_WARD_CACHE_MS = Number.isFinite(CAMERA_WARD_CACHE_SECONDS) && CAMERA_WARD_CACHE_SECONDS > 0
+  ? CAMERA_WARD_CACHE_SECONDS * 1000
+  : 300_000;
 
 let redisClientPromise = null;
 let cachedManifest = null;
 let cachedManifestVersion = null;
 const cameraLocationsMemoryCache = new Map();
 const cameraGlowMemoryCache = new Map();
+const wardSummaryMemoryCache = new Map();
+const wardGeojsonMemoryCache = new Map();
+const wardSummaryRefreshState = new Map();
+const wardGeojsonRefreshState = new Map();
+
+function resolveCacheTtlMs(sourceMs) {
+  return Number.isFinite(sourceMs) && sourceMs > 0 ? sourceMs : 0;
+}
+
+function getCachedValue(cache, key) {
+  const entry = cache.get(key);
+  if (!entry) {
+    return null;
+  }
+  if (entry.expiresAt && entry.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.payload;
+}
+
+function setCachedValue(cache, key, payload, ttlMs) {
+  if (!payload || ttlMs === 0) {
+    cache.delete(key);
+    return;
+  }
+  cache.set(key, {
+    payload,
+    expiresAt: ttlMs > 0 ? Date.now() + ttlMs : null,
+  });
+}
+
+function scheduleWardSummaryRefresh(dataset, baseWrapper) {
+  if (wardSummaryRefreshState.has(dataset)) {
+    return;
+  }
+  const ttlMs = resolveCacheTtlMs(CAMERA_WARD_CACHE_MS);
+  const task = (async () => {
+    try {
+      const enriched = await applyWardSummaryRollup(dataset, baseWrapper);
+      if (enriched) {
+        setCachedValue(wardSummaryMemoryCache, dataset, enriched, ttlMs);
+      }
+    } catch (error) {
+      console.warn(`Ward summary rollup refresh failed for ${dataset}:`, error.message);
+    } finally {
+      wardSummaryRefreshState.delete(dataset);
+    }
+  })();
+  wardSummaryRefreshState.set(dataset, task);
+  task.catch(() => {
+    /* already logged */
+  });
+}
+
+function scheduleWardGeojsonRefresh(dataset, baseWrapper) {
+  if (wardGeojsonRefreshState.has(dataset)) {
+    return;
+  }
+  const ttlMs = resolveCacheTtlMs(CAMERA_WARD_CACHE_MS);
+  const task = (async () => {
+    try {
+      const enriched = await applyWardGeojsonRollup(dataset, baseWrapper);
+      if (enriched) {
+        setCachedValue(wardGeojsonMemoryCache, dataset, enriched, ttlMs);
+      }
+    } catch (error) {
+      console.warn(`Ward geojson rollup refresh failed for ${dataset}:`, error.message);
+    } finally {
+      wardGeojsonRefreshState.delete(dataset);
+    }
+  })();
+  wardGeojsonRefreshState.set(dataset, task);
+  task.catch(() => {
+    /* already logged */
+  });
+}
 
 async function getRedisClient() {
   if (!REDIS_ENABLED) {
@@ -1138,6 +1219,11 @@ export async function loadCameraWardGeojson(dataset) {
     return null;
   }
 
+  const cached = getCachedValue(wardGeojsonMemoryCache, dataset);
+  if (cached) {
+    return cached;
+  }
+
   const [redisResult, diskResult] = await Promise.all([
     readWardGeojsonFromRedis(dataset),
     readWardGeojsonFromDisk(dataset),
@@ -1181,12 +1267,24 @@ export async function loadCameraWardGeojson(dataset) {
     return null;
   }
 
-  return applyWardGeojsonRollup(dataset, resolved);
+  const ttlMs = resolveCacheTtlMs(CAMERA_WARD_CACHE_MS);
+  setCachedValue(wardGeojsonMemoryCache, dataset, resolved, ttlMs);
+  const metaSource = resolved?.data?.meta?.source;
+  if (!(metaSource && typeof metaSource === 'string' && metaSource.startsWith('yearly-rollup'))) {
+    scheduleWardGeojsonRefresh(dataset, resolved);
+  }
+
+  return resolved;
 }
 
 export async function loadCameraWardSummary(dataset) {
   if (!REDIS_CAMERA_WARD_SUMMARY_KEYS[dataset]) {
     return null;
+  }
+
+  const cached = getCachedValue(wardSummaryMemoryCache, dataset);
+  if (cached) {
+    return cached;
   }
 
   const [redisResult, diskResult] = await Promise.all([
@@ -1227,7 +1325,14 @@ export async function loadCameraWardSummary(dataset) {
     return null;
   }
 
-  return applyWardSummaryRollup(dataset, resolved);
+  const ttlMs = resolveCacheTtlMs(CAMERA_WARD_CACHE_MS);
+  setCachedValue(wardSummaryMemoryCache, dataset, resolved, ttlMs);
+  const metaSource = resolved?.data?.meta?.source;
+  if (!(metaSource && typeof metaSource === 'string' && metaSource.startsWith('yearly-rollup'))) {
+    scheduleWardSummaryRefresh(dataset, resolved);
+  }
+
+  return resolved;
 }
 
 export async function loadStreetStats() {
