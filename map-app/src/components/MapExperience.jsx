@@ -5,6 +5,7 @@ import { NeighbourhoodLayer } from './NeighbourhoodLayer.jsx';
 import { PointsLayer } from './PointsLayer.jsx';
 import { WardChoroplethLayer } from './WardChoroplethLayer.jsx';
 import { MAP_CONFIG } from '../lib/mapSources.js';
+import { usePmtiles } from '../context/PmtilesContext.jsx';
 
 const SUPPORTED_WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
 
@@ -41,6 +42,7 @@ function MapExperience({
   onWardHover,
   isTouchDevice = false,
 }) {
+  const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
   const [mapInstance, setMapInstance] = useState(null);
   const [pointsVisible, setPointsVisible] = useState(true);
   const wardDatasetId = useMemo(() => {
@@ -102,8 +104,15 @@ function MapExperience({
     };
   }, [mapInstance, onViewportSummaryChange, pointsMinZoom, viewMode]);
 
+  const datasetUsesPmtiles = useMemo(() => {
+    if (!pmtilesReady || !pmtilesManifest?.datasets) {
+      return false;
+    }
+    return Boolean(pmtilesManifest.datasets[dataset]);
+  }, [dataset, pmtilesManifest, pmtilesReady]);
+
   useEffect(() => {
-    if (!mapInstance || dataset !== 'parking_tickets' || isTouchDevice) {
+    if (!mapInstance || dataset !== 'parking_tickets' || isTouchDevice || datasetUsesPmtiles) {
       return undefined;
     }
 
@@ -165,7 +174,7 @@ function MapExperience({
     return () => {
       controller.abort();
     };
-  }, [mapInstance, dataset, isTouchDevice]);
+  }, [mapInstance, dataset, isTouchDevice, datasetUsesPmtiles]);
 
   return (
     <MapContainer onMapLoad={handleLoad}>

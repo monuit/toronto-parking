@@ -1,2 +1,69 @@
-# Large data files are fetched from MinIO storage during build
-# map-app/public/data/tickets_aggregated.geojson
+﻿# Toronto Parking - Git Attributes Configuration
+# https://git-scm.com/docs/gitattributes
+
+# ============================================================================
+# Auto detect text files and perform LF normalization
+# ============================================================================
+* text=auto
+
+# ============================================================================
+# Source code
+# ============================================================================
+*.py text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.sh text eol=lf
+*.bash text eol=lf
+
+# ============================================================================
+# Windows-specific files
+# ============================================================================
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# ============================================================================
+# Binary files (mark as binary to prevent diff)
+# ============================================================================
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.pdf binary
+
+# ============================================================================
+# Data files (binary)
+# ============================================================================
+*.pmtiles binary
+*.mbtiles binary
+*.pbf binary
+*.mvt binary
+*.parquet binary
+*.db binary
+*.sqlite binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.tgz binary
+*.7z binary
+*.rar binary
+
+# ============================================================================
+# Jupyter Notebooks (handle as text with special merge)
+# ============================================================================
+*.ipynb text eol=lf merge=union

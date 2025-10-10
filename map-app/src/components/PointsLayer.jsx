@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources';
+import { usePmtiles } from '../context/PmtilesContext.jsx';
 import { loadCameraDataset } from '../lib/cameraDatasetLoader.js';
 
 function buildFilterExpression(isCluster, filter) {
@@ -71,6 +72,26 @@ function parseJsonProperty(raw) {
   return null;
 }
 
+function isCoordinateWithinBounds(longitude, latitude, bounds) {
+  if (!Array.isArray(bounds) || bounds.length !== 4) {
+    return false;
+  }
+  const [west, south, east, north] = bounds;
+  return longitude >= west && longitude <= east && latitude >= south && latitude <= north;
+}
+
+function getShardUrlForCoordinate(datasetManifest, longitude, latitude) {
+  if (!datasetManifest || !Array.isArray(datasetManifest.shards)) {
+    return null;
+  }
+  for (const shard of datasetManifest.shards) {
+    if (isCoordinateWithinBounds(longitude, latitude, shard.bounds)) {
+      return shard;
+    }
+  }
+  return datasetManifest.shards[0] || null;
+}
+
 export function PointsLayer({
   map,
   visible = true,
@@ -85,11 +106,56 @@ export function PointsLayer({
   const inFlightSummaryKeyRef = useRef(null);
   const summaryRequestIdRef = useRef(0);
   const [geojsonData, setGeojsonData] = useState(null);
+  const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
+  const [pmtilesSource, setPmtilesSource] = useState(null);
 
   useEffect(() => {
     inFlightSummaryKeyRef.current = null;
     lastSummaryKeyRef.current = null;
   }, [dataset, filter?.year, filter?.month]);
+
+  useEffect(() => {
+    if (!map || !pmtilesReady || !pmtilesManifest?.datasets?.[dataset]) {
+      setPmtilesSource(null);
+      return undefined;
+    }
+    const datasetManifest = pmtilesManifest.datasets[dataset];
+    if (!datasetManifest || !Array.isArray(datasetManifest.shards) || datasetManifest.shards.length === 0) {
+      setPmtilesSource(null);
+      return undefined;
+    }
+
+    const updateShard = () => {
+      const center = map.getCenter();
+      if (!center) {
+        return;
+      }
+      const shard = getShardUrlForCoordinate(datasetManifest, center.lng, center.lat);
+      if (!shard || !shard.url) {
+        setPmtilesSource(null);
+        return;
+      }
+      const nextUrl = `pmtiles://${shard.url}`;
+      setPmtilesSource((previous) => {
+        if (previous && previous.url === nextUrl) {
+          return previous;
+        }
+        return {
+          url: nextUrl,
+          shardId: shard.id || shard.filename || nextUrl,
+        };
+      });
+    };
+
+    updateShard();
+    map.on('moveend', updateShard);
+    map.on('zoomend', updateShard);
+
+    return () => {
+      map.off('moveend', updateShard);
+      map.off('zoomend', updateShard);
+    };
+  }, [map, dataset, pmtilesManifest, pmtilesReady]);
 
   const pointFilter = useMemo(() => buildFilterExpression(false, filter), [filter]);
 
@@ -426,6 +492,9 @@ export function PointsLayer({
   }, [map, visible, handleFeatureInteraction, dataset]);
 
   const tileUrl = useMemo(() => {
+    if (pmtilesSource?.url) {
+      return pmtilesSource.url;
+    }
     const template = MAP_CONFIG.TILE_SOURCE.TICKETS.replace('{dataset}', dataset);
     if (/^https?:\/\//i.test(template)) {
       return template;
@@ -434,7 +503,7 @@ export function PointsLayer({
       return `${window.location.origin}${template}`;
     }
     return template;
-  }, [dataset]);
+  }, [dataset, pmtilesSource]);
 
   const isParkingDataset = dataset === 'parking_tickets';
   useEffect(() => {
@@ -531,6 +600,11 @@ export function PointsLayer({
     }
   };
 
+  const vectorSourceKey = pmtilesSource?.shardId ? `${dataset}-${pmtilesSource.shardId}` : dataset;
+  const vectorSourceProps = pmtilesSource?.url
+    ? { url: pmtilesSource.url }
+    : { tiles: [tileUrl] };
+
   if (!isParkingDataset && !geojsonData) {
     return null;
   }
@@ -541,10 +615,10 @@ export function PointsLayer({
 
   return isParkingDataset ? (
     <Source
-      key={dataset}
+      key={vectorSourceKey}
       id={MAP_CONFIG.SOURCE_IDS.TICKETS}
       type="vector"
-      tiles={[tileUrl]}
+      {...vectorSourceProps}
       minzoom={datasetStyle.minZoom}
       maxzoom={18}
     >

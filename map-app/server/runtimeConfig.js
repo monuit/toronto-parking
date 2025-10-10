@@ -104,6 +104,62 @@ export function getPostgresConfig() {
   };
 }
 
+function parseJsonConfig(rawValue, fallback) {
+  if (!rawValue) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(rawValue);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch (error) {
+    console.warn('Failed to parse PMTiles JSON config, using defaults:', error);
+    return fallback;
+  }
+}
+
+function parseZoomList(raw) {
+  if (!raw) {
+    return [10, 11, 12, 13];
+  }
+  return raw
+    .split(',')
+    .map((segment) => Number.parseInt(segment.trim(), 10))
+    .filter((value) => Number.isFinite(value));
+}
+
+export function getPmtilesRuntimeConfig() {
+  const basePublic = process.env.PMTILES_PUBLIC_BASE_URL
+    || (process.env.MINIO_PUBLIC_ENDPOINT ? `${process.env.MINIO_PUBLIC_ENDPOINT.replace(/\/?$/, '')}/pmtiles` : null);
+  const basePrivate = process.env.PMTILES_PRIVATE_BASE_URL
+    || (process.env.MINIO_PRIVATE_ENDPOINT ? `${process.env.MINIO_PRIVATE_ENDPOINT.replace(/\/?$/, '')}/pmtiles` : null);
+  const bucket = process.env.PMTILES_BUCKET || 'pmtiles';
+  const region = process.env.MINIO_REGION || 'us-east-1';
+  const warmupMinutes = Number.parseInt(process.env.PMTILES_WARMUP_MINUTES || '60', 10);
+  const warmupIntervalMs = Number.isFinite(warmupMinutes) && warmupMinutes > 0
+    ? warmupMinutes * 60 * 1000
+    : 60 * 60 * 1000;
+  const warmupZooms = parseZoomList(process.env.PMTILES_WARMUP_ZOOMS);
+  const warmupLongitude = Number.parseFloat(process.env.PMTILES_WARMUP_LONGITUDE || '-79.3832');
+  const warmupLatitude = Number.parseFloat(process.env.PMTILES_WARMUP_LATITUDE || '43.6532');
+  const datasetOverrides = parseJsonConfig(process.env.PMTILES_DATASETS, null);
+  const wardDatasetOverrides = parseJsonConfig(process.env.PMTILES_WARD_DATASETS, null);
+
+  const enabled = Boolean(basePublic);
+
+  return {
+    enabled,
+    publicBaseUrl: basePublic,
+    privateBaseUrl: basePrivate,
+    bucket,
+    region,
+    warmupIntervalMs,
+    warmupZooms: warmupZooms.length > 0 ? warmupZooms : [10, 11, 12, 13],
+    warmupCenter: [warmupLongitude, warmupLatitude],
+    datasetOverrides,
+    wardDatasetOverrides,
+  };
+}
+
 export function getDataDir(defaultDir) {
   return process.env.DATA_DIR || defaultDir;
 }

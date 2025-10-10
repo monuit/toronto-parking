@@ -10,8 +10,15 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { createClient } from 'redis';
+import { Pool } from 'pg';
 import { createAppData } from './createAppData.js';
-import { createTileService, getWardTile, prewarmWardTiles } from './tileService.js';
+import {
+  createTileService,
+  getWardTile,
+  prewarmWardTiles,
+  EMPTY_TILE_BUFFER,
+  TILE_HARD_TIMEOUT_MS,
+} from './tileService.js';
 import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
 import { getDatasetTotals } from './datasetTotalsService.js';
 import { wakeRemoteServices } from './wakeRemoteServices.js';
@@ -38,7 +45,9 @@ import {
   getCameraLocationDetail,
   getCameraTopGroups,
 } from './yearlyMetricsService.js';
-import { getRedisConfig } from './runtimeConfig.js';
+import { getRedisConfig, getPmtilesRuntimeConfig, getPostgresConfig } from './runtimeConfig.js';
+import { buildPmtilesManifest } from './pmtilesManifest.js';
+import { schedulePmtilesWarmup } from './pmtilesWarmup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -165,10 +174,19 @@ const styleCache = {
 };
 let loggedMissingMapKey = false;
 const WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
+const REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
+const RESET_CACHE_ON_BOOT = process.env.RESET_CACHE_ON_BOOT !== '0';
+const VACUUM_ON_BOOT = process.env.VACUUM_ON_BOOT !== '0';
+const VACUUM_START_DELAY_MS = Number.parseInt(process.env.VACUUM_START_DELAY_MS || '60000', 10);
+const DEFAULT_VACUUM_TABLES = ['parking_ticket_tiles', 'red_light_camera_tiles', 'ase_camera_tiles'];
+const VACUUM_TABLE_LIST = (process.env.STARTUP_VACUUM_TABLES || DEFAULT_VACUUM_TABLES.join(','))
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter((entry) => entry.length > 0);
 
 const redisSettings = getRedisConfig();
 const MAPTILER_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
-const MAPTILER_REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
+const MAPTILER_REDIS_NAMESPACE = REDIS_NAMESPACE;
 const MAPTILER_CACHE_PREFIX = `${MAPTILER_REDIS_NAMESPACE}:maptiler:v1`;
 const MAPTILER_PROXY_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_TIMEOUT_MS || '', 10) || 12_000;
 const MAPTILER_PROXY_MAX_RETRIES = Number.parseInt(process.env.MAPTILER_PROXY_MAX_RETRIES || '', 10) || 2;
@@ -177,6 +195,12 @@ const MAPTILER_TILE_CACHE_CONTROL = 'public, max-age=21600, stale-while-revalida
 const MAPTILER_FONT_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=3600';
 const MAPTILER_DEFAULT_CACHE_CONTROL = 'public, max-age=3600, stale-while-revalidate=600';
 const MAPTILER_FALLBACK_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_FALLBACK_TIMEOUT_MS || '', 10) || 20_000;
+
+const pmtilesRuntimeConfig = getPmtilesRuntimeConfig();
+const pmtilesManifest = buildPmtilesManifest(pmtilesRuntimeConfig);
+if (pmtilesManifest.enabled) {
+  schedulePmtilesWarmup(pmtilesManifest, pmtilesRuntimeConfig);
+}
 
 let maptilerRedisPromise = null;
 const maptilerInflight = new Map();
@@ -203,6 +227,91 @@ function randomJitter(ms) {
     return 0;
   }
   return Math.floor(Math.random() * ms);
+}
+
+async function resetRedisNamespaceOnBoot() {
+  if (!RESET_CACHE_ON_BOOT || !redisSettings.enabled || !redisSettings.url) {
+    return;
+  }
+  const client = createClient({ url: redisSettings.url });
+  const matchPattern = `${REDIS_NAMESPACE}:*`;
+  let deleted = 0;
+  let batch = [];
+  try {
+    await client.connect();
+    for await (const key of client.scanIterator({ MATCH: matchPattern, COUNT: 1000 })) {
+      batch.push(key);
+      if (batch.length >= 512) {
+        const removed = await client.del(batch);
+        deleted += Number(removed) || 0;
+        batch = [];
+      }
+    }
+    if (batch.length > 0) {
+      const removed = await client.del(batch);
+      deleted += Number(removed) || 0;
+    }
+    if (deleted > 0) {
+      console.log(`Cleared ${deleted} Redis keys for namespace '${REDIS_NAMESPACE}'`);
+    } else {
+      console.log(`Redis namespace '${REDIS_NAMESPACE}' already empty.`);
+    }
+  } catch (error) {
+    console.warn('Failed to reset Redis namespace on boot:', error.message);
+  } finally {
+    batch = [];
+    try {
+      await client.quit();
+    } catch (quitError) {
+      console.warn('Failed to close Redis client after namespace reset:', quitError.message);
+    }
+  }
+}
+
+async function vacuumPostgresOnBoot() {
+  if (!VACUUM_ON_BOOT || VACUUM_TABLE_LIST.length === 0) {
+    return;
+  }
+  const pgConfig = getPostgresConfig();
+  const connectionString = pgConfig.readOnlyConnectionString || pgConfig.connectionString;
+  if (!pgConfig.enabled || !connectionString) {
+    return;
+  }
+  const pool = new Pool({
+    connectionString,
+    ssl: pgConfig.ssl,
+    application_name: 'startup-vacuum',
+  });
+  try {
+    for (const table of VACUUM_TABLE_LIST) {
+      try {
+        await pool.query(`VACUUM (ANALYZE) ${table};`);
+        console.log(`VACUUM ANALYZE completed for ${table}`);
+      } catch (tableError) {
+        console.warn(`VACUUM failed for ${table}:`, tableError.message);
+      }
+    }
+  } catch (error) {
+    console.warn('Startup Postgres vacuum encountered an error:', error.message);
+  } finally {
+    await pool.end().catch((error) => {
+      console.warn('Failed to close Postgres pool after vacuum:', error.message);
+    });
+  }
+}
+
+function schedulePostgresVacuum() {
+  if (!VACUUM_ON_BOOT || VACUUM_TABLE_LIST.length === 0) {
+    return;
+  }
+  const delay = Number.isFinite(VACUUM_START_DELAY_MS) && VACUUM_START_DELAY_MS >= 0
+    ? VACUUM_START_DELAY_MS
+    : 60_000;
+  setTimeout(() => {
+    vacuumPostgresOnBoot().catch((error) => {
+      console.warn('Startup Postgres vacuum failed:', error.message);
+    });
+  }, delay);
 }
 
 function isTextLikeContentType(contentType) {
@@ -621,6 +730,7 @@ async function bootstrapStartup() {
       `   Redis: ${wakeResults.redis.enabled ? (wakeResults.redis.awake ? 'awake' : 'sleeping') : 'disabled'} | ` +
         `Postgres: ${wakeResults.postgres.enabled ? (wakeResults.postgres.awake ? 'awake' : 'sleeping') : 'disabled'}`,
     );
+    await resetRedisNamespaceOnBoot();
     await mergeGeoJSONChunks();
 
     const refreshIntervalSeconds = Number.parseInt(
@@ -652,6 +762,7 @@ async function bootstrapStartup() {
         }),
       ),
     );
+    schedulePostgresVacuum();
   } catch (error) {
     console.error('Startup initialization failed:', error);
   }
@@ -820,12 +931,41 @@ function registerTileRoutes(app) {
       return;
     }
 
+    const hardTimeoutMs = Number.isFinite(TILE_HARD_TIMEOUT_MS) && TILE_HARD_TIMEOUT_MS > 0
+      ? TILE_HARD_TIMEOUT_MS
+      : 450;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error('Tile render budget exceeded')), hardTimeoutMs);
+
+    const respondWithEmptyTile = (statusCode = 200) => {
+      const acceptEncoding = req.headers['accept-encoding'] || '';
+      const { buffer: encoded, encoding } = encodeTileBuffer(EMPTY_TILE_BUFFER, acceptEncoding);
+      res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
+      res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+      res.setHeader('Vary', 'Accept-Encoding');
+      if (encoding) {
+        res.setHeader('Content-Encoding', encoding);
+      }
+      res.setHeader('ETag', 'W/"tile-empty"');
+      res.setHeader('X-Tile-Fallback', 'empty');
+      if (!res.headersSent) {
+        res.status(statusCode);
+      }
+      res.end(encoded);
+    };
+
     try {
-      const tile = await tileService.getTile(z, x, y);
-      if (!tile) {
+      const tile = await tileService.getTile(z, x, y, {
+        signal: controller.signal,
+        allowStale: true,
+        revalidate: true,
+      });
+
+      if (!tile || !tile.buffer) {
         res.status(204).end();
         return;
       }
+
       const etag = tile.version !== null && tile.version !== undefined
         ? `W/"tickets:${tile.version}"`
         : null;
@@ -851,8 +991,15 @@ function registerTileRoutes(app) {
       }
       res.end(encoded);
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        console.warn(`Tile request exceeded hard timeout for ${z}/${x}/${y}`);
+        respondWithEmptyTile(200);
+        return;
+      }
       console.error('Failed to serve vector tile', error);
-      res.status(500).json({ error: 'Failed to generate tile' });
+      respondWithEmptyTile(200);
+    } finally {
+      clearTimeout(timer);
     }
   });
 
@@ -1278,6 +1425,14 @@ function registerTileRoutes(app) {
 
 function registerDataRoutes(app, dataDirectory) {
   const resolveDataPath = (fileName) => path.join(dataDirectory, fileName);
+
+  app.get('/api/pmtiles-manifest', (req, res) => {
+    if (!pmtilesManifest.enabled) {
+      res.status(503).json({ enabled: false, message: 'PMTiles pipeline disabled' });
+      return;
+    }
+    res.json(pmtilesManifest);
+  });
 
   app.get('/data/tickets_summary.json', async (req, res) => {
     try {
