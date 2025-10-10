@@ -129,11 +129,13 @@ async function readTileFromRedis(version, z, x, y) {
       try {
         return brotliDecompressSync(payload);
       } catch (error) {
-        console.warn('Failed to decompress cached tile payload:', error.message);
+        console.warn('Failed to decompress cached tile payload, falling back to raw buffer:', error.message);
+        const rawBuffer = Buffer.from(payload);
         client.del(key).catch((delError) => {
           console.warn('Failed to purge corrupt tile cache entry:', delError.message);
         });
-        return null;
+        writeTileToRedis(version, z, x, y, rawBuffer);
+        return rawBuffer;
       }
     }
     return Buffer.from(payload);
