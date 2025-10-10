@@ -123,12 +123,17 @@ async function readTileFromRedis(version, z, x, y) {
       return null;
     }
     const flag = envelope[0];
-    const payload = envelope.subarray(1);
-    if (flag === TILE_PAYLOAD_FLAG_BROTLI) {
+    const hasEnvelopeHeader = flag === TILE_PAYLOAD_FLAG_RAW || flag === TILE_PAYLOAD_FLAG_BROTLI;
+    const payload = hasEnvelopeHeader ? envelope.subarray(1) : envelope;
+    if (hasEnvelopeHeader && flag === TILE_PAYLOAD_FLAG_BROTLI) {
       try {
         return brotliDecompressSync(payload);
       } catch (error) {
         console.warn('Failed to decompress cached tile payload:', error.message);
+        client.del(key).catch((delError) => {
+          console.warn('Failed to purge corrupt tile cache entry:', delError.message);
+        });
+        return null;
       }
     }
     return Buffer.from(payload);
