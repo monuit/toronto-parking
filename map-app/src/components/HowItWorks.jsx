@@ -106,7 +106,7 @@ export function HowItWorks() {
             </ol>
             <p>
               The result surfaces the highest-violation intersections, the wards demanding the most enforcement, and an estimated
-              <strong> $355.6&nbsp;million</strong> in fines over 18 years.
+              <strong> $331.9&nbsp;million</strong> in fines over 18 years.
             </p>
             <p>
               <em>The catch:</em> unlike parking tickets, the City only publishes red light charges as semi-annual aggregates, so the work here
@@ -115,6 +115,9 @@ export function HowItWorks() {
             <p>
               Questions or suggestions? Reach out on <a href="https://x.com/moevals" target="_blank" rel="noreferrer">X</a> or email
               {' '}<a href="mailto:hi@monuit.dev">hi@monuit.dev</a>.
+            </p>
+            <p>
+              By <a href="https://monuit.dev" target="_blank" rel="noreferrer">Moe</a>. Not affiliated with the Toronto city government.
             </p>
             <KofiButton active={activeTab === 'red_light'} />
           </div>
@@ -145,6 +148,9 @@ export function HowItWorks() {
             <p>
               Questions or suggestions? Reach out on <a href="https://x.com/moevals" target="_blank" rel="noreferrer">X</a> or email
               {' '}<a href="mailto:hi@monuit.dev">hi@monuit.dev</a>.
+            </p>
+            <p>
+              By <a href="https://monuit.dev" target="_blank" rel="noreferrer">Moe</a>. Not affiliated with the Toronto city government.
             </p>
             <KofiButton active={activeTab === 'ase'} />
           </div>

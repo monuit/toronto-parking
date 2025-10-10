@@ -9,17 +9,25 @@ import { useCentrelineLookup } from './context/CentrelineContext.jsx';
 import { StatsSummary } from './components/StatsSummary.jsx';
 import { StreetLeaderboard } from './components/StreetLeaderboard.jsx';
 import { NeighbourhoodLeaderboard } from './components/NeighbourhoodLeaderboard.jsx';
-import { WardLeaderboard } from './components/WardLeaderboard.jsx';
 import { Legend } from './components/Legend.jsx';
 import { InfoPopup } from './components/InfoPopup.jsx';
 import { HowItWorks } from './components/HowItWorks.jsx';
 import { ViewportInsights } from './components/ViewportInsights.jsx';
 import { DatasetToggle } from './components/DatasetToggle.jsx';
 import { YearFilter } from './components/YearFilter.jsx';
-import { WardModeToggle } from './components/WardModeToggle.jsx';
-import { WardHoverPopup } from './components/WardHoverPopup.jsx';
+import { MobileHeader } from './components/MobileHeader.jsx';
+import { MobileDrawer } from './components/MobileDrawer.jsx';
+import { MobileAccordion } from './components/MobileAccordion.jsx';
 import { MAP_CONFIG } from './lib/mapSources.js';
+import { prefetchCameraDatasets } from './lib/cameraDatasetLoader.js';
+import { prefetchGlowDatasets } from './lib/glowDatasetLoader.js';
+import { useBreakpoint, useTouchDevice } from './hooks/useBreakpoint.js';
 import './App.css';
+import './styles/MobileLayout.css';
+
+const WardLeaderboard = lazy(() => import('./components/WardLeaderboard.jsx'));
+const WardModeToggle = lazy(() => import('./components/WardModeToggle.jsx'));
+const WardHoverPopup = lazy(() => import('./components/WardHoverPopup.jsx'));
 
 const POPUP_SHEET_BREAKPOINT = 640;
 const POPUP_SIDE_BREAKPOINT = 1024;
@@ -91,6 +99,24 @@ function AppContent({
     red_light_locations: false,
     ase_locations: false,
   });
+  const isLegacyToggleAllowed = useCallback((key) => (
+    key === 'parking_tickets' || key === 'red_light_locations'
+  ), []);
+
+  const handleLegacyTotalsToggle = useCallback((key, nextValue) => {
+    if (!isLegacyToggleAllowed(key)) {
+      return;
+    }
+    setLegacyTotalsMode((previous) => {
+      if (previous[key] === nextValue) {
+        return previous;
+      }
+      return {
+        ...previous,
+        [key]: nextValue,
+      };
+    });
+  }, [isLegacyToggleAllowed]);
   const activeYear = yearSelections?.[dataset] ?? null;
   const existingYearSnapshot = activeYear !== null
     ? (yearlySnapshots?.[dataset]?.[activeYear] ?? null)
@@ -304,6 +330,11 @@ function AppContent({
     }
     return getPopupVariantForWidth(window.innerWidth);
   });
+  const isMobile = useBreakpoint(768);
+  const isTouchDevice = useTouchDevice();
+  const [isDrawerOpen, setDrawerOpen] = useState(false);
+  const [isLegendSheetOpen, setLegendSheetOpen] = useState(false);
+  const [isInsightsSheetOpen, setInsightsSheetOpen] = useState(false);
   const { getStreetSummary, getCentrelineDetail } = useCentrelineLookup();
   const datasetEntry = useMemo(
     () => (datasetSnapshots && datasetSnapshots[dataset]) || {},
@@ -535,8 +566,25 @@ function AppContent({
       const { __source, ...rest } = value;
       next[key] = rest;
     }
+
+    const wardTotalsOverrides = [
+      ['red_light_locations', datasetSnapshots?.red_light_locations?.wardSummary?.totals],
+      ['ase_locations', datasetSnapshots?.ase_locations?.wardSummary?.totals],
+      ['cameras_combined', datasetSnapshots?.cameras_combined?.wardSummary?.totals],
+    ];
+
+    for (const [key, totals] of wardTotalsOverrides) {
+      if (!totals || typeof totals !== 'object') {
+        continue;
+      }
+      next[key] = {
+        ...(next[key] || {}),
+        ...totals,
+      };
+    }
+
     return next;
-  }, [totalsByDataset]);
+  }, [totalsByDataset, datasetSnapshots]);
 
   const legacyTotalsByDataset = useMemo(() => {
     const next = {};
@@ -589,25 +637,17 @@ function AppContent({
         entry.note = {
           title: 'Automated Speed Enforcement (ASE)',
           lines: [
-            '• The authoritative ase_camera_locations feed lists 199 sites (150 Active, 49 Planned) with mapped geometry.',
-            '• Yearly rollups (ase_yearly_locations) still include 520 historical rotation codes from spreadsheet exports without geometry.',
-            '• Public summary JSON reports 199 sites / 1,040,119 tickets, while ward rollups include 2,054,677 tickets across historical codes.',
+            '• The feed lists 199 sites (150 Active, 49 Planned) with mapped geometry.',
+            '• Yearly rollups still include 520 historical rotation codes from spreadsheet exports without geometry.',
+            '• Public reports 199 sites / 1,040,119 tickets, while ward rollups include 2,054,677 tickets across historical codes.',
             '• Ward and leaderboard totals therefore exceed the 199 active cameras even though ticket volumes align with expectations.',
           ],
-          footnote: 'Root cause: historical spreadsheet rotations remain aggregated alongside current locations until the feed reconciliation is finished.',
+          footnote: 'Root cause: historical spreadsheet rotations remain aggregated alongside current locations until the feed reconciliation is finished (bad data from the city).',
         };
         entry.forceShow = true;
       } else if (key === 'parking_tickets') {
         entry.delta.locationCount = 0;
-        entry.note = {
-          title: 'Toronto Parking data quality context',
-          lines: [
-            '• Current totals reflect deduplicated tickets from the live database ingestion.',
-            '• The alternate toggle loads earlier exports that still contain duplicate or unverified ticket records.',
-            '• Use the toggle only if you need to reference those historical counts for comparison.',
-          ],
-          footnote: 'We are reconciling the unverified exports so the two sources will converge once cleaning finishes.',
-        };
+        entry.note = null;
         entry.forceShow = true;
       }
       map[key] = entry;
@@ -633,6 +673,38 @@ function AppContent({
         result[key] = legacy;
       }
     });
+    const aseTotalsForCombined = legacyTotalsMode.ase_locations && legacyTotalsByDataset.ase_locations
+      ? legacyTotalsByDataset.ase_locations
+      : sanitizedTotalsByDataset.ase_locations;
+    const redTotalsForCombined = legacyTotalsMode.red_light_locations && legacyTotalsByDataset.red_light_locations
+      ? legacyTotalsByDataset.red_light_locations
+      : sanitizedTotalsByDataset.red_light_locations;
+    const hasCombinedBase = result.cameras_combined
+      || sanitizedTotalsByDataset.cameras_combined
+      || legacyTotalsByDataset.cameras_combined;
+    const hasComponentOverrides = Boolean(aseTotalsForCombined || redTotalsForCombined);
+    if (hasCombinedBase && hasComponentOverrides) {
+      const base = result.cameras_combined
+        || sanitizedTotalsByDataset.cameras_combined
+        || legacyTotalsByDataset.cameras_combined
+        || {};
+      const toNumber = (value) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : 0;
+      };
+      const aseTickets = toNumber(aseTotalsForCombined?.ticketCount ?? aseTotalsForCombined?.featureCount);
+      const redTickets = toNumber(redTotalsForCombined?.ticketCount ?? redTotalsForCombined?.featureCount);
+      const aseRevenue = toNumber(aseTotalsForCombined?.totalRevenue);
+      const redRevenue = toNumber(redTotalsForCombined?.totalRevenue);
+      const aseLocations = toNumber(aseTotalsForCombined?.locationCount ?? aseTotalsForCombined?.featureCount);
+      const redLocations = toNumber(redTotalsForCombined?.locationCount ?? redTotalsForCombined?.featureCount);
+      result.cameras_combined = {
+        ...base,
+        ticketCount: aseTickets + redTickets,
+        totalRevenue: aseRevenue + redRevenue,
+        locationCount: aseLocations + redLocations,
+      };
+    }
     return result;
   }, [legacyTotalsByDataset, sanitizedTotalsByDataset, legacyTotalsMode]);
 
@@ -644,6 +716,18 @@ function AppContent({
     [displayTotalsByDataset, sanitizedTotalsByDataset, legacyTotalsByDataset],
   );
 
+  const summaryDatasetKey = activeViewMode === 'ward' && activeWardDataset ? activeWardDataset : dataset;
+  const summaryUseLegacy = isLegacyToggleAllowed(summaryDatasetKey)
+    ? (legacyTotalsMode[summaryDatasetKey] ?? false)
+    : false;
+  const summaryLegacyToggleHandler = useMemo(() => {
+    if (!isLegacyToggleAllowed(summaryDatasetKey)) {
+      return null;
+    }
+    return (value) => {
+      handleLegacyTotalsToggle(summaryDatasetKey, value);
+    };
+  }, [handleLegacyTotalsToggle, isLegacyToggleAllowed, summaryDatasetKey]);
   const currentTotals = resolveTotalsForDataset(dataset);
   const effectiveYearTotals = useMemo(() => {
     if (statsTotalsOverride) {
@@ -657,6 +741,16 @@ function AppContent({
 
   const statsTotalsToUse = useMemo(() => {
     if (activeViewMode === 'ward') {
+      if (summaryUseLegacy) {
+        const legacyTotals = resolveTotalsForDataset(summaryDatasetKey);
+        if (legacyTotals) {
+          return {
+            locationCount: Number(legacyTotals.locationCount ?? legacyTotals.featureCount ?? 0),
+            ticketCount: Number(legacyTotals.ticketCount ?? legacyTotals.featureCount ?? 0),
+            totalRevenue: Number(legacyTotals.totalRevenue ?? 0),
+          };
+        }
+      }
       if (wardTotals) {
         return {
           locationCount: Number(wardTotals.locationCount ?? 0),
@@ -665,7 +759,10 @@ function AppContent({
         };
       }
       if (activeWardDataset) {
-        return resolveTotalsForDataset(activeWardDataset);
+        const wardDatasetTotals = resolveTotalsForDataset(activeWardDataset);
+        if (wardDatasetTotals) {
+          return wardDatasetTotals;
+        }
       }
       return currentTotals;
     }
@@ -673,19 +770,52 @@ function AppContent({
       return effectiveYearTotals;
     }
     return currentTotals;
-  }, [activeViewMode, wardTotals, activeWardDataset, resolveTotalsForDataset, currentTotals, effectiveYearTotals]);
+  }, [activeViewMode, summaryUseLegacy, summaryDatasetKey, resolveTotalsForDataset, wardTotals, activeWardDataset, currentTotals, effectiveYearTotals]);
 
-  const summaryDatasetKey = activeViewMode === 'ward' && activeWardDataset ? activeWardDataset : dataset;
   const summaryDiscrepancy = discrepancyByDataset[summaryDatasetKey] || null;
-  const summaryUseLegacy = legacyTotalsMode[summaryDatasetKey] ?? false;
   const datasetTotals = resolveTotalsForDataset(dataset);
   const primaryDisplayTotals = effectiveYearTotals || datasetTotals;
+  const combinedBreakdownOverride = useMemo(() => {
+    const aseTotals = resolveTotalsForDataset('ase_locations');
+    const redTotals = resolveTotalsForDataset('red_light_locations');
+    if (!aseTotals && !redTotals) {
+      return null;
+    }
+    const normalize = (source) => {
+      if (!source) {
+        return {
+          ticketCount: 0,
+          totalRevenue: 0,
+          locationCount: 0,
+        };
+      }
+      return {
+        ticketCount: Number(source.ticketCount ?? source.featureCount ?? 0),
+        totalRevenue: Number(source.totalRevenue ?? 0),
+        locationCount: Number(source.locationCount ?? source.featureCount ?? 0),
+      };
+    };
+    return {
+      ase: normalize(aseTotals),
+      redLight: normalize(redTotals),
+    };
+  }, [resolveTotalsForDataset]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsClient(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isClient) {
+      return undefined;
+    }
+    Promise.all([prefetchCameraDatasets(), prefetchGlowDatasets()]).catch(() => {
+      /* prefetch failures are non-fatal */
+    });
+    return undefined;
+  }, [isClient]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -704,13 +834,6 @@ function AppContent({
 
   const handleMapLoad = useCallback((mapInstance) => {
     setMap(mapInstance);
-  }, []);
-
-  const handleLegacyTotalsToggle = useCallback((key, nextValue) => {
-    setLegacyTotalsMode((previous) => ({
-      ...previous,
-      [key]: nextValue,
-    }));
   }, []);
 
   const focusOnPoint = useCallback((longitude, latitude, options = {}) => {
@@ -803,6 +926,14 @@ function AppContent({
       setPopupPosition(null);
     }
   }, [popupVariant, popupData, computePopupPosition]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setDrawerOpen(false);
+      setLegendSheetOpen(false);
+      setInsightsSheetOpen(false);
+    }
+  }, [isMobile]);
 
   const handleNeighbourhoodClick = useCallback((properties, event) => {
     setActiveCentrelineIds([]);
@@ -929,7 +1060,31 @@ function AppContent({
   }, []);
 
   const toggleOverlay = useCallback(() => {
+    if (isMobile) {
+      setInsightsSheetOpen((current) => !current);
+      return;
+    }
     setIsOverlayCollapsed((current) => !current);
+  }, [isMobile]);
+
+  const handleDrawerToggle = useCallback(() => {
+    setDrawerOpen((current) => !current);
+  }, []);
+
+  const closeDrawer = useCallback(() => {
+    setDrawerOpen(false);
+  }, []);
+
+  const openLegendSheet = useCallback(() => {
+    setLegendSheetOpen(true);
+  }, []);
+
+  const closeLegendSheet = useCallback(() => {
+    setLegendSheetOpen(false);
+  }, []);
+
+  const closeInsightsSheet = useCallback(() => {
+    setInsightsSheetOpen(false);
   }, []);
 
   useEffect(() => {
@@ -940,6 +1095,12 @@ function AppContent({
     setActiveTab('streets');
     setWardHoverInfo(null);
   }, [dataset, activeYear]);
+
+  useEffect(() => {
+    if (isMobile) {
+      setDrawerOpen(false);
+    }
+  }, [dataset, isMobile]);
 
   useEffect(() => {
     if (activeViewMode === 'ward' && activeYear !== null) {
@@ -1211,35 +1372,89 @@ function AppContent({
     setPopupPosition(null);
   }, [normalizeWardMetrics, activeWardDataset, dataset]);
 
-  return (
-    <div className="App">
-      <div className="left-sidebar">
-        <div className="sidebar-content">
-          <StatsSummary
-            viewportSummary={viewportSummary}
-            showViewport={dataset === 'parking_tickets'}
-            dataset={activeViewMode === 'ward' && activeWardDataset ? activeWardDataset : dataset}
-            totalsOverride={statsTotalsToUse}
-            yearFilter={activeViewMode === 'ward' ? null : activeYear}
-            discrepancyInfo={summaryDiscrepancy}
-            onToggleLegacy={summaryDiscrepancy ? (value) => handleLegacyTotalsToggle(summaryDatasetKey, value) : null}
-            useLegacyTotals={summaryUseLegacy}
-          />
+  const sidebarContent = (
+    <div className="sidebar-content">
+      <MobileAccordion
+        title="Totals"
+        isMobile={isMobile}
+        defaultOpen
+      >
+        <StatsSummary
+          viewportSummary={viewportSummary}
+          showViewport={dataset === 'parking_tickets'}
+          dataset={activeViewMode === 'ward' && activeWardDataset ? activeWardDataset : dataset}
+          totalsOverride={statsTotalsToUse}
+          yearFilter={activeViewMode === 'ward' ? null : activeYear}
+          discrepancyInfo={summaryDiscrepancy}
+          onToggleLegacy={summaryLegacyToggleHandler}
+          useLegacyTotals={summaryUseLegacy}
+          combinedBreakdownOverride={combinedBreakdownOverride}
+        />
+      </MobileAccordion>
 
-          <YearFilter
-            years={datasetYears}
-            value={activeYear}
-            onChange={handleYearChange}
-            disabled={datasetYears.length === 0 || activeViewMode === 'ward'}
-          />
+      <MobileAccordion
+        title="Year filter"
+        isMobile={isMobile}
+        defaultOpen={false}
+      >
+        <YearFilter
+          years={datasetYears}
+          value={activeYear}
+          onChange={handleYearChange}
+          disabled={datasetYears.length === 0 || activeViewMode === 'ward'}
+        />
+      </MobileAccordion>
 
-          {activeViewMode === 'ward' ? (
+      {activeViewMode === 'ward' ? (
+        <MobileAccordion
+          title="Top wards"
+          isMobile={isMobile}
+          defaultOpen
+        >
+          <Suspense fallback={<div className="panel-placeholder">Loading wards…</div>}>
             <WardLeaderboard
               items={wardLeaderboardItems}
               loading={isWardLoading}
               dataset={activeWardDataset || dataset}
               onWardSelect={handleWardSelect}
             />
+          </Suspense>
+        </MobileAccordion>
+      ) : (
+        <>
+          {isMobile ? (
+            <>
+              <MobileAccordion
+                title={streetsTabLabel}
+                isMobile
+                defaultOpen
+              >
+                <StreetLeaderboard
+                  visible
+                  dataset={dataset}
+                  initialItems={streetInitialItems}
+                  onStreetSelect={handleStreetSelect}
+                  overrideItems={streetOverrideItems}
+                  overrideLoading={isYearLoading}
+                  totalsOverride={primaryDisplayTotals}
+                />
+              </MobileAccordion>
+              <MobileAccordion
+                title={neighbourhoodsTabLabel}
+                isMobile
+                defaultOpen={false}
+              >
+                <NeighbourhoodLeaderboard
+                  visible
+                  dataset={dataset}
+                  onNeighbourhoodClick={dataset === 'parking_tickets' ? handleNeighbourhoodFocus : undefined}
+                  initialItems={neighbourhoodInitialItems}
+                  overrideItems={neighbourhoodOverrideItems}
+                  overrideLoading={isYearLoading}
+                  totalsOverride={primaryDisplayTotals}
+                />
+              </MobileAccordion>
+            </>
           ) : (
             <>
               <div className="tab-switcher">
@@ -1276,101 +1491,244 @@ function AppContent({
               />
             </>
           )}
-          <HowItWorks />
-        </div>
-      </div>
-
-      {dataset === 'parking_tickets' ? (
-        <div className={`insights-overlay ${isOverlayCollapsed ? 'insights-overlay--collapsed' : ''}`}>
-          <div className="overlay-header">
-            <button
-              type="button"
-              className="overlay-toggle"
-              onClick={toggleOverlay}
-              aria-expanded={!isOverlayCollapsed}
-            >
-              {isOverlayCollapsed ? 'Show insights' : 'Hide insights'}
-            </button>
-          </div>
-          {!isOverlayCollapsed ? (
-            <div className="overlay-stack">
-              <>
-                <div className="overlay-panel summary-panel">
-                  <StatsSummary
-                    viewportSummary={viewportSummary}
-                    variant="compact"
-                    showTotals={false}
-                    showViewport
-                    dataset={dataset}
-                    totalsOverride={statsTotalsOverride || primaryDisplayTotals}
-                    viewportTitle="Current view"
-                  />
-                </div>
-                <div className="overlay-panel insights-panel">
-                  <ViewportInsights
-                    summary={viewportSummary}
-                    fallbackTopStreets={fallbackTopStreets}
-                    variant="compact"
-                  />
-                </div>
-              </>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="legend-floating">
-        <Legend visible dataset={legendDataset} />
-      </div>
-
-      <div className="dataset-toggle-floating">
-        <DatasetToggle value={dataset} onChange={setDataset} />
-        {(dataset === 'red_light_locations' || dataset === 'ase_locations') ? (
-          <div className="dataset-toggle-floating__secondary">
-            <WardModeToggle
-              dataset={dataset}
-              viewMode={activeViewMode}
-              wardDataset={activeWardDataset || dataset}
-              onViewModeChange={handleViewModeChange}
-              onWardDatasetChange={handleWardDatasetChange}
-            />
-          </div>
-        ) : null}
-      </div>
-
-      {isClient ? (
-        <Suspense fallback={<div className="map-container">Loading map…</div>}>
-          <MapExperience
-            onMapLoad={handleMapLoad}
-            onPointClick={handlePointClick}
-            onNeighbourhoodClick={handleNeighbourhoodClick}
-            onViewportSummaryChange={setViewportSummary}
-            onStreetSegmentClick={handleStreetSegmentClick}
-            highlightCentrelineIds={activeCentrelineIds}
-            dataset={dataset}
-            filter={activeYear !== null && activeViewMode !== 'ward' ? { year: activeYear } : null}
-            viewMode={activeViewMode}
-            wardDataset={activeWardDataset || dataset}
-            onWardHover={handleWardHover}
-            onWardClick={handleWardClick}
-          />
-        </Suspense>
-      ) : (
-        <div className="map-container">Preparing map…</div>
+        </>
       )}
 
-      {activeViewMode === 'ward' && wardHoverInfo ? (
-        <WardHoverPopup data={wardHoverInfo} dataset={wardHoverInfo.dataset} />
-      ) : null}
+      <MobileAccordion
+        title="About"
+        isMobile={isMobile}
+        defaultOpen={false}
+      >
+        <HowItWorks />
+      </MobileAccordion>
+    </div>
+  );
 
-      {popupData && (
-        <InfoPopup
-          data={popupData}
-          position={popupPosition}
-          variant={popupVariant}
-          yearFilter={activeYear}
-          onClose={closePopup}
-        />
+  const mainClassName = [
+    'App',
+    isMobile ? 'App--mobile' : null,
+    isTouchDevice ? 'App--touch' : null,
+  ].filter(Boolean).join(' ');
+
+  return (
+    <div className={mainClassName}>
+      {isMobile ? (
+        <>
+          <MobileHeader
+            dataset={dataset}
+            onDatasetChange={setDataset}
+            onDrawerToggle={handleDrawerToggle}
+            isDrawerOpen={isDrawerOpen}
+            onLegendToggle={openLegendSheet}
+            onInsightsToggle={() => setInsightsSheetOpen(true)}
+          >
+            {(dataset === 'red_light_locations' || dataset === 'ase_locations') ? (
+              <Suspense fallback={<div className="mobile-header__placeholder" />}
+              >
+                <WardModeToggle
+                  dataset={dataset}
+                  viewMode={activeViewMode}
+                  wardDataset={activeWardDataset || dataset}
+                  onViewModeChange={handleViewModeChange}
+                  onWardDatasetChange={handleWardDatasetChange}
+                />
+              </Suspense>
+            ) : null}
+          </MobileHeader>
+
+          {isClient ? (
+            <Suspense fallback={<div className="map-container map-container__placeholder">Loading map…</div>}>
+              <MapExperience
+                onMapLoad={handleMapLoad}
+                onPointClick={handlePointClick}
+                onNeighbourhoodClick={handleNeighbourhoodClick}
+                onViewportSummaryChange={setViewportSummary}
+                onStreetSegmentClick={handleStreetSegmentClick}
+                highlightCentrelineIds={activeCentrelineIds}
+                dataset={dataset}
+                filter={activeYear !== null && activeViewMode !== 'ward' ? { year: activeYear } : null}
+                viewMode={activeViewMode}
+                wardDataset={activeWardDataset || dataset}
+                onWardHover={handleWardHover}
+                onWardClick={handleWardClick}
+                isTouchDevice={isTouchDevice}
+              />
+            </Suspense>
+          ) : (
+            <div className="map-container map-container__placeholder">Preparing map…</div>
+          )}
+
+          <MobileDrawer open={isDrawerOpen} onClose={closeDrawer}>
+            {sidebarContent}
+          </MobileDrawer>
+
+          <div
+            className={`mobile-modal ${isLegendSheetOpen ? 'mobile-modal--open' : ''}`}
+            onClick={closeLegendSheet}
+            role="dialog"
+            aria-modal="true"
+            aria-hidden={!isLegendSheetOpen}
+          >
+            <div
+              className="mobile-modal__sheet"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mobile-modal__header">
+                <h2>Legend</h2>
+                <button type="button" className="mobile-modal__close" onClick={closeLegendSheet}>
+                  Close
+                </button>
+              </div>
+              <Legend visible dataset={legendDataset} />
+            </div>
+          </div>
+
+          <div
+            className={`mobile-modal ${isInsightsSheetOpen ? 'mobile-modal--open' : ''}`}
+            onClick={closeInsightsSheet}
+            role="dialog"
+            aria-modal="true"
+            aria-hidden={!isInsightsSheetOpen}
+          >
+            <div
+              className="mobile-modal__sheet"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mobile-modal__header">
+                <h2>Viewport insights</h2>
+                <button type="button" className="mobile-modal__close" onClick={closeInsightsSheet}>
+                  Close
+                </button>
+              </div>
+              <ViewportInsights
+                summary={viewportSummary}
+                fallbackTopStreets={fallbackTopStreets}
+                variant="compact"
+              />
+            </div>
+          </div>
+
+          {activeViewMode === 'ward' && wardHoverInfo ? (
+            <Suspense fallback={null}>
+              <WardHoverPopup data={wardHoverInfo} dataset={wardHoverInfo.dataset} />
+            </Suspense>
+          ) : null}
+
+          {popupData && (
+            <InfoPopup
+              data={popupData}
+              position={popupPosition}
+              variant={popupVariant}
+              yearFilter={activeYear}
+              onClose={closePopup}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <div className="left-sidebar">
+            {sidebarContent}
+          </div>
+
+          {dataset === 'parking_tickets' ? (
+            <div className={`insights-overlay ${isOverlayCollapsed ? 'insights-overlay--collapsed' : ''}`}>
+              <div className="overlay-header">
+                <button
+                  type="button"
+                  className="overlay-toggle"
+                  onClick={toggleOverlay}
+                  aria-expanded={!isOverlayCollapsed}
+                >
+                  {isOverlayCollapsed ? 'Show insights' : 'Hide insights'}
+                </button>
+              </div>
+              {!isOverlayCollapsed ? (
+                <div className="overlay-stack">
+                  <>
+                    <div className="overlay-panel summary-panel">
+                      <StatsSummary
+                        viewportSummary={viewportSummary}
+                        variant="compact"
+                        showTotals={false}
+                        showViewport
+                        dataset={dataset}
+                        totalsOverride={statsTotalsOverride || primaryDisplayTotals}
+                        viewportTitle="Current view"
+                        combinedBreakdownOverride={combinedBreakdownOverride}
+                      />
+                    </div>
+                    <div className="overlay-panel insights-panel">
+                      <ViewportInsights
+                        summary={viewportSummary}
+                        fallbackTopStreets={fallbackTopStreets}
+                        variant="compact"
+                      />
+                    </div>
+                  </>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="legend-floating">
+            <Legend visible dataset={legendDataset} />
+          </div>
+
+          <div className="dataset-toggle-floating">
+            <DatasetToggle value={dataset} onChange={setDataset} />
+            {(dataset === 'red_light_locations' || dataset === 'ase_locations') ? (
+              <div className="dataset-toggle-floating__secondary">
+                <Suspense fallback={null}>
+                  <WardModeToggle
+                    dataset={dataset}
+                    viewMode={activeViewMode}
+                    wardDataset={activeWardDataset || dataset}
+                    onViewModeChange={handleViewModeChange}
+                    onWardDatasetChange={handleWardDatasetChange}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+          </div>
+
+          {isClient ? (
+            <Suspense fallback={<div className="map-container">Loading map…</div>}>
+              <MapExperience
+                onMapLoad={handleMapLoad}
+                onPointClick={handlePointClick}
+                onNeighbourhoodClick={handleNeighbourhoodClick}
+                onViewportSummaryChange={setViewportSummary}
+                onStreetSegmentClick={handleStreetSegmentClick}
+                highlightCentrelineIds={activeCentrelineIds}
+                dataset={dataset}
+                filter={activeYear !== null && activeViewMode !== 'ward' ? { year: activeYear } : null}
+                viewMode={activeViewMode}
+                wardDataset={activeWardDataset || dataset}
+                onWardHover={handleWardHover}
+                onWardClick={handleWardClick}
+                isTouchDevice={isTouchDevice}
+              />
+            </Suspense>
+          ) : (
+            <div className="map-container">Preparing map…</div>
+          )}
+
+          {activeViewMode === 'ward' && wardHoverInfo ? (
+            <Suspense fallback={null}>
+              <WardHoverPopup data={wardHoverInfo} dataset={wardHoverInfo.dataset} />
+            </Suspense>
+          ) : null}
+
+          {popupData && (
+            <InfoPopup
+              data={popupData}
+              position={popupPosition}
+              variant={popupVariant}
+              yearFilter={activeYear}
+              onClose={closePopup}
+            />
+          )}
+        </>
       )}
     </div>
   );

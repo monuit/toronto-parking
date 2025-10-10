@@ -120,6 +120,20 @@ export function Legend({ visible = true, dataset = 'parking_tickets' }) {
         )}
       </button>
 
+      <a
+        className="legend-support"
+        href="https://ko-fi.com/Z8Z51MBSO5"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Buy Moe a coffee on Ko-fi"
+      >
+        <img
+          src="https://storage.ko-fi.com/cdn/kofi3.png?v=6"
+          alt="Buy Me a Coffee"
+          height="36"
+        />
+      </a>
+
       {isExpanded && (
         <div className="legend-content">
           <h4>Legend</h4>
