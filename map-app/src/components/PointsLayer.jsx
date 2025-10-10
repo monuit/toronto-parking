@@ -113,7 +113,6 @@ export function PointsLayer({
     inFlightSummaryKeyRef.current = null;
     lastSummaryKeyRef.current = null;
   }, [dataset, filter?.year, filter?.month]);
-
   useEffect(() => {
     if (!map || !pmtilesReady || !pmtilesManifest?.datasets?.[dataset]) {
       setPmtilesSource(null);
@@ -599,12 +598,10 @@ export function PointsLayer({
       'circle-opacity': datasetStyle.opacity
     }
   };
-
   const vectorSourceKey = pmtilesSource?.shardId ? `${dataset}-${pmtilesSource.shardId}` : dataset;
   const vectorSourceProps = pmtilesSource?.url
     ? { url: pmtilesSource.url }
     : { tiles: [tileUrl] };
-
   if (!isParkingDataset && !geojsonData) {
     return null;
   }

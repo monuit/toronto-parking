@@ -176,9 +176,9 @@ export function WardChoroplethLayer({
       key={sourceId}
       id={sourceId}
       type="vector"
-      tiles={[tileUrl]}
-      minzoom={pmtilesDataset?.minZoom ?? 0}
-      maxzoom={pmtilesDataset?.maxZoom ?? 14}
+  tiles={[tileUrl]}
+  minzoom={pmtilesDataset?.minZoom ?? 0}
+  maxzoom={pmtilesDataset?.maxZoom ?? 14}
     >
       <Layer
         id={fillLayerId}

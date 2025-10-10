@@ -158,7 +158,6 @@ class AsyncSemaphore {
 const renderSemaphore = MAX_ACTIVE_RENDERS > 0
   ? new AsyncSemaphore(MAX_ACTIVE_RENDERS)
   : null;
-
 let tileRedisPromise = null;
 let tilePostgresPool = null;
 let tilePostgresSignature = null;
@@ -1407,7 +1406,6 @@ class TileService {
     if (Object.keys(layers).length === 0) {
       return null;
     }
-
     throwIfAborted(signal);
     return layers;
   }
