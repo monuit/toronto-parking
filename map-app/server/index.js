@@ -4,11 +4,12 @@ import { existsSync } from 'fs';
 import express from 'express';
 import path from 'path';
 import process from 'node:process';
-import { Readable } from 'node:stream';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer as createViteServer } from 'vite';
+import { createClient } from 'redis';
 import { createAppData } from './createAppData.js';
 import { createTileService, getWardTile, prewarmWardTiles } from './tileService.js';
 import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
@@ -37,6 +38,7 @@ import {
   getCameraLocationDetail,
   getCameraTopGroups,
 } from './yearlyMetricsService.js';
+import { getRedisConfig } from './runtimeConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -163,6 +165,285 @@ const styleCache = {
 };
 let loggedMissingMapKey = false;
 const WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
+
+const redisSettings = getRedisConfig();
+const MAPTILER_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
+const MAPTILER_REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
+const MAPTILER_CACHE_PREFIX = `${MAPTILER_REDIS_NAMESPACE}:maptiler:v1`;
+const MAPTILER_PROXY_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_TIMEOUT_MS || '', 10) || 8_000;
+const MAPTILER_PROXY_MAX_RETRIES = Number.parseInt(process.env.MAPTILER_PROXY_MAX_RETRIES || '', 10) || 2;
+const MAPTILER_PROXY_BACKOFF_MS = Number.parseInt(process.env.MAPTILER_PROXY_BACKOFF_MS || '', 10) || 500;
+const MAPTILER_CACHEABLE_METHODS = new Set(['GET']);
+const MAPTILER_TILE_CACHE_CONTROL = 'public, max-age=21600, stale-while-revalidate=600';
+const MAPTILER_FONT_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=3600';
+const MAPTILER_DEFAULT_CACHE_CONTROL = 'public, max-age=3600, stale-while-revalidate=600';
+
+let maptilerRedisPromise = null;
+const maptilerInflight = new Map();
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function randomJitter(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return 0;
+  }
+  return Math.floor(Math.random() * ms);
+}
+
+async function getMaptilerRedisClient() {
+  if (!MAPTILER_REDIS_ENABLED) {
+    return null;
+  }
+  if (maptilerRedisPromise) {
+    try {
+      const existing = await maptilerRedisPromise;
+      if (existing && existing.isOpen) {
+        return existing;
+      }
+    } catch (error) {
+      console.warn('MapTiler Redis client error:', error.message);
+    }
+    maptilerRedisPromise = null;
+  }
+
+  maptilerRedisPromise = (async () => {
+    const client = createClient({ url: redisSettings.url });
+    const reset = () => {
+      if (maptilerRedisPromise) {
+        maptilerRedisPromise = null;
+      }
+    };
+    client.on('error', (error) => {
+      console.warn('MapTiler Redis connection error:', error.message);
+    });
+    client.on('end', reset);
+    client.on('close', reset);
+    try {
+      await client.connect();
+      return client;
+    } catch (error) {
+      reset();
+      console.warn('Failed to connect to Redis for MapTiler cache:', error.message);
+      try {
+        await client.disconnect();
+      } catch (disconnectError) {
+        console.warn('Error closing MapTiler Redis client after failure:', disconnectError.message);
+      }
+      return null;
+    }
+  })();
+
+  const client = await maptilerRedisPromise;
+  return client && client.isOpen ? client : null;
+}
+
+function hashForCache(value) {
+  return createHash('sha1').update(value).digest('hex');
+}
+
+function buildCanonicalQuery(searchParams) {
+  if (!searchParams) {
+    return '';
+  }
+  const entries = [];
+  for (const [key, value] of searchParams.entries()) {
+    if (key === 'key') {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        entries.push([key, entry]);
+      }
+    } else {
+      entries.push([key, value]);
+    }
+  }
+  entries.sort((a, b) => (a[0] === b[0] ? String(a[1]).localeCompare(String(b[1])) : a[0].localeCompare(b[0])));
+  if (!entries.length) {
+    return '';
+  }
+  return entries.map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value ?? '')}`).join('&');
+}
+
+function resolveMaptilerCacheTtl(resourcePath) {
+  if (resourcePath.startsWith('tiles/')) {
+    return 60 * 60 * 6;
+  }
+  if (resourcePath.startsWith('fonts/') || resourcePath.endsWith('.pbf')) {
+    return 60 * 60 * 24;
+  }
+  if (resourcePath.endsWith('.json') || resourcePath.includes('/styles/')) {
+    return 60 * 60 * 6;
+  }
+  return 60 * 60;
+}
+
+function resolveDownstreamCacheControl(resourcePath) {
+  if (resourcePath.startsWith('tiles/')) {
+    return MAPTILER_TILE_CACHE_CONTROL;
+  }
+  if (resourcePath.startsWith('fonts/')) {
+    return MAPTILER_FONT_CACHE_CONTROL;
+  }
+  return MAPTILER_DEFAULT_CACHE_CONTROL;
+}
+
+function buildMaptilerDescriptor(resourcePath, searchParams) {
+  const normalizedPath = resourcePath.replace(/^\/+/, '');
+  const canonicalQuery = buildCanonicalQuery(searchParams);
+  const canonical = canonicalQuery ? `${normalizedPath}?${canonicalQuery}` : normalizedPath;
+  const cacheKey = `${MAPTILER_CACHE_PREFIX}:${hashForCache(canonical)}`;
+  return {
+    cacheKey,
+    cacheable: MAPTILER_REDIS_ENABLED,
+    canonical,
+    resourcePath: normalizedPath,
+    ttlSeconds: resolveMaptilerCacheTtl(normalizedPath),
+    downstreamCacheControl: resolveDownstreamCacheControl(normalizedPath),
+  };
+}
+
+async function readMaptilerCache(cacheKey) {
+  if (!MAPTILER_REDIS_ENABLED) {
+    return null;
+  }
+  const client = await getMaptilerRedisClient();
+  if (!client) {
+    return null;
+  }
+  try {
+    const stored = await client.get(cacheKey);
+    if (!stored) {
+      return null;
+    }
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed.base64 !== 'string') {
+      return null;
+    }
+    return {
+      status: parsed.status || 200,
+      headers: parsed.headers || {},
+      body: Buffer.from(parsed.base64, 'base64'),
+      storedAt: parsed.storedAt || null,
+    };
+  } catch (error) {
+    console.warn('Failed to read MapTiler cache from Redis:', error.message);
+    return null;
+  }
+}
+
+async function writeMaptilerCache(cacheKey, payload, ttlSeconds) {
+  if (!MAPTILER_REDIS_ENABLED || !payload || !payload.body || payload.body.length === 0) {
+    return;
+  }
+  const client = await getMaptilerRedisClient();
+  if (!client) {
+    return;
+  }
+  try {
+    const envelope = {
+      status: payload.status,
+      headers: payload.headers,
+      base64: payload.body.toString('base64'),
+      storedAt: Date.now(),
+    };
+    const options = Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? { EX: ttlSeconds } : {};
+    await client.set(cacheKey, JSON.stringify(envelope), options);
+  } catch (error) {
+    console.warn('Failed to cache MapTiler payload in Redis:', error.message);
+  }
+}
+
+function filterUpstreamHeaders(headers) {
+  const allowed = ['content-type', 'content-encoding', 'last-modified', 'etag', 'x-tileset-version'];
+  const sanitized = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const lower = name.toLowerCase();
+    if (!allowed.includes(lower)) {
+      continue;
+    }
+    sanitized[lower] = value;
+  }
+  return sanitized;
+}
+
+async function fetchMaptilerWithRetry(url, initHeaders = {}) {
+  let attempt = 0;
+  let lastError = null;
+  const maxAttempts = MAPTILER_PROXY_MAX_RETRIES + 1;
+  while (attempt < maxAttempts) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, MAPTILER_PROXY_TIMEOUT_MS + attempt * 500);
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: initHeaders,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (response.status === 429 && attempt < maxAttempts - 1) {
+        lastError = new Error('MapTiler responded with 429');
+      } else if (response.status >= 500 && response.status < 600 && attempt < maxAttempts - 1) {
+        lastError = new Error(`MapTiler responded with ${response.status}`);
+      } else {
+        return response;
+      }
+    } catch (error) {
+      clearTimeout(timeout);
+      lastError = error;
+    }
+    attempt += 1;
+    if (attempt >= maxAttempts) {
+      break;
+    }
+    const backoff = MAPTILER_PROXY_BACKOFF_MS * 2 ** (attempt - 1);
+    await sleep(backoff + randomJitter(200));
+  }
+  throw lastError || new Error('MapTiler request failed');
+}
+
+async function resolveMaptilerResource(descriptor, fetcher) {
+  if (descriptor.cacheable) {
+    const cached = await readMaptilerCache(descriptor.cacheKey);
+    if (cached) {
+      return {
+        ...cached,
+        fromCache: true,
+        cacheControl: descriptor.downstreamCacheControl,
+      };
+    }
+  }
+
+  const inflightKey = descriptor.canonical;
+  if (maptilerInflight.has(inflightKey)) {
+    return maptilerInflight.get(inflightKey);
+  }
+
+  const promise = (async () => {
+    const payload = await fetcher();
+    if (descriptor.cacheable && payload && payload.body && payload.body.length > 0) {
+      await writeMaptilerCache(descriptor.cacheKey, payload, descriptor.ttlSeconds);
+    }
+    return {
+      ...payload,
+      fromCache: false,
+      cacheControl: descriptor.downstreamCacheControl,
+    };
+  })();
+
+  maptilerInflight.set(inflightKey, promise);
+  try {
+    return await promise;
+  } finally {
+    maptilerInflight.delete(inflightKey);
+  }
+}
 
 async function loadBaseStyle() {
   const key = process.env.MAPLIBRE_API_KEY || process.env.MAPTILER_API_KEY || '';
@@ -328,6 +609,10 @@ function registerTileRoutes(app) {
       }
       upstreamUrl.searchParams.set('key', key);
 
+      const descriptorSearch = new URLSearchParams(upstreamUrl.searchParams);
+      descriptorSearch.delete('key');
+      const descriptor = buildMaptilerDescriptor(resourcePath, descriptorSearch);
+
       const forwardedProto = req.get('x-forwarded-proto');
       const forwardedHost = req.get('x-forwarded-host');
       const hostHeader = forwardedHost || req.get('host');
@@ -337,75 +622,59 @@ function registerTileRoutes(app) {
 
       const proxyHeaders = {
         Accept: req.headers.accept || '*/*',
-        'User-Agent': process.env.MAPTILER_USER_AGENT || 'toronto-parking-proxy/1.0',
+        'Accept-Encoding': req.headers['accept-encoding'] || 'gzip, br',
+        'Accept-Language': req.headers['accept-language'] || 'en',
+        'User-Agent': req.headers['user-agent']
+          || process.env.MAPTILER_USER_AGENT
+          || 'toronto-parking-proxy/1.0',
       };
       if (originHint) {
-        proxyHeaders.Referer = originHint;
         proxyHeaders.Origin = originHint;
+        proxyHeaders.Referer = originHint;
       }
 
-      const upstreamResponse = await fetch(upstreamUrl, {
-        headers: proxyHeaders,
-        redirect: 'follow',
+      const payload = await resolveMaptilerResource(descriptor, async () => {
+        const response = await fetchMaptilerWithRetry(upstreamUrl, proxyHeaders);
+        const headerEntries = {};
+        response.headers.forEach((value, header) => {
+          headerEntries[header.toLowerCase()] = value;
+        });
+        const contentType = response.headers.get('content-type') || '';
+        const isTextLike = /json|text|javascript|xml/i.test(contentType);
+        const bodyBuffer = isTextLike
+          ? Buffer.from(sanitizeMaptilerText(await response.text(), originHint || ''))
+          : Buffer.from(await response.arrayBuffer());
+        return {
+          status: response.status,
+          headers: filterUpstreamHeaders(headerEntries),
+          body: bodyBuffer,
+        };
       });
 
-      if (!upstreamResponse.ok) {
-        const responseText = await upstreamResponse.text().catch(() => '');
-        console.warn(`MapTiler proxy ${upstreamUrl.pathname} responded with ${upstreamResponse.status}`);
-        res.status(upstreamResponse.status);
-        if (responseText) {
-          res.setHeader('Content-Type', upstreamResponse.headers.get('content-type') || 'text/plain');
-          res.send(responseText);
+      res.status(payload.status);
+      res.setHeader('Cache-Control', payload.cacheControl);
+      res.setHeader('Vary', 'Accept-Encoding');
+      res.setHeader('X-MapTiler-Cache', payload.fromCache ? 'HIT' : 'MISS');
+      for (const [header, value] of Object.entries(payload.headers || {})) {
+        if (!value) {
+          continue;
+        }
+        if (header === 'location' || header === 'content-location') {
+          const sanitizedLocation = sanitizeMaptilerUrl(value);
+          res.setHeader(header, sanitizedLocation || value);
         } else {
-          res.end();
+          res.setHeader(header, value);
         }
-        return;
       }
-
-      res.status(upstreamResponse.status);
-      upstreamResponse.headers.forEach((value, header) => {
-        const lower = header.toLowerCase();
-        if (lower === 'transfer-encoding'
-          || lower === 'content-encoding'
-          || lower === 'content-length'
-          || lower === 'set-cookie'
-          || lower === 'set-cookie2'
-          || lower.includes('maptiler')) {
-          return;
-        }
-        if (typeof value === 'string' && (value.includes('api.maptiler.com') || value.toLowerCase().includes('key='))) {
-          if (lower === 'location' || lower === 'content-location') {
-            const sanitizedLocation = sanitizeMaptilerUrl(value);
-            if (sanitizedLocation && sanitizedLocation !== value) {
-              res.setHeader(header, sanitizedLocation);
-            }
-          }
-          return;
-        }
-        res.setHeader(header, value);
-      });
-      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
-
-      if (!upstreamResponse.body) {
+      if (!res.getHeader('Content-Type')) {
+        res.setHeader('Content-Type', 'application/octet-stream');
+      }
+      if (payload.body && payload.body.length > 0) {
+        res.setHeader('Content-Length', String(payload.body.length));
+        res.end(payload.body);
+      } else {
         res.end();
-        return;
       }
-
-      const contentType = upstreamResponse.headers.get('content-type') || '';
-      const isTextLike = /json|text|javascript|xml/i.test(contentType);
-      if (isTextLike) {
-        const text = await upstreamResponse.text();
-        const sanitizedBody = sanitizeMaptilerText(text);
-        res.send(sanitizedBody);
-        return;
-      }
-
-      const stream = Readable.fromWeb(upstreamResponse.body);
-      stream.on('error', (error) => {
-        console.error('MapTiler proxy stream error:', error.message);
-        res.destroy(error);
-      });
-      stream.pipe(res);
     } catch (error) {
       console.error('MapTiler proxy failure:', error.message);
       res.status(502).json({ error: 'Failed to proxy map resource' });
