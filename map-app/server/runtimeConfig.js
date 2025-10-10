@@ -159,7 +159,6 @@ export function getPmtilesRuntimeConfig() {
     wardDatasetOverrides,
   };
 }
-
 export function getDataDir(defaultDir) {
   return process.env.DATA_DIR || defaultDir;
 }

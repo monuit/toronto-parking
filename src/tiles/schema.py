@@ -66,7 +66,6 @@ class TileSchemaManager:
 
     # ------------------------------------------------------------------
     # Helpers
-
     def _log(self, message: str) -> None:
         if self.logger:
             self.logger(message)
@@ -131,7 +130,7 @@ class TileSchemaManager:
         )
 
         # Function to compute tile bounds in Web Mercator for a given xyz.
-        self._log("  Creating tile_envelope_3857 function")
+    self._log("  Creating tile_envelope_3857 function")
         self.pg.execute(
             """
             CREATE OR REPLACE FUNCTION tile_envelope_3857(z integer, x integer, y integer)
