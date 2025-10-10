@@ -1,61 +1,62 @@
-"""Vector tile generation using PostGIS."""
+"""Vector tile generation using PostGIS with pre-simplified tile tables."""
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from ..etl.postgres import PostgresClient
+from .schema import TileSchemaManager
 
 
-DATASET_DEFINITIONS: Dict[str, Dict[str, Any]] = {
+TILE_DATASET_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "parking_tickets": {
-        "table": "parking_tickets",
+        "table": "parking_ticket_tiles",
         "geom_column": "geom",
+        "min_zoom_column": "min_zoom",
+        "max_zoom_column": "max_zoom",
+        "tile_prefix_column": "tile_qk_prefix",
+        "tile_group_column": "tile_qk_group",
         "attributes": [
-            "date_of_infraction",
-            "infraction_code",
-            "set_fine_amount",
+            "dataset",
+            "feature_id",
+            "ticket_count",
+            "total_fine_amount",
             "street_normalized",
             "centreline_id",
-            ("years", "ARRAY[EXTRACT(YEAR FROM data.date_of_infraction)::INT]"),
-            ("months", "ARRAY[EXTRACT(MONTH FROM data.date_of_infraction)::INT]"),
         ],
-        "date_field": "date_of_infraction",
     },
     "red_light_locations": {
-        "table": "red_light_camera_locations",
+        "table": "red_light_camera_tiles",
         "geom_column": "geom",
+        "min_zoom_column": "min_zoom",
+        "max_zoom_column": "max_zoom",
+        "tile_prefix_column": "tile_qk_prefix",
+        "tile_group_column": "tile_qk_group",
         "attributes": [
+            "dataset",
+            "feature_id",
             "location_name",
-            "linear_name_full_1",
-            "linear_name_full_2",
-            "ward_1",
-            "police_division_1",
-            "activation_date",
             "ticket_count",
-            ("total_fine_amount", "COALESCE(data.total_fine_amount, 0)"),
-            ("years", "COALESCE(data.years, ARRAY[]::INT[])"),
-            ("months", "COALESCE(data.months, ARRAY[]::INT[])"),
-            "yearly_counts",
+            "total_fine_amount",
         ],
-        "date_field": None,
     },
     "ase_locations": {
-        "table": "ase_camera_locations",
+        "table": "ase_camera_tiles",
         "geom_column": "geom",
+        "min_zoom_column": "min_zoom",
+        "max_zoom_column": "max_zoom",
+        "tile_prefix_column": "tile_qk_prefix",
+        "tile_group_column": "tile_qk_group",
         "attributes": [
-            "ward",
-            "status",
+            "dataset",
+            "feature_id",
             "location",
+            "status",
+            "ward",
             "ticket_count",
-            ("total_fine_amount", "COALESCE(data.total_fine_amount, 0)"),
-            ("years", "COALESCE(data.years, ARRAY[]::INT[])"),
-            ("months", "COALESCE(data.months, ARRAY[]::INT[])"),
-            "yearly_counts",
+            "total_fine_amount",
         ],
-        "date_field": None,
     },
 }
 
@@ -63,93 +64,87 @@ DATASET_DEFINITIONS: Dict[str, Dict[str, Any]] = {
 @dataclass
 class TileService:
     pg: PostgresClient
+    quadkey_prefix_length: int = 6
 
-    def get_tile(self, dataset: str, z: int, x: int, y: int, *, filters: Optional[Dict[str, Any]] = None) -> bytes | None:
-        self.pg.ensure_extensions()
-        definition = DATASET_DEFINITIONS.get(dataset)
+    def __post_init__(self) -> None:  # pragma: no cover - integration hook
+        if not getattr(TileService, "_schema_initialized", False):
+            TileSchemaManager(self.pg, quadkey_prefix_length=self.quadkey_prefix_length).ensure()
+            TileService._schema_initialized = True
+
+    def get_tile(
+        self,
+        dataset: str,
+        z: int,
+        x: int,
+        y: int,
+        *,
+        filters: Optional[Dict[str, Any]] = None,  # noqa: ARG002 - retained for API parity
+    ) -> bytes | None:
+        definition = TILE_DATASET_DEFINITIONS.get(dataset)
         if not definition:
             raise ValueError(f"Dataset '{dataset}' is not configured for tiles")
 
-        bounds_clause = f"{definition['geom_column']} && bounds.geom"
-        where_clauses = [bounds_clause]
+        quadkey = _quadkey_prefix_from_tile(z, x, y)
+        quadkey_prefix = quadkey[: self.quadkey_prefix_length]
 
-        if filters:
-            date_from = filters.get("date_from")
-            date_to = filters.get("date_to")
-            date_field = definition.get("date_field")
-            if date_from and date_field:
-                where_clauses.append(f"{date_field} >= '{date_from}'")
-            if date_to and date_field:
-                where_clauses.append(f"{date_field} <= '{date_to}'")
+        attribute_sql = ", ".join(definition["attributes"])
+        where_clauses = [
+            f"data.{definition['geom_column']} && bounds.geom",
+            f"%s BETWEEN data.{definition['min_zoom_column']} AND data.{definition['max_zoom_column']}",
+        ]
+        params = [z, x, y, z]
 
-        table_alias = "data"
-        where_sql = " AND ".join(
-            clause if clause != bounds_clause else f"{table_alias}.{definition['geom_column']} && bounds.geom"
-            for clause in where_clauses
-        )
-        attribute_expressions: List[str] = []
-        for attr in definition["attributes"]:
-            if isinstance(attr, tuple):
-                alias, expression = attr
-                attribute_expressions.append(f"{expression} AS {alias}")
-            else:
-                attribute_expressions.append(f"{table_alias}.{attr}")
-
-        attribute_list = ", ".join(attribute_expressions)
-
-        min_lng, min_lat, max_lng, max_lat = _tile_bounds(z, x, y)
-        bounds_wkt = _bounds_wkt(min_lng, min_lat, max_lng, max_lat)
+        if quadkey_prefix:
+            where_clauses.append(f"data.{definition['tile_group_column']} = %s")
+            params.append(quadkey_prefix[0])
+            where_clauses.append(f"data.{definition['tile_prefix_column']} LIKE %s")
+            params.append(f"{quadkey_prefix}%")
 
         sql = f"""
             WITH bounds AS (
-                SELECT ST_GeomFromText(%s, 4326) AS geom
-            ), tile AS (
+                SELECT tile_envelope_3857(%s, %s, %s) AS geom
+            ), features AS (
                 SELECT
                     ST_AsMVTGeom(
-                        {table_alias}.{definition['geom_column']},
+                        data.{definition['geom_column']},
                         bounds.geom,
                         4096,
                         64,
                         true
                     ) AS geom,
-                    {attribute_list}
-                FROM {definition['table']} AS {table_alias}
+                    {attribute_sql}
+                FROM {definition['table']} AS data
                 CROSS JOIN bounds
-                WHERE {where_sql}
+                WHERE {' AND '.join(where_clauses)}
             )
-            SELECT ST_AsMVT(tile, %s, 4096, 'geom') FROM tile;
+            SELECT ST_AsMVT(features, %s, 4096, 'geom') FROM features;
         """
 
-        row = self.pg.fetch_one(sql, (bounds_wkt, dataset))
+        params.append(dataset)
+        row = self.pg.fetch_one(sql, tuple(params))
         if not row or row[0] is None:
             return None
         return bytes(row[0])
 
 
-def _tile_bounds(z: int, x: int, y: int) -> tuple[float, float, float, float]:
-    n = 2 ** z
-    lon_min = x / n * 360.0 - 180.0
-    lon_max = (x + 1) / n * 360.0 - 180.0
+def _quadkey_prefix_from_tile(z: int, x: int, y: int) -> str:
+    """Compute the quadkey string for the XYZ tile coordinates."""
 
-    def lat(tile_y: int) -> float:
-        t = math.pi * (1 - 2 * tile_y / n)
-        return math.degrees(math.atan(math.sinh(t)))
+    if z <= 0:
+        return ""
+    prefix_chars: list[str] = []
+    for i in range(z, 0, -1):
+        mask = 1 << (i - 1)
+        digit = 0
+        if x & mask:
+            digit += 1
+        if y & mask:
+            digit += 2
+        prefix_chars.append(str(digit))
+    return "".join(prefix_chars)
 
-    lat_max = lat(y)
-    lat_min = lat(y + 1)
-    return lon_min, lat_min, lon_max, lat_max
 
-
-def _bounds_wkt(min_lng: float, min_lat: float, max_lng: float, max_lat: float) -> str:
-    return (
-        "POLYGON(("
-        f"{min_lng} {min_lat},"
-        f"{max_lng} {min_lat},"
-        f"{max_lng} {max_lat},"
-        f"{min_lng} {max_lat},"
-        f"{min_lng} {min_lat}"
-        "))"
-    )
+TileService._schema_initialized = False  # type: ignore[attr-defined]
 
 
 __all__ = ["TileService"]

@@ -8,6 +8,8 @@ import '../styles/Controls.css';
 
 export function InfoPopup({ data, position, onClose, variant = 'floating', yearFilter = null }) {
   const popupRef = useRef(null);
+  const touchStartRef = useRef(null);
+  const touchDeltaRef = useRef(0);
 
   useEffect(() => {
     if (!data) return;
@@ -29,7 +31,23 @@ export function InfoPopup({ data, position, onClose, variant = 'floating', yearF
     popupRef.current.scrollTop = 0;
   }, [data, variant]);
 
-  if (!data) return null;
+  const isSheetVariant = variant === 'sheet';
+  const isFloatingVariant = variant === 'floating';
+
+  useEffect(() => {
+    if (!isSheetVariant) {
+      return undefined;
+    }
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSheetVariant, onClose]);
 
   const floatingStyle = position ? (() => {
     let left = position.x;
@@ -52,7 +70,52 @@ export function InfoPopup({ data, position, onClose, variant = 'floating', yearF
       zIndex: 10000,
     };
   })() : {};
-  const isFloatingVariant = variant === 'floating';
+  const resetSheetTransform = () => {
+    if (popupRef.current) {
+      popupRef.current.style.transform = 'translate(-50%, 0)';
+    }
+  };
+
+  useEffect(() => {
+    if (isSheetVariant) {
+      resetSheetTransform();
+    }
+  }, [isSheetVariant, data]);
+
+  if (!data) return null;
+
+  const handleSheetTouchStart = (event) => {
+    if (!isSheetVariant || !event.touches?.length) {
+      return;
+    }
+    touchStartRef.current = event.touches[0].clientY;
+    touchDeltaRef.current = 0;
+  };
+
+  const handleSheetTouchMove = (event) => {
+    if (!isSheetVariant || touchStartRef.current === null || !popupRef.current || !event.touches?.length) {
+      return;
+    }
+    const currentY = event.touches[0].clientY;
+    const delta = Math.max(0, currentY - touchStartRef.current);
+    touchDeltaRef.current = delta;
+    const translate = Math.min(delta, 140);
+    popupRef.current.style.transform = `translate(-50%, ${translate}px)`;
+  };
+
+  const handleSheetTouchEnd = () => {
+    if (!isSheetVariant) {
+      return;
+    }
+    const delta = touchDeltaRef.current;
+    touchStartRef.current = null;
+    touchDeltaRef.current = 0;
+    if (delta > 100) {
+      onClose?.();
+      return;
+    }
+    resetSheetTransform();
+  };
   const style = isFloatingVariant ? floatingStyle : {};
   const isTicketLocation = Boolean(data?.location);
   const isNeighbourhood = Boolean(!isTicketLocation && data?.name);
@@ -336,27 +399,48 @@ export function InfoPopup({ data, position, onClose, variant = 'floating', yearF
       : renderNeighbourhoodStats();
 
   return (
-    <div ref={popupRef} className={classNames.join(' ')} style={style}>
-      <div className="popup-traffic-lights">
-        <button
-          type="button"
-          className="popup-light popup-light--red"
-          aria-label="Close"
-          onClick={onClose}
-        />
-        <button
-          type="button"
-          className="popup-light popup-light--yellow"
-          aria-label="Minimize"
-          disabled
-        />
-        <button
-          type="button"
-          className="popup-light popup-light--green"
-          aria-label="Maximize"
-          disabled
-        />
-      </div>
+    <div
+      ref={popupRef}
+      className={classNames.join(' ')}
+      style={style}
+      onTouchStart={isSheetVariant ? handleSheetTouchStart : undefined}
+      onTouchMove={isSheetVariant ? handleSheetTouchMove : undefined}
+      onTouchEnd={isSheetVariant ? handleSheetTouchEnd : undefined}
+      onTouchCancel={isSheetVariant ? handleSheetTouchEnd : undefined}
+    >
+      {isSheetVariant ? (
+        <div className="popup-sheet-toolbar">
+          <div className="popup-sheet-handle" aria-hidden="true" />
+          <button
+            type="button"
+            className="popup-sheet-close"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+      ) : (
+        <div className="popup-traffic-lights">
+          <button
+            type="button"
+            className="popup-light popup-light--red"
+            aria-label="Close"
+            onClick={onClose}
+          />
+          <button
+            type="button"
+            className="popup-light popup-light--yellow"
+            aria-label="Minimize"
+            disabled
+          />
+          <button
+            type="button"
+            className="popup-light popup-light--green"
+            aria-label="Maximize"
+            disabled
+          />
+        </div>
+      )}
       <h3>{popupTitle}</h3>
       {statsContent}
       {insights}

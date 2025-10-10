@@ -3,21 +3,30 @@ import { getPostgresConfig } from './runtimeConfig.js';
 import { loadDatasetSummary } from './ticketsDataStore.js';
 
 let pool = null;
+let poolSignature = null;
 
 function ensurePool() {
   const config = getPostgresConfig();
-  if (!config.enabled || !config.connectionString) {
+  const connectionString = config.readOnlyConnectionString || config.connectionString;
+  if (!config.enabled || !connectionString) {
     return null;
   }
-  if (!pool) {
+  const signature = `${connectionString}|${config.ssl ? 'ssl' : 'plain'}`;
+  if (!pool || poolSignature !== signature) {
+    if (pool) {
+      pool.end().catch(() => {
+        /* ignored */
+      });
+    }
     pool = new Pool({
-      connectionString: config.connectionString,
+      connectionString,
       ssl: config.ssl,
       application_name: 'yearly-metrics-service',
     });
     pool.on('error', (error) => {
       console.warn('[yearlyMetrics] Postgres pool error:', error.message);
     });
+    poolSignature = signature;
   }
   return pool;
 }
@@ -369,6 +378,189 @@ export async function getCameraLocationDetail(dataset, code, year = null) {
     latitude: aggregate.latitude,
     longitude: aggregate.longitude,
   };
+}
+
+const WARD_DATASETS = new Set(['red_light_locations', 'ase_locations']);
+
+function extractWardCodeAndName(raw) {
+  if (!raw) {
+    return { code: null, name: null };
+  }
+  const text = String(raw).trim();
+  if (!text) {
+    return { code: null, name: null };
+  }
+  let code = null;
+  const parenMatch = text.match(/\((\d{1,2})\)/);
+  if (parenMatch) {
+    code = Number.parseInt(parenMatch[1], 10);
+  }
+  if (!Number.isInteger(code)) {
+    const wardMatch = text.match(/\bWard\s*(\d{1,2})\b/i);
+    if (wardMatch) {
+      code = Number.parseInt(wardMatch[1], 10);
+    }
+  }
+  if (!Number.isInteger(code)) {
+    const trailing = text.match(/(\d{1,2})\b(?!.*\d)/);
+    if (trailing) {
+      code = Number.parseInt(trailing[1], 10);
+    }
+  }
+  if (!Number.isInteger(code) || code <= 0) {
+    return { code: null, name: text };
+  }
+  let name = text;
+  if (parenMatch) {
+    name = name.replace(parenMatch[0], '').trim();
+  }
+  name = name.replace(/^Ward\s*\d+\s*[:-]?\s*/i, '').trim();
+  if (!name) {
+    name = `Ward ${code}`;
+  } else if (!/^\d+\s*[-–]/.test(name)) {
+    name = `${code} - ${name}`;
+  }
+  return { code, name };
+}
+
+function mergeWardAggregate(bucket, delta, label) {
+  bucket.ticketCount += Number(delta.ticketCount || 0);
+  bucket.totalRevenue += Number(delta.totalRevenue || 0);
+  bucket.locationCount += Number(delta.locationCount || 0);
+  if (label === 'ase') {
+    bucket.aseTicketCount += Number(delta.ticketCount || 0);
+    bucket.aseTotalRevenue += Number(delta.totalRevenue || 0);
+  }
+  if (label === 'red') {
+    bucket.redLightTicketCount += Number(delta.ticketCount || 0);
+    bucket.redLightTotalRevenue += Number(delta.totalRevenue || 0);
+  }
+}
+
+async function fetchWardAggregates(dataset) {
+  const name = normaliseDataset(dataset);
+  if (!WARD_DATASETS.has(name)) {
+    throw new Error(`Unsupported ward dataset: ${dataset}`);
+  }
+  const table = name === 'red_light_locations' ? 'red_light_yearly_locations' : 'ase_yearly_locations';
+  const rows = await query(
+    `
+      SELECT ward,
+             COUNT(DISTINCT location_code)::INT AS location_count,
+             SUM(ticket_count)::BIGINT AS ticket_count,
+             SUM(total_revenue)::NUMERIC AS total_revenue
+      FROM ${table}
+      WHERE ward IS NOT NULL AND ward <> ''
+      GROUP BY ward
+    `,
+  );
+  const map = new Map();
+  for (const row of rows || []) {
+    const parsed = extractWardCodeAndName(row.ward);
+    if (!parsed.code) {
+      continue;
+    }
+    const key = String(parsed.code);
+    const ticketCount = coerceNumeric(row.ticket_count);
+    const totalRevenue = coerceNumeric(row.total_revenue);
+    const locationCount = coerceNumeric(row.location_count);
+    map.set(key, {
+      wardCode: parsed.code,
+      wardName: parsed.name || `Ward ${parsed.code}`,
+      ticketCount,
+      totalRevenue,
+      locationCount,
+      aseTicketCount: name === 'ase_locations' ? ticketCount : 0,
+      aseTotalRevenue: name === 'ase_locations' ? totalRevenue : 0,
+      redLightTicketCount: name === 'red_light_locations' ? ticketCount : 0,
+      redLightTotalRevenue: name === 'red_light_locations' ? totalRevenue : 0,
+    });
+  }
+  return map;
+}
+
+function buildRollupFromMap(map, options = {}) {
+  const { dataset, sourceLabel } = options;
+  const items = Array.from(map.values()).map((entry) => ({
+    ...entry,
+    totalRevenue: Number(entry.totalRevenue.toFixed(2)),
+    aseTotalRevenue: Number(entry.aseTotalRevenue.toFixed(2)),
+    redLightTotalRevenue: Number(entry.redLightTotalRevenue.toFixed(2)),
+  }));
+  items.sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0));
+  const totals = items.reduce(
+    (acc, entry) => {
+      acc.ticketCount += entry.ticketCount || 0;
+      acc.totalRevenue += entry.totalRevenue || 0;
+      acc.locationCount += entry.locationCount || 0;
+      return acc;
+    },
+    { ticketCount: 0, totalRevenue: 0, locationCount: 0 },
+  );
+  const summary = {
+    generatedAt: new Date().toISOString(),
+    dataset,
+    totals: {
+      ticketCount: totals.ticketCount,
+      totalRevenue: Number(totals.totalRevenue.toFixed(2)),
+      locationCount: totals.locationCount,
+    },
+    wards: items,
+    topWards: items.slice(0, 10),
+    meta: {
+      source: sourceLabel || 'yearly-rollup',
+    },
+  };
+  if (dataset === 'cameras_combined') {
+    summary.meta.componentDatasets = ['ase_locations', 'red_light_locations'];
+  }
+  summary.version = Date.now();
+  return summary;
+}
+
+export async function getCameraWardRollup(dataset) {
+  if (dataset === 'cameras_combined') {
+    const [aseMap, redMap] = await Promise.all([
+      fetchWardAggregates('ase_locations'),
+      fetchWardAggregates('red_light_locations'),
+    ]);
+    const combined = new Map();
+    const apply = (map, label) => {
+      for (const entry of map.values()) {
+        const key = String(entry.wardCode);
+        let bucket = combined.get(key);
+        if (!bucket) {
+          bucket = {
+            wardCode: entry.wardCode,
+            wardName: entry.wardName,
+            ticketCount: 0,
+            totalRevenue: 0,
+            locationCount: 0,
+            aseTicketCount: 0,
+            aseTotalRevenue: 0,
+            redLightTicketCount: 0,
+            redLightTotalRevenue: 0,
+          };
+          combined.set(key, bucket);
+        }
+        if (!bucket.wardName && entry.wardName) {
+          bucket.wardName = entry.wardName;
+        }
+        mergeWardAggregate(bucket, entry, label);
+      }
+    };
+    apply(aseMap, 'ase');
+    apply(redMap, 'red');
+    return buildRollupFromMap(combined, { dataset: 'cameras_combined', sourceLabel: 'yearly-rollup' });
+  }
+
+  const name = normaliseDataset(dataset);
+  if (!WARD_DATASETS.has(name)) {
+    throw new Error(`Unsupported ward dataset: ${dataset}`);
+  }
+  const map = await fetchWardAggregates(name);
+  const sourceLabel = name === 'ase_locations' ? 'yearly-rollup-ase' : 'yearly-rollup-red-light';
+  return buildRollupFromMap(map, { dataset: name, sourceLabel });
 }
 
 export async function getParkingLocationYearMap() {

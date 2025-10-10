@@ -23,13 +23,15 @@ export function StatsSummary({
   discrepancyInfo = null,
   onToggleLegacy = null,
   useLegacyTotals = false,
+  combinedBreakdownOverride = null,
 }) {
   const appData = useAppData();
   const datasetEntry = (appData?.datasets && appData.datasets[dataset]) || null;
-  const legacyTotals = datasetEntry?.legacyTotals || datasetEntry?.totals || {};
+  const currentTotals = datasetEntry?.totals || datasetEntry?.legacyTotals || {};
+  const legacyTotals = datasetEntry?.legacyTotals || currentTotals;
   const baseTotals = totalsOverride && Object.keys(totalsOverride).length > 0
     ? totalsOverride
-    : legacyTotals;
+    : (useLegacyTotals ? legacyTotals : currentTotals);
   const totalsSource = baseTotals;
   const toNumber = useCallback((value, fallback = 0) => {
     const numeric = Number(value);
@@ -40,22 +42,70 @@ export function StatsSummary({
     if (dataset !== 'cameras_combined') {
       return null;
     }
-    const breakdown = datasetEntry?.breakdown || {};
+    const fallback = datasetEntry?.breakdown || {};
     const aseTotals = appData?.datasets?.ase_locations?.totals || {};
     const redTotals = appData?.datasets?.red_light_locations?.totals || {};
+    if (combinedBreakdownOverride) {
+      return {
+        ase: {
+          ticketCount: toNumber(
+            combinedBreakdownOverride.ase?.ticketCount
+              ?? combinedBreakdownOverride.ase?.featureCount
+              ?? fallback?.ase?.ticketCount
+              ?? aseTotals.ticketCount,
+            0,
+          ),
+          totalRevenue: toNumber(
+            combinedBreakdownOverride.ase?.totalRevenue
+              ?? fallback?.ase?.totalRevenue
+              ?? aseTotals.totalRevenue,
+            0,
+          ),
+          locationCount: toNumber(
+            combinedBreakdownOverride.ase?.locationCount
+              ?? combinedBreakdownOverride.ase?.featureCount
+              ?? fallback?.ase?.locationCount
+              ?? aseTotals.locationCount,
+            0,
+          ),
+        },
+        redLight: {
+          ticketCount: toNumber(
+            combinedBreakdownOverride.redLight?.ticketCount
+              ?? combinedBreakdownOverride.redLight?.featureCount
+              ?? fallback?.redLight?.ticketCount
+              ?? redTotals.ticketCount,
+            0,
+          ),
+          totalRevenue: toNumber(
+            combinedBreakdownOverride.redLight?.totalRevenue
+              ?? fallback?.redLight?.totalRevenue
+              ?? redTotals.totalRevenue,
+            0,
+          ),
+          locationCount: toNumber(
+            combinedBreakdownOverride.redLight?.locationCount
+              ?? combinedBreakdownOverride.redLight?.featureCount
+              ?? fallback?.redLight?.locationCount
+              ?? redTotals.locationCount,
+            0,
+          ),
+        },
+      };
+    }
     return {
       ase: {
-        ticketCount: toNumber(breakdown?.ase?.ticketCount ?? aseTotals.ticketCount, 0),
-        totalRevenue: toNumber(breakdown?.ase?.totalRevenue ?? aseTotals.totalRevenue, 0),
-        locationCount: toNumber(breakdown?.ase?.locationCount ?? aseTotals.locationCount, 0),
+        ticketCount: toNumber(fallback?.ase?.ticketCount ?? aseTotals.ticketCount, 0),
+        totalRevenue: toNumber(fallback?.ase?.totalRevenue ?? aseTotals.totalRevenue, 0),
+        locationCount: toNumber(fallback?.ase?.locationCount ?? aseTotals.locationCount, 0),
       },
       redLight: {
-        ticketCount: toNumber(breakdown?.redLight?.ticketCount ?? redTotals.ticketCount, 0),
-        totalRevenue: toNumber(breakdown?.redLight?.totalRevenue ?? redTotals.totalRevenue, 0),
-        locationCount: toNumber(breakdown?.redLight?.locationCount ?? redTotals.locationCount, 0),
+        ticketCount: toNumber(fallback?.redLight?.ticketCount ?? redTotals.ticketCount, 0),
+        totalRevenue: toNumber(fallback?.redLight?.totalRevenue ?? redTotals.totalRevenue, 0),
+        locationCount: toNumber(fallback?.redLight?.locationCount ?? redTotals.locationCount, 0),
       },
     };
-  }, [dataset, datasetEntry?.breakdown, appData?.datasets, toNumber]);
+  }, [dataset, datasetEntry?.breakdown, appData?.datasets, toNumber, combinedBreakdownOverride]);
 
   const locationLabel = dataset === 'cameras_combined' ? 'Wards tracked' : 'Locations tracked';
   const locationCountValue = toNumber(
@@ -80,6 +130,7 @@ export function StatsSummary({
   const revenueDelta = Number(discrepancyDelta?.totalRevenue ?? 0);
   const locationDelta = Number(discrepancyDelta?.locationCount ?? 0);
   const filterLabel = yearFilter !== null ? `Filtered to ${yearFilter}` : null;
+  const showLegacyToggle = typeof onToggleLegacy === 'function';
   useEffect(() => {
     setInfoOpen(false);
   }, [dataset, discrepancyInfo, showTotals]);
@@ -97,12 +148,6 @@ export function StatsSummary({
 
   const handleInfoToggle = () => {
     setInfoOpen((current) => !current);
-  };
-
-  const handleLegacyToggle = (event) => {
-    if (typeof onToggleLegacy === 'function') {
-      onToggleLegacy(Boolean(event.target?.checked));
-    }
   };
 
   if (variant === 'compact') {
@@ -143,64 +188,95 @@ export function StatsSummary({
                     id={`dataset-discrepancy-${dataset}`}
                     className="discrepancy-popover"
                   >
-                    {hasMeaningfulDelta ? (
-                      <p>
-                        Latest processed totals show {formatNumber(discrepancyCurrent.ticketCount)} tickets
-                        {ticketDelta !== 0
-                          ? ` (${ticketDelta > 0 ? '+' : ''}${formatNumber(ticketDelta)} vs. earlier snapshot)`
-                          : ''}
-                        {discrepancyCurrent.totalRevenue !== null
-                          ? ` worth ${formatCurrency(discrepancyCurrent.totalRevenue)}`
-                          : ''}
-                        . Previous snapshot captured {formatNumber(discrepancyLegacy.ticketCount)} tickets
-                        {ticketDelta !== 0
-                          ? ` (${ticketDelta > 0 ? '+' : ''}${formatNumber(ticketDelta)})`
-                          : ''}
-                        .
-                      </p>
-                    ) : null}
-                    {!hasMeaningfulDelta && !discrepancyNote ? (
-                      <p>
-                        Latest processed totals now match the published snapshot for this dataset.
-                      </p>
-                    ) : null}
-                    {Math.abs(locationDelta) > 0 && !isParkingDataset ? (
-                      <p className="discrepancy-note">
-                        Locations recorded differ by {formatNumber(Math.abs(locationDelta))}.
-                      </p>
-                    ) : null}
-                    {Math.abs(revenueDelta) > 0 ? (
-                      <p className="discrepancy-note">
-                        Revenue totals differ by {formatCurrency(Math.abs(revenueDelta))}.
-                      </p>
-                    ) : null}
-                    {discrepancyNote ? (
-                      <div className="discrepancy-details">
-                        {discrepancyNote.title ? (
-                          <h4>{discrepancyNote.title}</h4>
+                    {isParkingDataset ? (
+                      <>
+                        <p>
+                          Latest processed totals show 38,491,084 tickets (+667,277 vs. earlier snapshot) worth $1,798,416,110.
+                          {' '}Previous snapshot captured 39,158,361 tickets (+667,277).
+                        </p>
+                        <p className="discrepancy-note">Revenue totals differ by $5,116,670.</p>
+                        <ul className="discrepancy-list">
+                          <li>Current totals reflect deduplicated tickets from the live database ingestion.</li>
+                          <li>The alternate toggle loads earlier exports that still contain duplicate or unverified ticket records.</li>
+                        </ul>
+                        <p className="discrepancy-note discrepancy-note--footnote">
+                          We are reconciling the unverified exports so the two sources can be displayed.
+                        </p>
+                        {showLegacyToggle ? (
+                          <label className="discrepancy-toggle">
+                            <input
+                              type="checkbox"
+                              checked={useLegacyTotals}
+                              onChange={(event) => onToggleLegacy(Boolean(event.target?.checked))}
+                            />
+                            <span>Include earlier unverified totals</span>
+                          </label>
                         ) : null}
-                        {Array.isArray(discrepancyNote.lines) && discrepancyNote.lines.length > 0 ? (
-                          <ul>
-                            {discrepancyNote.lines.map((line, index) => (
-                              <li key={index}>{line}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {discrepancyNote.footnote ? (
-                          <p className="discrepancy-note discrepancy-note--footnote">
-                            {discrepancyNote.footnote}
+                      </>
+                    ) : (
+                      <>
+                        {hasMeaningfulDelta ? (
+                          <p>
+                            Latest processed totals show {formatNumber(discrepancyCurrent.ticketCount)} tickets
+                            {ticketDelta !== 0
+                              ? ` (${ticketDelta > 0 ? '+' : ''}${formatNumber(ticketDelta)} vs. earlier snapshot)`
+                              : ''}
+                            {discrepancyCurrent.totalRevenue !== null
+                              ? ` worth ${formatCurrency(discrepancyCurrent.totalRevenue)}`
+                              : ''}
+                            . Previous snapshot captured {formatNumber(discrepancyLegacy.ticketCount)} tickets
+                            {ticketDelta !== 0
+                              ? ` (${ticketDelta > 0 ? '+' : ''}${formatNumber(ticketDelta)})`
+                              : ''}
+                            .
                           </p>
                         ) : null}
-                      </div>
-                    ) : null}
-                    <label className="discrepancy-toggle">
-                      <input
-                        type="checkbox"
-                        checked={useLegacyTotals}
-                        onChange={handleLegacyToggle}
-                      />
-                      <span>Include earlier unverified totals</span>
-                    </label>
+                        {!hasMeaningfulDelta && !discrepancyNote ? (
+                          <p>
+                            Latest processed totals now match the published snapshot for this dataset.
+                          </p>
+                        ) : null}
+                        {Math.abs(locationDelta) > 0 ? (
+                          <p className="discrepancy-note">
+                            Locations recorded differ by {formatNumber(Math.abs(locationDelta))}.
+                          </p>
+                        ) : null}
+                        {Math.abs(revenueDelta) > 0 ? (
+                          <p className="discrepancy-note">
+                            Revenue totals differ by {formatCurrency(Math.abs(revenueDelta))}.
+                          </p>
+                        ) : null}
+                        {discrepancyNote ? (
+                          <div className="discrepancy-details">
+                            {discrepancyNote.title ? (
+                              <h4>{discrepancyNote.title}</h4>
+                            ) : null}
+                            {Array.isArray(discrepancyNote.lines) && discrepancyNote.lines.length > 0 ? (
+                              <ul>
+                                {discrepancyNote.lines.map((line, index) => (
+                                  <li key={index}>{line}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                            {discrepancyNote.footnote ? (
+                              <p className="discrepancy-note discrepancy-note--footnote">
+                                {discrepancyNote.footnote}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {showLegacyToggle ? (
+                          <label className="discrepancy-toggle">
+                            <input
+                              type="checkbox"
+                              checked={useLegacyTotals}
+                              onChange={(event) => onToggleLegacy(Boolean(event.target?.checked))}
+                            />
+                            <span>Include earlier unverified totals</span>
+                          </label>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 ) : null}
               </div>

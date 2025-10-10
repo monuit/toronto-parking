@@ -50,6 +50,44 @@ function deriveDatasetItems(dataset, contextEntry, initialItems) {
   return contextList.length > 0 ? contextList.slice(0, 10) : initialItems.slice(0, 10);
 }
 
+function areLeaderboardItemsEqual(left, right) {
+  if (left === right) {
+    return true;
+  }
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return false;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a === b) {
+      continue;
+    }
+    if (!a || !b) {
+      return false;
+    }
+    const aId = a.id ?? a.locationCode ?? a.intersectionId ?? a.name ?? a.address ?? a.sampleLocation ?? index;
+    const bId = b.id ?? b.locationCode ?? b.intersectionId ?? b.name ?? b.address ?? b.sampleLocation ?? index;
+    if (aId !== bId) {
+      return false;
+    }
+    const aTickets = Number(a.ticketCount ?? a.count ?? 0);
+    const bTickets = Number(b.ticketCount ?? b.count ?? 0);
+    if (aTickets !== bTickets) {
+      return false;
+    }
+    const aRevenue = Number(a.totalRevenue ?? a.total_revenue ?? 0);
+    const bRevenue = Number(b.totalRevenue ?? b.total_revenue ?? 0);
+    if (aRevenue !== bRevenue) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function StreetLeaderboard({
   visible = true,
   dataset = 'parking_tickets',
@@ -80,7 +118,7 @@ export function StreetLeaderboard({
     }
     const resolved = deriveDatasetItems(dataset, datasetEntry, initialItems);
     if (resolved.length > 0) {
-      setItems(resolved);
+      setItems((previous) => (areLeaderboardItemsEqual(previous, resolved) ? previous : resolved));
       setLoading(false);
     }
   }, [dataset, datasetEntry, initialItems, overrideItems]);

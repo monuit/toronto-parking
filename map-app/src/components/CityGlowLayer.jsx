@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources.js';
+import { loadGlowDataset } from '../lib/glowDatasetLoader.js';
 
 const EMPTY_FEATURE_COLLECTION = { type: 'FeatureCollection', features: [] };
 
@@ -57,41 +58,25 @@ export function CityGlowLayer({
   dataset = 'parking_tickets',
 }) {
   const [glowData, setGlowData] = useState(EMPTY_FEATURE_COLLECTION);
-  const dataPath = useMemo(() => {
-    if (dataset === 'red_light_locations') {
-      return MAP_CONFIG.DATA_PATHS.RED_LIGHT_GLOW_LINES;
-    }
-    if (dataset === 'ase_locations') {
-      return MAP_CONFIG.DATA_PATHS.ASE_GLOW_LINES;
-    }
-    return MAP_CONFIG.DATA_PATHS.CITY_GLOW_LINES;
-  }, [dataset]);
-
   useEffect(() => {
-    let isCancelled = false;
+    let cancelled = false;
 
-    fetch(dataPath)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to load glow dataset: ${response.status}`);
-        }
-        return response.json();
-      })
+    loadGlowDataset(dataset)
       .then((payload) => {
-        if (!isCancelled) {
+        if (!cancelled && payload) {
           setGlowData(payload);
         }
       })
       .catch((error) => {
-        if (!isCancelled) {
-          console.error('Failed to load city glow data', error);
+        if (!cancelled) {
+          console.error(`Failed to load ${dataset} glow data`, error);
         }
       });
 
     return () => {
-      isCancelled = true;
+      cancelled = true;
     };
-  }, [dataPath]);
+  }, [dataset]);
 
   const filterExpression = useMemo(() => buildFilterExpression(filter), [filter]);
 
@@ -210,9 +195,17 @@ export function CityGlowLayer({
     if (dataset !== 'parking_tickets' || !Array.isArray(highlightCentrelineIds)) {
       return [];
     }
-    return highlightCentrelineIds
-      .map((value) => (value === null || value === undefined ? null : String(value)))
-      .filter((value) => Boolean(value));
+    const unique = new Set();
+    for (const value of highlightCentrelineIds) {
+      if (value === null || value === undefined) {
+        continue;
+      }
+      if (unique.size >= 100) {
+        break;
+      }
+      unique.add(String(value));
+    }
+    return Array.from(unique);
   }, [highlightCentrelineIds, dataset]);
 
   const highlightFilter = useMemo(() => {
@@ -312,7 +305,7 @@ export function CityGlowLayer({
         layout={lineLayout}
         paint={softGlowPaint}
         filter={layerFilter}
-        minzoom={7}
+        minzoom={9}
         maxzoom={18}
       />
       <Layer
@@ -321,7 +314,7 @@ export function CityGlowLayer({
         layout={lineLayout}
         paint={coreGlowPaint}
         filter={layerFilter}
-        minzoom={8}
+        minzoom={10}
         maxzoom={18}
       />
       <Layer
@@ -330,7 +323,7 @@ export function CityGlowLayer({
         layout={highlightLayout}
         paint={highlightPaint}
         filter={highlightFilter}
-        minzoom={7}
+        minzoom={9}
         maxzoom={18}
       />
     </Source>

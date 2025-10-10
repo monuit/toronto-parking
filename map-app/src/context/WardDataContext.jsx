@@ -1,6 +1,12 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { MAP_CONFIG } from '../lib/mapSources.js';
+import {
+  loadCachedWardSummary,
+  saveWardSummary,
+  loadCachedWardGeojson,
+  saveWardGeojson,
+} from '../lib/wardStorage.js';
 
 const WardDataContext = createContext(null);
 
@@ -19,7 +25,54 @@ export function WardDataProvider({ children }) {
   const [datasets, setDatasets] = useState(() => ({}));
   const pendingRef = useRef(new Map());
   const geojsonPendingRef = useRef(new Map());
+  const bootstrappedRef = useRef(false);
   const SUPPORTED = useMemo(() => new Set(['red_light_locations', 'ase_locations', 'cameras_combined']), []);
+
+  useEffect(() => {
+    if (bootstrappedRef.current || typeof window === 'undefined') {
+      return undefined;
+    }
+    bootstrappedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      for (const dataset of SUPPORTED) {
+        const summaryEntry = await loadCachedWardSummary(dataset);
+        if (cancelled) {
+          return;
+        }
+        if (summaryEntry?.data) {
+          setDatasets((previous) => ({
+            ...previous,
+            [dataset]: {
+              ...(previous[dataset] || {}),
+              summary: summaryEntry.data,
+              etag: summaryEntry.etag || previous[dataset]?.etag || null,
+              version: summaryEntry.version || previous[dataset]?.version || null,
+            },
+          }));
+        }
+        const geojsonEntry = await loadCachedWardGeojson(dataset);
+        if (cancelled) {
+          return;
+        }
+        if (geojsonEntry?.data) {
+          setDatasets((previous) => ({
+            ...previous,
+            [dataset]: {
+              ...(previous[dataset] || {}),
+              geojson: geojsonEntry.data,
+              geojsonEtag: geojsonEntry.etag || previous[dataset]?.geojsonEtag || null,
+            },
+          }));
+        }
+      }
+    })().catch(() => {
+      /* non-blocking */
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [SUPPORTED]);
 
   const ensureDataset = useCallback((dataset) => {
     if (!dataset || !SUPPORTED.has(dataset)) {
@@ -73,6 +126,16 @@ export function WardDataProvider({ children }) {
             error: null,
           },
         }));
+        if (result.summary) {
+          saveWardSummary(dataset, {
+            data: result.summary,
+            etag: result.etag ?? null,
+            version: result.version ?? null,
+            generatedAt: result.summary.generatedAt ?? null,
+          }).catch(() => {
+            /* non-blocking */
+          });
+        }
         return result;
       })
       .catch((error) => {
@@ -133,6 +196,7 @@ export function WardDataProvider({ children }) {
         return Promise.resolve(null);
       }
       const existing = datasets[dataset];
+      const priorVersion = existing?.version ?? null;
       if (existing?.geojson) {
         return Promise.resolve(existing.geojson);
       }
@@ -166,6 +230,15 @@ export function WardDataProvider({ children }) {
               geojsonEtag: etag ?? previous[dataset]?.geojsonEtag ?? null,
             },
           }));
+          if (payload) {
+            saveWardGeojson(dataset, {
+              data: payload,
+              etag: etag ?? null,
+              version: priorVersion,
+            }).catch(() => {
+              /* cache optional */
+            });
+          }
           return payload ?? existing?.geojson ?? null;
         })
         .catch((error) => {

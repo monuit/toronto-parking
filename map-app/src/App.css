@@ -85,6 +85,12 @@ body, html {
   gap: 12px;
 }
 
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 /* Right side overlays */
 .insights-overlay {
   position: fixed;

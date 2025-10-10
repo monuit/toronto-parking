@@ -39,6 +39,7 @@ function MapExperience({
   wardDataset = null,
   onWardClick,
   onWardHover,
+  isTouchDevice = false,
 }) {
   const [mapInstance, setMapInstance] = useState(null);
   const [pointsVisible, setPointsVisible] = useState(true);
@@ -53,10 +54,7 @@ function MapExperience({
   }, [wardDataset, dataset]);
   const pointsMinZoom = useMemo(
     () => (dataset === 'parking_tickets'
-      ? Math.max(
-          MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_INDIVIDUAL_TICKETS - 0.5,
-          MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_CLUSTERS + 1,
-        )
+      ? MAP_CONFIG.TILE_MIN_ZOOM
       : 7.5),
     [dataset],
   );
@@ -105,7 +103,7 @@ function MapExperience({
   }, [mapInstance, onViewportSummaryChange, pointsMinZoom, viewMode]);
 
   useEffect(() => {
-    if (!mapInstance || dataset !== 'parking_tickets') {
+    if (!mapInstance || dataset !== 'parking_tickets' || isTouchDevice) {
       return undefined;
     }
 
@@ -121,8 +119,8 @@ function MapExperience({
         const template = MAP_CONFIG.TILE_SOURCE.TICKETS.replace('{dataset}', dataset);
         const absoluteTemplate = template.startsWith('http') ? template : `${origin}${template}`;
         const zoomLevels = [
-          Math.max(MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_INDIVIDUAL_TICKETS - 1, 12),
-          MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_INDIVIDUAL_TICKETS,
+          MAP_CONFIG.TILE_MIN_ZOOM,
+          MAP_CONFIG.TILE_MIN_ZOOM + 1,
         ];
 
         const requests = [];
@@ -167,7 +165,7 @@ function MapExperience({
     return () => {
       controller.abort();
     };
-  }, [mapInstance, dataset]);
+  }, [mapInstance, dataset, isTouchDevice]);
 
   return (
     <MapContainer onMapLoad={handleLoad}>
@@ -192,6 +190,7 @@ function MapExperience({
             onViewportSummaryChange={onViewportSummaryChange}
             dataset={dataset}
             filter={filter}
+            isTouchDevice={isTouchDevice}
           />
           {wardDatasetId ? (
             <WardChoroplethLayer

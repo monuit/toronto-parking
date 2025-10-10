@@ -1,5 +1,8 @@
 import process from 'node:process';
 import { Buffer } from 'node:buffer';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 import Supercluster from 'supercluster';
 import geojsonvt from 'geojson-vt';
 import vtpbf from 'vt-pbf';
@@ -9,6 +12,7 @@ import { normalizeStreetName } from '../shared/streetUtils.js';
 import {
   RAW_POINT_ZOOM_THRESHOLD,
   SUMMARY_ZOOM_THRESHOLD,
+  TICKET_TILE_MIN_ZOOM,
   TILE_LAYER_NAME,
   WARD_TILE_SOURCE_LAYER,
 } from '../shared/mapConstants.js';
@@ -30,7 +34,26 @@ const redisSettings = getRedisConfig();
 const TILE_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
 const TILE_REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
 const TILE_REDIS_PREFIX = `${TILE_REDIS_NAMESPACE}:tiles:parking:v2`;
-const TILE_REDIS_TTL_SECONDS = Number.parseInt(process.env.MAP_TILE_REDIS_TTL || '43200', 10);
+const TILE_REDIS_TTL_OVERRIDE = Number.parseInt(process.env.MAP_TILE_REDIS_TTL || '', 10);
+const TILE_TTL_RULES = [
+  { maxZoom: 11, ttl: 60 * 60 * 24 },
+  { maxZoom: 14, ttl: 60 * 60 * 2 },
+  { maxZoom: Number.POSITIVE_INFINITY, ttl: 60 * 10 },
+];
+const TILE_PAYLOAD_FLAG_RAW = 0;
+const TILE_PAYLOAD_FLAG_BROTLI = 1;
+const TILE_PREWARM_ENABLED = process.env.MAP_TILE_PREWARM === '0' ? false : true;
+const TILE_PREWARM_INTERVAL_MS = Number.parseInt(
+  process.env.MAP_TILE_PREWARM_INTERVAL_MS || '',
+  10,
+) || 60 * 60 * 1000;
+const GTA_BOUNDS = {
+  west: Number.parseFloat(process.env.TILE_PREWARM_WEST ?? '-79.6393'),
+  south: Number.parseFloat(process.env.TILE_PREWARM_SOUTH ?? '43.4032'),
+  east: Number.parseFloat(process.env.TILE_PREWARM_EAST ?? '-79.1169'),
+  north: Number.parseFloat(process.env.TILE_PREWARM_NORTH ?? '43.8554'),
+};
+const TILE_PREWARM_ZOOMS = [8, 9, 10, 11, 12, 13, 14];
 
 let tileRedisPromise = null;
 
@@ -91,11 +114,24 @@ async function readTileFromRedis(version, z, x, y) {
   }
   const key = `${TILE_REDIS_PREFIX}:${version ?? 'noversion'}:${z}:${x}:${y}`;
   try {
-    const encoded = await client.get(key);
-    if (!encoded) {
+    const raw = await client.sendCommand(['GET', key], { returnBuffers: true });
+    if (!raw) {
       return null;
     }
-    return Buffer.from(encoded, 'base64');
+    const envelope = Buffer.from(raw);
+    if (envelope.length === 0) {
+      return null;
+    }
+    const flag = envelope[0];
+    const payload = envelope.subarray(1);
+    if (flag === TILE_PAYLOAD_FLAG_BROTLI) {
+      try {
+        return brotliDecompressSync(payload);
+      } catch (error) {
+        console.warn('Failed to decompress cached tile payload:', error.message);
+      }
+    }
+    return Buffer.from(payload);
   } catch (error) {
     console.warn('Failed to read tile from Redis:', error.message);
     return null;
@@ -111,10 +147,103 @@ async function writeTileToRedis(version, z, x, y, buffer) {
     return;
   }
   const key = `${TILE_REDIS_PREFIX}:${version ?? 'noversion'}:${z}:${x}:${y}`;
-  const encoded = buffer.toString('base64');
-  client.set(key, encoded, { EX: TILE_REDIS_TTL_SECONDS }).catch((error) => {
+  const ttlSeconds = resolveTileTtl(z);
+  let envelope = null;
+  try {
+    const compressed = brotliCompressSync(buffer);
+    envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_BROTLI]), compressed]);
+  } catch (error) {
+    console.warn('Failed to brotli-compress tile payload, storing raw copy:', error.message);
+    envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_RAW]), buffer]);
+  }
+  client.set(key, envelope, { EX: ttlSeconds }).catch((error) => {
     console.warn('Failed to cache tile in Redis:', error.message);
   });
+}
+
+function resolveTileTtl(z) {
+  if (Number.isFinite(TILE_REDIS_TTL_OVERRIDE) && TILE_REDIS_TTL_OVERRIDE > 0) {
+    return TILE_REDIS_TTL_OVERRIDE;
+  }
+  for (const rule of TILE_TTL_RULES) {
+    if (z <= rule.maxZoom) {
+      return rule.ttl;
+    }
+  }
+  return 60 * 30;
+}
+
+function lngLatToTile(lng, lat, zoom) {
+  const clampedLat = Math.min(Math.max(lat, -85.05112878), 85.05112878);
+  const clampedLng = Math.min(Math.max(lng, -180), 180);
+  const latRad = (clampedLat * Math.PI) / 180;
+  const n = 2 ** zoom;
+  const x = Math.floor(((clampedLng + 180) / 360) * n);
+  const y = Math.floor(
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n,
+  );
+  return { x, y };
+}
+
+function computePrewarmSeeds() {
+  const seeds = [];
+  for (const zoom of TILE_PREWARM_ZOOMS) {
+    if (!Number.isInteger(zoom) || zoom < TICKET_TILE_MIN_ZOOM) {
+      continue;
+    }
+    const topLeft = lngLatToTile(GTA_BOUNDS.west, GTA_BOUNDS.north, zoom);
+    const bottomRight = lngLatToTile(GTA_BOUNDS.east, GTA_BOUNDS.south, zoom);
+    const minX = Math.min(topLeft.x, bottomRight.x);
+    const maxX = Math.max(topLeft.x, bottomRight.x);
+    const minY = Math.min(topLeft.y, bottomRight.y);
+    const maxY = Math.max(topLeft.y, bottomRight.y);
+    const step = zoom >= 13 ? 2 : 1;
+    for (let x = minX; x <= maxX; x += step) {
+      for (let y = minY; y <= maxY; y += step) {
+        seeds.push({ z: zoom, x, y });
+      }
+    }
+  }
+  return seeds;
+}
+
+function scheduleTilePrewarm(tileService) {
+  if (!TILE_REDIS_ENABLED || !TILE_PREWARM_ENABLED) {
+    return;
+  }
+  const run = async () => {
+    const seeds = computePrewarmSeeds();
+    if (!seeds.length) {
+      return;
+    }
+    let warmed = 0;
+    for (const seed of seeds) {
+      try {
+        const tile = await tileService.getTile(seed.z, seed.x, seed.y);
+        if (tile && tile.buffer && tile.buffer.length > 0) {
+          warmed += 1;
+        }
+      } catch (error) {
+        console.warn('Tile prewarm fetch failed:', error.message);
+      }
+    }
+    if (warmed > 0) {
+      console.log(`Prewarmed ${warmed} parking tiles across ${seeds.length} targets.`);
+    }
+  };
+
+  run().catch((error) => {
+    console.warn('Initial tile prewarm failed:', error.message);
+  });
+
+  const interval = setInterval(() => {
+    run().catch((error) => {
+      console.warn('Scheduled tile prewarm failed:', error.message);
+    });
+  }, TILE_PREWARM_INTERVAL_MS);
+  if (typeof interval.unref === 'function') {
+    interval.unref();
+  }
 }
 
 const CLUSTER_VISIBILITY_RULES = [
@@ -195,6 +324,110 @@ const wardTileIndexes = new Map();
 const wardTileVersions = new Map();
 const wardTileCache = new Map();
 const wardTilePromises = new Map();
+
+const WARD_SNAPSHOT_DIR = process.env.WARD_TILE_SNAPSHOT_DIR
+  || path.resolve(process.cwd(), 'map-app/.cache/ward-tile-snapshots');
+
+async function readWardTileSnapshot(dataset) {
+  try {
+    const filePath = path.join(WARD_SNAPSHOT_DIR, `${dataset}.json`);
+    const raw = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn(`Failed to read ward tile snapshot for ${dataset}:`, error.message);
+    }
+    return null;
+  }
+}
+
+async function writeWardTileSnapshot(dataset, version, tiles) {
+  try {
+    await fs.mkdir(WARD_SNAPSHOT_DIR, { recursive: true });
+    const filePath = path.join(WARD_SNAPSHOT_DIR, `${dataset}.json`);
+    const payload = {
+      dataset,
+      version,
+      generatedAt: new Date().toISOString(),
+      tileCount: Object.keys(tiles).length,
+      tiles,
+    };
+    await fs.writeFile(filePath, JSON.stringify(payload));
+  } catch (error) {
+    console.warn(`Failed to persist ward tile snapshot for ${dataset}:`, error.message);
+  }
+}
+
+async function hydrateWardCacheFromSnapshot(dataset, version) {
+  const snapshot = await readWardTileSnapshot(dataset);
+  if (!snapshot || snapshot.version !== version || !snapshot.tiles) {
+    return false;
+  }
+  let hydrated = 0;
+  for (const [key, base64] of Object.entries(snapshot.tiles)) {
+    const [zStr, xStr, yStr] = key.split('/');
+    const z = Number.parseInt(zStr, 10);
+    const x = Number.parseInt(xStr, 10);
+    const y = Number.parseInt(yStr, 10);
+    if (![z, x, y].every(Number.isFinite)) {
+      continue;
+    }
+    const buffer = Buffer.from(base64, 'base64');
+    const cacheKey = getWardTileCacheKey(dataset, z, x, y);
+    if (!wardTileCache.has(cacheKey) && wardTileCache.size < WARD_TILE_CACHE_LIMIT) {
+      wardTileCache.set(cacheKey, { buffer, version });
+      hydrated += 1;
+    }
+  }
+  if (hydrated > 0) {
+    console.log(`Hydrated ${hydrated} ward tiles for ${dataset} from snapshot.`);
+    return true;
+  }
+  return false;
+}
+
+async function ensureWardSnapshot(dataset, index, version) {
+  const hydrated = await hydrateWardCacheFromSnapshot(dataset, version);
+  if (hydrated) {
+    return;
+  }
+
+  const coords = Array.isArray(index.tileCoords) ? index.tileCoords : [];
+  if (!coords.length) {
+    return;
+  }
+  const tiles = {};
+  const layerName = WARD_TILE_SOURCE_LAYER || 'ward_polygons';
+  const limit = Math.min(coords.length, WARD_TILE_CACHE_LIMIT * 4);
+  for (let i = 0; i < limit; i += 1) {
+    const coord = coords[i];
+    if (!coord) {
+      continue;
+    }
+    const { z, x, y } = coord;
+    if (![z, x, y].every((value) => Number.isInteger(value))) {
+      continue;
+    }
+    const tile = index.getTile(z, x, y);
+    if (!tile) {
+      continue;
+    }
+    const normalizedTile = {
+      ...tile,
+      extent: typeof tile.extent === 'number' ? tile.extent : 4096,
+      version: 2,
+    };
+    const buffer = vtpbf.fromGeojsonVt({ [layerName]: normalizedTile }, { extent: 4096, version: 2 });
+    tiles[`${z}/${x}/${y}`] = buffer.toString('base64');
+    if (!wardTileCache.has(getWardTileCacheKey(dataset, z, x, y)) && wardTileCache.size < WARD_TILE_CACHE_LIMIT) {
+      wardTileCache.set(getWardTileCacheKey(dataset, z, x, y), { buffer, version });
+    }
+  }
+
+  if (Object.keys(tiles).length > 0) {
+    await writeWardTileSnapshot(dataset, version, tiles);
+  }
+}
 
 function toNumberArray(value, limit) {
   if (!Array.isArray(value)) {
@@ -377,6 +610,11 @@ async function ensureWardTileIndex(dataset) {
         : `W/"${Date.now()}"`);
     wardTileVersions.set(dataset, resolvedVersion);
     clearWardTileCache(dataset);
+    try {
+      await ensureWardSnapshot(dataset, index, resolvedVersion);
+    } catch (error) {
+      console.warn(`Failed to generate ward tile snapshot for ${dataset}:`, error.message);
+    }
     return index;
   })()
     .catch((error) => {
@@ -683,6 +921,9 @@ class TileService {
     if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y)) {
       return null;
     }
+    if (z < TICKET_TILE_MIN_ZOOM) {
+      return null;
+    }
     const key = buildTileKey(z, x, y);
     if (this.tileCache.has(key)) {
       return this.tileCache.get(key);
@@ -690,8 +931,9 @@ class TileService {
     const cacheVersion = this.dataVersion ?? null;
     const redisBuffer = await readTileFromRedis(cacheVersion, z, x, y);
     if (redisBuffer) {
-      this.tileCache.set(key, redisBuffer);
-      return redisBuffer;
+      const payload = { buffer: redisBuffer, version: cacheVersion };
+      this.tileCache.set(key, payload);
+      return payload;
     }
 
     const layers = {};
@@ -728,13 +970,14 @@ class TileService {
     }
 
     const buffer = vtpbf.fromGeojsonVt(layers, { extent: 4096, version: 2 });
-    this.tileCache.set(key, buffer);
+    const payload = { buffer, version: cacheVersion };
+    this.tileCache.set(key, payload);
     writeTileToRedis(cacheVersion, z, x, y, buffer);
     if (this.tileCache.size > TILE_CACHE_LIMIT) {
       const oldestKey = this.tileCache.keys().next().value;
       this.tileCache.delete(oldestKey);
     }
-    return buffer;
+    return payload;
   }
 
   async summarizeViewport({ west, south, east, north, zoom, filters }) {
@@ -902,5 +1145,7 @@ export function createTileService() {
   if (!dataDir) {
     throw new Error('DATA_DIR environment variable must be set');
   }
-  return new TileService();
+  const service = new TileService();
+  scheduleTilePrewarm(service);
+  return service;
 }
