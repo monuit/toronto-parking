@@ -1,12 +1,5 @@
-import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
-
-import dotenv from 'dotenv';
 import pg from 'pg';
-
-const __filename = fileURLToPath(import.meta.url);
-const PROJECT_ROOT = path.resolve(path.dirname(__filename), '..');
 
 const DEFAULT_TABLES = [
   'parking_ticket_tiles',
@@ -17,11 +10,6 @@ const DEFAULT_TABLES = [
 const tables = (process.env.TILE_TABLES || '').split(',').map((entry) => entry.trim()).filter(Boolean);
 const TARGET_TABLES = tables.length > 0 ? tables : DEFAULT_TABLES;
 const TOP_TABLE_LIMIT = Number.parseInt(process.env.TABLE_USAGE_LIMIT || '25', 10);
-
-function loadEnvironment(): void {
-  const envPath = path.join(PROJECT_ROOT, '.env');
-  dotenv.config({ path: envPath });
-}
 
 function resolveConnectionString(): { connectionString: string; ssl?: boolean | { rejectUnauthorized: boolean } } {
   const dsn = process.env.DATABASE_PRIVATE_URL;
@@ -41,7 +29,6 @@ function resolveConnectionString(): { connectionString: string; ssl?: boolean | 
 }
 
 async function resetTileTables(): Promise<void> {
-  loadEnvironment();
   const { connectionString, ssl } = resolveConnectionString();
 
   const pool = new pg.Pool({
