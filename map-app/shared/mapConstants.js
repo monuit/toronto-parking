@@ -1,5 +1,6 @@
 export const SUMMARY_ZOOM_THRESHOLD = 12;
 export const RAW_POINT_ZOOM_THRESHOLD = 14;
+export const TICKET_TILE_MIN_ZOOM = RAW_POINT_ZOOM_THRESHOLD;
 
 export const TILE_LAYER_NAME = 'parking_tickets';
 export const TILE_URL_TEMPLATE = '/tiles/{z}/{x}/{y}.pbf?dataset={dataset}';

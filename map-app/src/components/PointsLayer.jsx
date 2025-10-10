@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources';
+import { loadCameraDataset } from '../lib/cameraDatasetLoader.js';
 
 function buildFilterExpression(isCluster, filter) {
   const expression = ['all'];
@@ -77,10 +78,18 @@ export function PointsLayer({
   filter,
   onViewportSummaryChange,
   dataset = 'parking_tickets',
+  isTouchDevice = false,
 }) {
-  const summaryAbortRef = useRef(null);
   const summaryTimeoutRef = useRef(null);
+  const lastSummaryKeyRef = useRef(null);
+  const inFlightSummaryKeyRef = useRef(null);
+  const summaryRequestIdRef = useRef(0);
   const [geojsonData, setGeojsonData] = useState(null);
+
+  useEffect(() => {
+    inFlightSummaryKeyRef.current = null;
+    lastSummaryKeyRef.current = null;
+  }, [dataset, filter?.year, filter?.month]);
 
   const pointFilter = useMemo(() => buildFilterExpression(false, filter), [filter]);
 
@@ -90,17 +99,39 @@ export function PointsLayer({
     }
 
     if (dataset !== 'parking_tickets') {
+      summaryRequestIdRef.current += 1;
+      inFlightSummaryKeyRef.current = null;
+      lastSummaryKeyRef.current = null;
       onViewportSummaryChange({ zoomRestricted: true, topStreets: [] });
       return;
     }
 
     const zoom = map.getZoom();
     if (zoom < SUMMARY_ZOOM_THRESHOLD) {
+      summaryRequestIdRef.current += 1;
+      inFlightSummaryKeyRef.current = null;
+      lastSummaryKeyRef.current = null;
       onViewportSummaryChange({ zoomRestricted: true, topStreets: [] });
       return;
     }
 
     const bounds = map.getBounds();
+    const precision = zoom >= 13 ? 4 : 3;
+    const roundToPrecision = (value) => Number.parseFloat(value).toFixed(precision);
+    const key = [
+      roundToPrecision(bounds.getWest()),
+      roundToPrecision(bounds.getSouth()),
+      roundToPrecision(bounds.getEast()),
+      roundToPrecision(bounds.getNorth()),
+      zoom.toFixed(2),
+      filter?.year ?? 'all',
+      filter?.month ?? 'all',
+    ].join('|');
+
+    if (lastSummaryKeyRef.current === key || inFlightSummaryKeyRef.current === key) {
+      return;
+    }
+
     const params = new URLSearchParams({
       west: bounds.getWest().toFixed(6),
       south: bounds.getSouth().toFixed(6),
@@ -117,11 +148,11 @@ export function PointsLayer({
       params.append('month', String(filter.month));
     }
 
-    summaryAbortRef.current?.abort();
-    const controller = new AbortController();
-    summaryAbortRef.current = controller;
+    const requestId = summaryRequestIdRef.current + 1;
+    summaryRequestIdRef.current = requestId;
+    inFlightSummaryKeyRef.current = key;
 
-    fetch(`${MAP_CONFIG.API_PATHS.SUMMARY}?${params.toString()}`, { signal: controller.signal })
+    fetch(`${MAP_CONFIG.API_PATHS.SUMMARY}?${params.toString()}`)
       .then((response) => {
         if (!response.ok) {
           throw new Error(`Summary request failed with status ${response.status}`);
@@ -129,11 +160,23 @@ export function PointsLayer({
         return response.json();
       })
       .then((payload) => {
+        if (summaryRequestIdRef.current !== requestId) {
+          return;
+        }
+        lastSummaryKeyRef.current = key;
         onViewportSummaryChange?.(payload);
       })
       .catch((error) => {
-        if (error.name !== 'AbortError') {
+        if (summaryRequestIdRef.current === requestId) {
           console.error('Failed to load viewport summary', error);
+          lastSummaryKeyRef.current = null;
+        }
+      })
+      .finally(() => {
+        if (summaryRequestIdRef.current === requestId) {
+          if (inFlightSummaryKeyRef.current === key) {
+            inFlightSummaryKeyRef.current = null;
+          }
         }
       });
   }, [filter, map, onViewportSummaryChange, dataset]);
@@ -152,7 +195,8 @@ export function PointsLayer({
       if (summaryTimeoutRef.current) {
         clearTimeout(summaryTimeoutRef.current);
       }
-      summaryTimeoutRef.current = setTimeout(scheduleSummaryFetch, 120);
+      const delay = isTouchDevice ? 260 : 140;
+      summaryTimeoutRef.current = setTimeout(scheduleSummaryFetch, delay);
     };
 
     scheduleSummaryFetch();
@@ -160,14 +204,14 @@ export function PointsLayer({
     map.on('zoomend', handleMove);
 
     return () => {
-      summaryAbortRef.current?.abort();
+      inFlightSummaryKeyRef.current = null;
       if (summaryTimeoutRef.current) {
         clearTimeout(summaryTimeoutRef.current);
       }
       map.off('moveend', handleMove);
       map.off('zoomend', handleMove);
     };
-  }, [map, visible, scheduleSummaryFetch, onViewportSummaryChange, dataset]);
+  }, [map, visible, scheduleSummaryFetch, onViewportSummaryChange, dataset, isTouchDevice]);
 
   const handleFeatureInteraction = useCallback((event) => {
     if (!event?.features?.length || !map) {
@@ -393,41 +437,31 @@ export function PointsLayer({
   }, [dataset]);
 
   const isParkingDataset = dataset === 'parking_tickets';
-  const geojsonPath = useMemo(() => {
-    if (isParkingDataset) {
-      return null;
-    }
-    if (dataset === 'red_light_locations') {
-      return MAP_CONFIG.DATA_PATHS.RED_LIGHT_LOCATIONS;
-    }
-    if (dataset === 'ase_locations') {
-      return MAP_CONFIG.DATA_PATHS.ASE_LOCATIONS;
-    }
-    return null;
-  }, [dataset, isParkingDataset]);
-
   useEffect(() => {
-    if (isParkingDataset || !geojsonPath) {
+    if (isParkingDataset) {
       setGeojsonData(null);
       return undefined;
     }
 
     let cancelled = false;
-    fetch(geojsonPath)
-      .then((response) => (response.ok ? response.json() : null))
+    setGeojsonData(null);
+
+    loadCameraDataset(dataset)
       .then((data) => {
         if (!cancelled && data) {
           setGeojsonData(data);
         }
       })
       .catch((error) => {
-        console.error('Failed to load camera locations geojson', error);
+        if (!cancelled) {
+          console.error(`Failed to load ${dataset} camera geojson`, error);
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [geojsonPath, isParkingDataset]);
+  }, [dataset, isParkingDataset]);
 
   const datasetStyle = useMemo(() => {
     if (dataset === 'red_light_locations') {
@@ -471,7 +505,7 @@ export function PointsLayer({
       strokeColor: '#fff',
       strokeWidth: 1,
       opacity: 0.85,
-      minZoom: Math.max(RAW_POINT_ZOOM - 1, MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_CLUSTERS + 1),
+      minZoom: MAP_CONFIG.TILE_MIN_ZOOM,
       radiusExpression: [
         'interpolate',
         ['linear'],
@@ -511,7 +545,7 @@ export function PointsLayer({
       id={MAP_CONFIG.SOURCE_IDS.TICKETS}
       type="vector"
       tiles={[tileUrl]}
-      minzoom={0}
+      minzoom={datasetStyle.minZoom}
       maxzoom={18}
     >
       <Layer {...pointLayer} filter={pointFilter} />

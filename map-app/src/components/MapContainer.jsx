@@ -2,7 +2,7 @@
  * MapContainer - Base map initialization and rendering
  * Single responsibility: initialize MapLibre GL instance with base style
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MAP_CONFIG } from '../lib/mapSources';
@@ -42,6 +42,28 @@ export function MapContainer({ children, onMapLoad }) {
       onMapLoad(mapRef.current.getMap());
     }
   };
+
+  const transformRequest = useCallback((url) => {
+    if (typeof url !== 'string' || typeof window === 'undefined') {
+      return { url };
+    }
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return { url };
+    }
+    if (url.startsWith('/proxy/') || url.startsWith('/tiles/') || url.startsWith('/styles/')) {
+      const origin = window.location?.origin || '';
+      if (origin) {
+        return { url: `${origin}${url}` };
+      }
+    }
+    if (url.startsWith('./')) {
+      const origin = window.location?.origin || '';
+      if (origin) {
+        return { url: `${origin}${url.slice(1)}` };
+      }
+    }
+    return { url };
+  }, []);
   
   return (
     <div className="map-container">
@@ -64,6 +86,7 @@ export function MapContainer({ children, onMapLoad }) {
         doubleClickZoom={interactionOptions.doubleClickZoom}
         scrollZoom={interactionOptions.scrollZoom}
         touchZoomRotate={interactionOptions.touchZoomRotate}
+        transformRequest={transformRequest}
       >
         {children}
       </Map>

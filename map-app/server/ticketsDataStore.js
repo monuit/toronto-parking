@@ -5,7 +5,9 @@ import process from 'node:process';
 import { fileURLToPath } from 'url';
 import { createClient } from 'redis';
 import { gzipSync, gunzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { getRedisConfig } from './runtimeConfig.js';
+import { getCameraWardRollup } from './yearlyMetricsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,6 +53,7 @@ const REDIS_CAMERA_LOCATION_KEYS = {
   red_light_locations: `${REDIS_NAMESPACE}:red_light_locations:locations:v1`,
   ase_locations: `${REDIS_NAMESPACE}:ase_locations:locations:v1`,
 };
+const REDIS_CAMERA_GLOW_CACHE_SECONDS = Number.parseInt(process.env.CAMERA_GLOW_CACHE_SECONDS || '600', 10);
 const REDIS_CAMERA_WARD_GEO_KEYS = {
   red_light_locations: `${REDIS_NAMESPACE}:red_light:wards:geojson:v1`,
   ase_locations: `${REDIS_NAMESPACE}:ase:wards:geojson:v1`,
@@ -62,10 +65,16 @@ const REDIS_CAMERA_WARD_SUMMARY_KEYS = {
   cameras_combined: `${REDIS_NAMESPACE}:cameras:wards:summary:v1`,
 };
 const REDIS_TTL_SECONDS = Number.parseInt(process.env.MAP_DATA_REDIS_TTL || '86400', 10);
+const CAMERA_LOCATIONS_CACHE_SECONDS = Number.parseInt(process.env.CAMERA_LOCATIONS_CACHE_SECONDS || '300', 10);
+const CAMERA_LOCATIONS_CACHE_MS = Number.isFinite(CAMERA_LOCATIONS_CACHE_SECONDS) && CAMERA_LOCATIONS_CACHE_SECONDS > 0
+  ? CAMERA_LOCATIONS_CACHE_SECONDS * 1000
+  : 300_000;
 
 let redisClientPromise = null;
 let cachedManifest = null;
 let cachedManifestVersion = null;
+const cameraLocationsMemoryCache = new Map();
+const cameraGlowMemoryCache = new Map();
 
 async function getRedisClient() {
   if (!REDIS_ENABLED) {
@@ -120,6 +129,39 @@ function compress(raw) {
 
 function decompress(encoded) {
   return gunzipSync(Buffer.from(encoded, 'base64')).toString('utf-8');
+}
+
+function stableStringify(value) {
+  if (value === null || value === undefined) {
+    return 'null';
+  }
+  if (typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+  }
+  const keys = Object.keys(value).sort();
+  const segments = keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`);
+  return `{${segments.join(',')}}`;
+}
+
+function computeChecksum(payload) {
+  if (payload === null || payload === undefined) {
+    return null;
+  }
+  try {
+    const hash = createHash('sha1');
+    if (typeof payload === 'string') {
+      hash.update(payload);
+    } else {
+      hash.update(stableStringify(payload));
+    }
+    return hash.digest('hex');
+  } catch (error) {
+    console.warn('Failed to compute checksum:', error.message);
+    return null;
+  }
 }
 
 async function readJsonFileWithMeta(filePath) {
@@ -224,10 +266,12 @@ async function readCameraLocationsFromDisk(dataset) {
   try {
     const raw = await readFile(filePath, 'utf-8');
     const { mtimeMs } = await stat(filePath);
+    const version = Math.trunc(mtimeMs);
     return {
       raw,
-      version: Math.trunc(mtimeMs),
+      version,
       source: filePath,
+      etag: `W/"${version}"`,
     };
   } catch (error) {
     console.warn(`Failed to read camera locations for ${dataset}:`, error.message);
@@ -326,6 +370,7 @@ function normaliseRedisWrapper(payload, fallbackSource) {
     version,
     source: fallbackSource || 'redis',
     etag,
+    checksum: typeof payload.checksum === 'string' ? payload.checksum : null,
   };
 }
 
@@ -447,6 +492,254 @@ async function readWardGeojsonFromRedis(dataset) {
     return null;
   }
   return readJsonWrapperFromRedis(key);
+}
+
+async function writeJsonWrapperToRedis(key, payload) {
+  if (!REDIS_ENABLED || !key || !payload) {
+    return;
+  }
+  const client = await getRedisClient();
+  if (!client) {
+    return;
+  }
+  try {
+    const existing = await client.get(key);
+    let existingChecksum = null;
+    if (existing) {
+      try {
+        const parsedExisting = JSON.parse(existing);
+        existingChecksum = parsedExisting?.checksum ?? null;
+      } catch (error) {
+        console.warn(`Failed to parse existing Redis payload for ${key}:`, error.message);
+      }
+    }
+
+    const wrapper = {
+      version: payload.version ?? Date.now(),
+      updatedAt: payload.updatedAt ?? new Date().toISOString(),
+      etag: payload.etag ?? null,
+      data: payload.data ?? null,
+    };
+    if (payload.raw) {
+      wrapper.raw = payload.raw;
+    }
+    if (payload.meta) {
+      wrapper.meta = payload.meta;
+    }
+    const checksumSource = payload.raw ?? payload.data ?? null;
+    const checksum = computeChecksum(checksumSource);
+    if (checksum) {
+      wrapper.checksum = checksum;
+      if (existingChecksum && existingChecksum === checksum) {
+        return;
+      }
+    }
+    const options = {};
+    if (Number.isFinite(REDIS_TTL_SECONDS) && REDIS_TTL_SECONDS > 0) {
+      options.EX = REDIS_TTL_SECONDS;
+    }
+    if (!existing) {
+      options.NX = true;
+    } else {
+      options.XX = true;
+    }
+    const result = await client.set(key, JSON.stringify(wrapper), options);
+    if (result !== 'OK' && checksum && existingChecksum && existingChecksum !== checksum) {
+      await client.set(key, JSON.stringify(wrapper), options.XX ? { EX: options.EX } : {});
+    }
+  } catch (error) {
+    console.warn('Failed to cache JSON payload in Redis:', error.message);
+  }
+}
+
+async function writeWardSummaryToRedis(dataset, payload) {
+  const key = REDIS_CAMERA_WARD_SUMMARY_KEYS[dataset];
+  if (!key || !payload?.data) {
+    return;
+  }
+  await writeJsonWrapperToRedis(key, payload);
+}
+
+async function writeWardGeojsonToRedis(dataset, payload) {
+  const key = REDIS_CAMERA_WARD_GEO_KEYS[dataset];
+  if (!key || !payload?.data) {
+    return;
+  }
+  await writeJsonWrapperToRedis(key, payload);
+}
+
+function buildWardLookup(summary) {
+  const map = new Map();
+  if (!summary || !Array.isArray(summary.wards)) {
+    return map;
+  }
+  for (const ward of summary.wards) {
+    if (ward && ward.wardCode !== undefined && ward.wardCode !== null) {
+      map.set(String(ward.wardCode), ward);
+    }
+  }
+  return map;
+}
+
+function createGeojsonWithRollup(dataset, wrapper, summary) {
+  if (!summary) {
+    return null;
+  }
+  let base = null;
+  if (wrapper?.data && typeof wrapper.data === 'object') {
+    base = wrapper.data;
+  } else if (wrapper?.raw && typeof wrapper.raw === 'string') {
+    try {
+      base = JSON.parse(wrapper.raw);
+    } catch {
+      base = null;
+    }
+  }
+  if (!base || !Array.isArray(base.features)) {
+    return null;
+  }
+  const wardMap = buildWardLookup(summary);
+  const features = base.features.map((feature) => {
+    const next = { ...feature };
+    const props = { ...(feature.properties || {}) };
+    const codeValue = props.wardCode ?? props.ward_code ?? props.code ?? null;
+    const key = codeValue !== null && codeValue !== undefined ? String(codeValue) : null;
+    const wardEntry = key ? wardMap.get(key) : null;
+    if (wardEntry) {
+      props.wardCode = wardEntry.wardCode;
+      const existingName = props.wardName || props.ward_name || null;
+      let resolvedName = wardEntry.wardName;
+      if (existingName && (existingName.includes('-') || !resolvedName || resolvedName.startsWith('Ward '))) {
+        resolvedName = existingName;
+      }
+      props.wardName = resolvedName || `Ward ${wardEntry.wardCode}`;
+      props.ticketCount = Number(wardEntry.ticketCount || 0);
+      props.totalRevenue = Number(wardEntry.totalRevenue || 0);
+      props.locationCount = Number(wardEntry.locationCount || 0);
+      if (dataset === 'cameras_combined') {
+        props.aseTicketCount = Number(wardEntry.aseTicketCount || 0);
+        props.rlcTicketCount = Number(wardEntry.redLightTicketCount || 0);
+        props.aseTotalRevenue = Number(wardEntry.aseTotalRevenue || 0);
+        props.rlcTotalRevenue = Number(wardEntry.redLightTotalRevenue || 0);
+      } else if (dataset === 'ase_locations') {
+        props.aseTicketCount = Number(wardEntry.ticketCount || 0);
+        props.aseTotalRevenue = Number(wardEntry.totalRevenue || 0);
+      } else if (dataset === 'red_light_locations') {
+        props.rlcTicketCount = Number(wardEntry.ticketCount || 0);
+        props.rlcTotalRevenue = Number(wardEntry.totalRevenue || 0);
+      }
+    } else {
+      props.ticketCount = 0;
+      props.totalRevenue = 0;
+      props.locationCount = 0;
+      if (dataset === 'cameras_combined') {
+        props.aseTicketCount = 0;
+        props.rlcTicketCount = 0;
+        props.aseTotalRevenue = 0;
+        props.rlcTotalRevenue = 0;
+      }
+    }
+    next.properties = props;
+    return next;
+  });
+  return {
+    ...base,
+    features,
+    meta: {
+      ...(base.meta || {}),
+      source: 'yearly-rollup',
+      dataset,
+      generatedAt: summary.generatedAt,
+    },
+  };
+}
+
+async function applyWardSummaryRollup(dataset, wrapper) {
+  if (!wrapper) {
+    return null;
+  }
+  const existingSource = wrapper?.data?.meta?.source;
+  if (existingSource && typeof existingSource === 'string' && existingSource.startsWith('yearly-rollup')) {
+    return wrapper;
+  }
+  try {
+    const summary = await getCameraWardRollup(dataset);
+    if (!summary || !Array.isArray(summary.wards)) {
+      return wrapper;
+    }
+    const existingLookup = buildWardLookup(wrapper?.data);
+    if (existingLookup.size > 0) {
+      const updatedWards = summary.wards.map((ward) => {
+        const key = ward?.wardCode !== undefined && ward?.wardCode !== null
+          ? String(ward.wardCode)
+          : null;
+        const match = key ? existingLookup.get(key) : null;
+        if (!match || !match.wardName) {
+          return ward;
+        }
+        const candidate = match.wardName;
+        const shouldReplace = !ward.wardName
+          || ward.wardName.startsWith('Ward ')
+          || (candidate.includes('-') && !ward.wardName.includes('-'));
+        if (!shouldReplace) {
+          return ward;
+        }
+        return { ...ward, wardName: candidate };
+      });
+      summary.wards = updatedWards;
+      const topLength = Array.isArray(summary.topWards) ? summary.topWards.length : 10;
+      summary.topWards = updatedWards.slice(0, topLength);
+    }
+    const version = summary.version ?? Date.now();
+    const etag = `W/"${version}"`;
+    const enriched = {
+      data: summary,
+      version,
+      updatedAt: summary.generatedAt,
+      etag,
+      source: 'live',
+    };
+    await writeWardSummaryToRedis(dataset, enriched);
+    return enriched;
+  } catch (error) {
+    console.warn(`Failed to compute ward summary for ${dataset}:`, error.message);
+    return wrapper;
+  }
+}
+
+async function applyWardGeojsonRollup(dataset, wrapper) {
+  if (!wrapper) {
+    return null;
+  }
+  const existingSource = wrapper?.data?.meta?.source;
+  if (existingSource && typeof existingSource === 'string' && existingSource.startsWith('yearly-rollup')) {
+    return wrapper;
+  }
+  try {
+    const summary = await getCameraWardRollup(dataset);
+    if (!summary || !Array.isArray(summary.wards)) {
+      return wrapper;
+    }
+    const geojson = createGeojsonWithRollup(dataset, wrapper, summary);
+    if (!geojson) {
+      return wrapper;
+    }
+    const version = summary.version ?? Date.now();
+    const etag = `W/"${version}"`;
+    const enriched = {
+      data: geojson,
+      raw: JSON.stringify(geojson),
+      version,
+      updatedAt: summary.generatedAt,
+      etag,
+      source: 'live',
+    };
+    await writeWardGeojsonToRedis(dataset, enriched);
+    return enriched;
+  } catch (error) {
+    console.warn(`Failed to compute ward geojson for ${dataset}:`, error.message);
+    return wrapper;
+  }
 }
 
 async function writeAggregateToRedis(raw, version) {
@@ -759,14 +1052,41 @@ export async function loadCameraGlow(dataset) {
     return null;
   }
 
+  const cached = cameraGlowMemoryCache.get(dataset);
+  if (cached) {
+    if (cached.expiresAt > Date.now()) {
+      return cached.payload;
+    }
+    cameraGlowMemoryCache.delete(dataset);
+  }
+
   const redisResult = await readCameraGlowFromRedis(dataset);
   if (redisResult) {
-    return { ...redisResult, source: 'redis' };
+    const payload = {
+      ...redisResult,
+      source: redisResult.source || 'redis',
+      etag: redisResult.etag || (Number.isFinite(redisResult.version) ? `W/"${redisResult.version}"` : null),
+    };
+    cameraGlowMemoryCache.set(dataset, {
+      payload,
+      expiresAt: Date.now() + (REDIS_CAMERA_GLOW_CACHE_SECONDS * 1000),
+    });
+    return payload;
   }
   const diskResult = await readCameraGlowFromDisk(dataset);
   if (diskResult) {
-    return { ...diskResult, source: 'disk' };
+    const payload = {
+      ...diskResult,
+      source: 'disk',
+      etag: diskResult.etag || (Number.isFinite(diskResult.version) ? `W/"${diskResult.version}"` : null),
+    };
+    cameraGlowMemoryCache.set(dataset, {
+      payload,
+      expiresAt: Date.now() + (REDIS_CAMERA_GLOW_CACHE_SECONDS * 1000),
+    });
+    return payload;
   }
+  cameraGlowMemoryCache.delete(dataset);
   return null;
 }
 
@@ -775,14 +1095,41 @@ export async function loadCameraLocations(dataset) {
     return null;
   }
 
+  const cached = cameraLocationsMemoryCache.get(dataset);
+  if (cached) {
+    if (cached.expiresAt > Date.now()) {
+      return cached.payload;
+    }
+    cameraLocationsMemoryCache.delete(dataset);
+  }
+
   const redisResult = await readCameraLocationsFromRedis(dataset);
   if (redisResult) {
-    return { ...redisResult, source: 'redis' };
+    const payload = {
+      ...redisResult,
+      source: redisResult.source || 'redis',
+      etag: redisResult.etag || (Number.isFinite(redisResult.version) ? `W/"${redisResult.version}"` : null),
+    };
+    cameraLocationsMemoryCache.set(dataset, {
+      payload,
+      expiresAt: Date.now() + CAMERA_LOCATIONS_CACHE_MS,
+    });
+    return payload;
   }
   const diskResult = await readCameraLocationsFromDisk(dataset);
   if (diskResult) {
-    return { ...diskResult, source: 'disk' };
+    const payload = {
+      ...diskResult,
+      source: 'disk',
+      etag: diskResult.etag || (Number.isFinite(diskResult.version) ? `W/"${diskResult.version}"` : null),
+    };
+    cameraLocationsMemoryCache.set(dataset, {
+      payload,
+      expiresAt: Date.now() + CAMERA_LOCATIONS_CACHE_MS,
+    });
+    return payload;
   }
+  cameraLocationsMemoryCache.delete(dataset);
   return null;
 }
 
@@ -796,6 +1143,13 @@ export async function loadCameraWardGeojson(dataset) {
     readWardGeojsonFromDisk(dataset),
   ]);
 
+  if (redisResult?.data?.meta?.source
+    && typeof redisResult.data.meta.source === 'string'
+    && redisResult.data.meta.source.startsWith('yearly-rollup')) {
+    return { ...redisResult, source: 'redis' };
+  }
+
+  let resolved = null;
   if (redisResult && diskResult) {
     const redisVersion = resolveNumericVersion(redisResult);
     const diskVersion = resolveNumericVersion(diskResult);
@@ -803,30 +1157,31 @@ export async function loadCameraWardGeojson(dataset) {
     const diskHasFeatures = hasWardFeatures(diskResult);
 
     if (diskHasFeatures && !redisHasFeatures) {
-      return { ...diskResult, source: diskResult.source || 'disk' };
-    }
-    if (diskVersion !== null && redisVersion !== null) {
+      resolved = { ...diskResult, source: diskResult.source || 'disk' };
+    } else if (diskVersion !== null && redisVersion !== null) {
       if (diskVersion >= redisVersion) {
-        return { ...diskResult, source: diskResult.source || 'disk' };
+        resolved = { ...diskResult, source: diskResult.source || 'disk' };
+      } else {
+        resolved = { ...redisResult, source: 'redis' };
       }
-      return { ...redisResult, source: 'redis' };
+    } else if (diskVersion !== null && redisVersion === null) {
+      resolved = { ...diskResult, source: diskResult.source || 'disk' };
+    } else if (redisVersion !== null && diskVersion === null) {
+      resolved = { ...redisResult, source: 'redis' };
+    } else {
+      resolved = { ...redisResult, source: 'redis' };
     }
-    if (diskVersion !== null && redisVersion === null) {
-      return { ...diskResult, source: diskResult.source || 'disk' };
-    }
-    if (redisVersion !== null && diskVersion === null) {
-      return { ...redisResult, source: 'redis' };
-    }
-    return { ...redisResult, source: 'redis' };
+  } else if (redisResult) {
+    resolved = { ...redisResult, source: 'redis' };
+  } else if (diskResult) {
+    resolved = { ...diskResult, source: diskResult.source || 'disk' };
   }
 
-  if (redisResult) {
-    return { ...redisResult, source: 'redis' };
+  if (!resolved) {
+    return null;
   }
-  if (diskResult) {
-    return { ...diskResult, source: diskResult.source || 'disk' };
-  }
-  return null;
+
+  return applyWardGeojsonRollup(dataset, resolved);
 }
 
 export async function loadCameraWardSummary(dataset) {
@@ -839,31 +1194,40 @@ export async function loadCameraWardSummary(dataset) {
     readWardSummaryFromDisk(dataset),
   ]);
 
+  if (redisResult?.data?.meta?.source
+    && typeof redisResult.data.meta.source === 'string'
+    && redisResult.data.meta.source.startsWith('yearly-rollup')) {
+    return { ...redisResult, source: 'redis' };
+  }
+
+  let resolved = null;
   if (redisResult && diskResult) {
     const redisVersion = resolveNumericVersion(redisResult);
     const diskVersion = resolveNumericVersion(diskResult);
     if (diskVersion !== null && redisVersion !== null) {
       if (diskVersion >= redisVersion) {
-        return { ...diskResult, source: diskResult.source || 'disk' };
+        resolved = { ...diskResult, source: diskResult.source || 'disk' };
+      } else {
+        resolved = { ...redisResult, source: 'redis' };
       }
-      return { ...redisResult, source: 'redis' };
+    } else if (diskVersion !== null && redisVersion === null) {
+      resolved = { ...diskResult, source: diskResult.source || 'disk' };
+    } else if (redisVersion !== null && diskVersion === null) {
+      resolved = { ...redisResult, source: 'redis' };
+    } else {
+      resolved = { ...redisResult, source: 'redis' };
     }
-    if (diskVersion !== null && redisVersion === null) {
-      return { ...diskResult, source: diskResult.source || 'disk' };
-    }
-    if (redisVersion !== null && diskVersion === null) {
-      return { ...redisResult, source: 'redis' };
-    }
-    return { ...redisResult, source: 'redis' };
+  } else if (redisResult) {
+    resolved = { ...redisResult, source: 'redis' };
+  } else if (diskResult) {
+    resolved = { ...diskResult, source: diskResult.source || 'disk' };
   }
 
-  if (redisResult) {
-    return { ...redisResult, source: 'redis' };
+  if (!resolved) {
+    return null;
   }
-  if (diskResult) {
-    return { ...diskResult, source: diskResult.source || 'disk' };
-  }
-  return null;
+
+  return applyWardSummaryRollup(dataset, resolved);
 }
 
 export async function loadStreetStats() {
