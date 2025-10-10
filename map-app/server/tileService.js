@@ -130,7 +130,10 @@ async function readTileFromRedis(version, z, x, y) {
         return brotliDecompressSync(payload);
       } catch (error) {
         console.warn('Failed to decompress cached tile payload:', error.message);
-        return Buffer.from(envelope);
+        client.del(key).catch((delError) => {
+          console.warn('Failed to purge corrupt tile cache entry:', delError.message);
+        });
+        return null;
       }
     }
     return Buffer.from(payload);
