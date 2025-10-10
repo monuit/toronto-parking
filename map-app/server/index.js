@@ -242,13 +242,13 @@ async function resetRedisNamespaceOnBoot() {
     for await (const key of client.scanIterator({ MATCH: matchPattern, COUNT: 1000 })) {
       batch.push(key);
       if (batch.length >= 512) {
-        const removed = await client.del(batch);
+        const removed = await client.del(...batch);
         deleted += Number(removed) || 0;
         batch = [];
       }
     }
     if (batch.length > 0) {
-      const removed = await client.del(batch);
+      const removed = await client.del(...batch);
       deleted += Number(removed) || 0;
     }
     if (deleted > 0) {
@@ -285,8 +285,14 @@ async function vacuumPostgresOnBoot() {
   try {
     for (const table of VACUUM_TABLE_LIST) {
       try {
-        await pool.query(`VACUUM (ANALYZE) ${table};`);
-        console.log(`VACUUM ANALYZE completed for ${table}`);
+        const definition = await resolveTableDefinition(pool, table);
+        if (!definition) {
+          console.warn(`VACUUM skipped for ${table}: table not found`);
+          continue;
+        }
+        const qualified = formatQualifiedName(definition.schema_name, definition.table_name);
+        await pool.query(`VACUUM (ANALYZE) ${qualified};`);
+        console.log(`VACUUM ANALYZE completed for ${qualified}`);
       } catch (tableError) {
         console.warn(`VACUUM failed for ${table}:`, tableError.message);
       }
@@ -312,6 +318,46 @@ function schedulePostgresVacuum() {
       console.warn('Startup Postgres vacuum failed:', error.message);
     });
   }, delay);
+}
+
+function quoteIdentifier(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function formatQualifiedName(schema, name) {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
+}
+
+async function resolveTableDefinition(pool, rawName) {
+  const hasSchema = rawName.includes('.');
+  const [schemaCandidate, tableName] = hasSchema ? rawName.split('.', 2) : [null, rawName];
+  const query = `
+    SELECT n.nspname AS schema_name, c.relname AS table_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind IN ('r', 'p')
+      AND c.relname = $1
+      ${schemaCandidate ? 'AND n.nspname = $2' : ''}
+    ORDER BY (n.nspname = 'public') DESC
+    LIMIT 1;
+  `;
+  const params = schemaCandidate ? [tableName, schemaCandidate] : [tableName];
+  let result = await pool.query(query, params);
+  if (result.rowCount === 0 && !schemaCandidate) {
+    result = await pool.query(
+      `
+        SELECT n.nspname AS schema_name, c.relname AS table_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind IN ('r', 'p')
+          AND n.nspname = 'public'
+          AND c.relname = $1
+        LIMIT 1;
+      `,
+      [tableName],
+    );
+  }
+  return result.rows[0] || null;
 }
 
 function isTextLikeContentType(contentType) {
