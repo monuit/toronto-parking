@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
+import { Pool } from 'pg';
 import Supercluster from 'supercluster';
 import geojsonvt from 'geojson-vt';
 import vtpbf from 'vt-pbf';
@@ -23,7 +24,7 @@ import {
   loadCameraWardGeojson,
 } from './ticketsDataStore.js';
 import { getParkingLocationYearMap } from './yearlyMetricsService.js';
-import { getRedisConfig } from './runtimeConfig.js';
+import { getRedisConfig, getPostgresConfig } from './runtimeConfig.js';
 
 const TILE_CACHE_LIMIT = 512;
 const SUMMARY_LIMIT = 5;
@@ -33,7 +34,7 @@ const MONTHS_LIMIT = 24;
 const redisSettings = getRedisConfig();
 const TILE_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
 const TILE_REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
-const TILE_REDIS_PREFIX = `${TILE_REDIS_NAMESPACE}:tiles:parking:v2`;
+const TILE_REDIS_PREFIX = `${TILE_REDIS_NAMESPACE}:tiles:parking:v3`;
 const TILE_REDIS_TTL_OVERRIDE = Number.parseInt(process.env.MAP_TILE_REDIS_TTL || '', 10);
 const TILE_TTL_RULES = [
   { maxZoom: 11, ttl: 60 * 60 * 24 },
@@ -47,6 +48,14 @@ const TILE_PREWARM_INTERVAL_MS = Number.parseInt(
   process.env.MAP_TILE_PREWARM_INTERVAL_MS || '',
   10,
 ) || 60 * 60 * 1000;
+const TILE_PREWARM_INITIAL_DELAY_MS = Number.parseInt(
+  process.env.MAP_TILE_PREWARM_INITIAL_DELAY_MS || '',
+  10,
+) || 30_000;
+const TILE_PREWARM_JITTER_MS = Number.parseInt(
+  process.env.MAP_TILE_PREWARM_JITTER_MS || '',
+  10,
+) || 5_000;
 const GTA_BOUNDS = {
   west: Number.parseFloat(process.env.TILE_PREWARM_WEST ?? '-79.6393'),
   south: Number.parseFloat(process.env.TILE_PREWARM_SOUTH ?? '43.4032'),
@@ -54,8 +63,19 @@ const GTA_BOUNDS = {
   north: Number.parseFloat(process.env.TILE_PREWARM_NORTH ?? '43.8554'),
 };
 const TILE_PREWARM_ZOOMS = [8, 9, 10, 11, 12, 13, 14];
+const PARKING_TILE_SNAPSHOT_DIR = process.env.PARKING_TILE_SNAPSHOT_DIR
+  || path.resolve(process.cwd(), 'map-app/.cache/parking-tile-snapshots');
+const PARKING_TILE_SNAPSHOT_LIMIT = Number.parseInt(
+  process.env.PARKING_TILE_SNAPSHOT_LIMIT || '',
+  10,
+) || 256;
+
+const BROTLI_LEGACY_REWRITE_KEYS = new Set();
 
 let tileRedisPromise = null;
+let tilePostgresPool = null;
+let tilePostgresSignature = null;
+const parkingTileSnapshotCache = new Map();
 
 async function getTileRedisClient() {
   if (!TILE_REDIS_ENABLED) {
@@ -104,6 +124,147 @@ async function getTileRedisClient() {
   return client && client.isOpen ? client : null;
 }
 
+function ensureTilePostgresPool() {
+  const config = getPostgresConfig();
+  const connectionString = config.readOnlyConnectionString || config.connectionString;
+  if (!config.enabled || !connectionString) {
+    return null;
+  }
+  const signature = `${connectionString}|${config.ssl ? 'ssl' : 'plain'}`;
+  if (!tilePostgresPool || tilePostgresSignature !== signature) {
+    if (tilePostgresPool) {
+      tilePostgresPool.end().catch(() => {
+        /* ignore shutdown errors */
+      });
+    }
+    tilePostgresPool = new Pool({
+      connectionString,
+      ssl: config.ssl,
+      application_name: 'tile-service-fallback',
+    });
+    tilePostgresPool.on('error', (error) => {
+      console.warn('[tiles] Postgres pool error:', error.message);
+    });
+    tilePostgresSignature = signature;
+  }
+  return tilePostgresPool;
+}
+
+function getParkingSnapshotKey(z, x, y) {
+  return `${z}/${x}/${y}`;
+}
+
+async function readParkingTileSnapshot(z, x, y) {
+  const key = getParkingSnapshotKey(z, x, y);
+  if (parkingTileSnapshotCache.has(key)) {
+    return parkingTileSnapshotCache.get(key);
+  }
+  try {
+    const filePath = path.join(PARKING_TILE_SNAPSHOT_DIR, `${z}-${x}-${y}.json`);
+    const raw = await fs.readFile(filePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.base64 !== 'string') {
+      return null;
+    }
+    const payload = {
+      buffer: Buffer.from(parsed.base64, 'base64'),
+      version: parsed.version ?? null,
+    };
+    parkingTileSnapshotCache.set(key, payload);
+    return payload;
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn('Failed to read parking tile snapshot:', error.message);
+    }
+    return null;
+  }
+}
+
+async function writeParkingTileSnapshot(z, x, y, buffer, version) {
+  if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+    return;
+  }
+  if (parkingTileSnapshotCache.size >= PARKING_TILE_SNAPSHOT_LIMIT
+    && !parkingTileSnapshotCache.has(getParkingSnapshotKey(z, x, y))) {
+    const oldestKey = parkingTileSnapshotCache.keys().next().value;
+    if (oldestKey) {
+      parkingTileSnapshotCache.delete(oldestKey);
+    }
+  }
+  try {
+    await fs.mkdir(PARKING_TILE_SNAPSHOT_DIR, { recursive: true });
+    const payload = {
+      version: version ?? null,
+      base64: buffer.toString('base64'),
+      storedAt: Date.now(),
+    };
+    const filePath = path.join(PARKING_TILE_SNAPSHOT_DIR, `${z}-${x}-${y}.json`);
+    await fs.writeFile(filePath, JSON.stringify(payload));
+    parkingTileSnapshotCache.set(getParkingSnapshotKey(z, x, y), {
+      buffer: Buffer.from(payload.base64, 'base64'),
+      version: payload.version,
+    });
+  } catch (error) {
+    console.warn('Failed to persist parking tile snapshot:', error.message);
+  }
+}
+
+function jitterDelay(baseMs) {
+  if (!Number.isFinite(baseMs) || baseMs <= 0) {
+    return 0;
+  }
+  return Math.floor(Math.random() * baseMs);
+}
+
+async function fetchParkingFeaturesFromPostgres() {
+  const pool = ensureTilePostgresPool();
+  if (!pool) {
+    return [];
+  }
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `
+        SELECT
+          location,
+          SUM(ticket_count)::BIGINT AS total_count,
+          SUM(total_revenue)::NUMERIC AS total_revenue,
+          AVG(latitude)::DOUBLE PRECISION AS latitude,
+          AVG(longitude)::DOUBLE PRECISION AS longitude,
+          MAX(top_infraction) FILTER (WHERE top_infraction IS NOT NULL AND top_infraction <> '') AS top_infraction,
+          ARRAY_AGG(DISTINCT year) AS years
+        FROM parking_ticket_yearly_locations
+        WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+        GROUP BY location
+        HAVING SUM(ticket_count) > 0
+      `,
+    );
+    const rows = result?.rows || [];
+    return rows
+      .filter((row) => Number.isFinite(row.longitude) && Number.isFinite(row.latitude))
+      .map((row) => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [Number(row.longitude), Number(row.latitude)],
+        },
+        properties: {
+          location: row.location,
+          count: Number(row.total_count) || 0,
+          total_revenue: Number(row.total_revenue) || 0,
+          top_infraction: row.top_infraction || null,
+          years: Array.isArray(row.years) ? row.years : [],
+          months: [],
+        },
+      }));
+  } catch (error) {
+    console.warn('Failed to fetch parking features from Postgres:', error.message);
+    return [];
+  } finally {
+    client.release();
+  }
+}
+
 async function readTileFromRedis(version, z, x, y) {
   if (!TILE_REDIS_ENABLED) {
     return null;
@@ -129,12 +290,17 @@ async function readTileFromRedis(version, z, x, y) {
       try {
         return brotliDecompressSync(payload);
       } catch (error) {
-        console.warn('Failed to decompress cached tile payload, falling back to raw buffer:', error.message);
+        if (!BROTLI_LEGACY_REWRITE_KEYS.has(key)) {
+          console.warn('Failed to decompress cached tile payload, rewriting legacy entry:', error.message);
+          BROTLI_LEGACY_REWRITE_KEYS.add(key);
+        }
         const rawBuffer = Buffer.from(payload);
-        client.del(key).catch((delError) => {
+        try {
+          await client.del(key);
+        } catch (delError) {
           console.warn('Failed to purge corrupt tile cache entry:', delError.message);
-        });
-        writeTileToRedis(version, z, x, y, rawBuffer);
+        }
+        await writeTileToRedis(version, z, x, y, rawBuffer, { forceRaw: true });
         return rawBuffer;
       }
     }
@@ -145,7 +311,7 @@ async function readTileFromRedis(version, z, x, y) {
   }
 }
 
-async function writeTileToRedis(version, z, x, y, buffer) {
+async function writeTileToRedis(version, z, x, y, buffer, options = {}) {
   if (!TILE_REDIS_ENABLED || !buffer) {
     return;
   }
@@ -155,17 +321,23 @@ async function writeTileToRedis(version, z, x, y, buffer) {
   }
   const key = `${TILE_REDIS_PREFIX}:${version ?? 'noversion'}:${z}:${x}:${y}`;
   const ttlSeconds = resolveTileTtl(z);
-  let envelope = null;
-  try {
-    const compressed = brotliCompressSync(buffer);
-    envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_BROTLI]), compressed]);
-  } catch (error) {
-    console.warn('Failed to brotli-compress tile payload, storing raw copy:', error.message);
-    envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_RAW]), buffer]);
+  let envelope;
+  if (options.forceRaw) {
+    envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_RAW]), Buffer.from(buffer)]);
+  } else {
+    try {
+      const compressed = brotliCompressSync(buffer);
+      envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_BROTLI]), compressed]);
+    } catch (error) {
+      console.warn('Failed to brotli-compress tile payload, storing raw copy:', error.message);
+      envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_RAW]), buffer]);
+    }
   }
-  client.set(key, envelope, { EX: ttlSeconds }).catch((error) => {
+  try {
+    await client.set(key, envelope, { EX: ttlSeconds });
+  } catch (error) {
     console.warn('Failed to cache tile in Redis:', error.message);
-  });
+  }
 }
 
 function resolveTileTtl(z) {
@@ -218,39 +390,59 @@ function scheduleTilePrewarm(tileService) {
   if (!TILE_REDIS_ENABLED || !TILE_PREWARM_ENABLED) {
     return;
   }
+  let running = false;
   const run = async () => {
-    const seeds = computePrewarmSeeds();
-    if (!seeds.length) {
+    if (running) {
       return;
     }
-    let warmed = 0;
-    for (const seed of seeds) {
-      try {
-        const tile = await tileService.getTile(seed.z, seed.x, seed.y);
-        if (tile && tile.buffer && tile.buffer.length > 0) {
-          warmed += 1;
-        }
-      } catch (error) {
-        console.warn('Tile prewarm fetch failed:', error.message);
+    running = true;
+    try {
+      const client = await getTileRedisClient();
+      if (!client) {
+        return;
       }
-    }
-    if (warmed > 0) {
-      console.log(`Prewarmed ${warmed} parking tiles across ${seeds.length} targets.`);
+      await tileService.ensureLoaded();
+      const seeds = computePrewarmSeeds();
+      if (!seeds.length) {
+        return;
+      }
+      let warmed = 0;
+      for (const seed of seeds) {
+        try {
+          const tile = await tileService.getTile(seed.z, seed.x, seed.y);
+          if (tile && tile.buffer && tile.buffer.length > 0) {
+            warmed += 1;
+          }
+        } catch (error) {
+          console.warn('Tile prewarm fetch failed:', error.message);
+        }
+      }
+      if (warmed > 0) {
+        console.log(`Prewarmed ${warmed} parking tiles across ${seeds.length} targets.`);
+      }
+    } finally {
+      running = false;
     }
   };
 
-  run().catch((error) => {
-    console.warn('Initial tile prewarm failed:', error.message);
-  });
+  const scheduleRun = (delayMs) => {
+    const timer = setTimeout(() => {
+      run()
+        .catch((error) => {
+          console.warn('Tile prewarm execution failed:', error.message);
+        })
+        .finally(() => {
+          const nextDelay = TILE_PREWARM_INTERVAL_MS + jitterDelay(TILE_PREWARM_JITTER_MS);
+          scheduleRun(nextDelay);
+        });
+    }, Math.max(0, delayMs));
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  };
 
-  const interval = setInterval(() => {
-    run().catch((error) => {
-      console.warn('Scheduled tile prewarm failed:', error.message);
-    });
-  }, TILE_PREWARM_INTERVAL_MS);
-  if (typeof interval.unref === 'function') {
-    interval.unref();
-  }
+  const initialDelay = Math.max(0, TILE_PREWARM_INITIAL_DELAY_MS) + jitterDelay(TILE_PREWARM_JITTER_MS);
+  scheduleRun(initialDelay);
 }
 
 const CLUSTER_VISIBILITY_RULES = [
@@ -763,6 +955,19 @@ class TileService {
         throw error;
       }
     }
+    if (chunkDescriptors.length === 0) {
+      const postgresFeatures = await fetchParkingFeaturesFromPostgres();
+      if (postgresFeatures.length > 0) {
+        chunkDescriptors = [
+          {
+            features: postgresFeatures,
+            featureCount: postgresFeatures.length,
+            source: 'postgres',
+            version: Date.now(),
+          },
+        ];
+      }
+    }
 
     const locationYearCounts = await getParkingLocationYearMap().catch(() => new Map());
     this.locationYearCounts = locationYearCounts;
@@ -942,6 +1147,15 @@ class TileService {
       this.tileCache.set(key, payload);
       return payload;
     }
+    const snapshot = await readParkingTileSnapshot(z, x, y);
+    if (snapshot && snapshot.buffer) {
+      const payload = {
+        buffer: snapshot.buffer,
+        version: snapshot.version ?? cacheVersion,
+      };
+      this.tileCache.set(key, payload);
+      return payload;
+    }
 
     const layers = {};
 
@@ -980,6 +1194,7 @@ class TileService {
     const payload = { buffer, version: cacheVersion };
     this.tileCache.set(key, payload);
     writeTileToRedis(cacheVersion, z, x, y, buffer);
+    writeParkingTileSnapshot(z, x, y, buffer, cacheVersion);
     if (this.tileCache.size > TILE_CACHE_LIMIT) {
       const oldestKey = this.tileCache.keys().next().value;
       this.tileCache.delete(oldestKey);
