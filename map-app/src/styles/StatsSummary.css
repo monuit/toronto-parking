@@ -143,6 +143,17 @@
   list-style: none;
 }
 
+.stats-summary .discrepancy-list {
+  margin: 0.3rem 0 0.35rem 1.1rem;
+  padding: 0;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
 .stats-summary .discrepancy-note {
   color: rgba(255, 255, 255, 0.65);
 }

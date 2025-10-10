@@ -199,6 +199,48 @@
   height: auto;
 }
 
+.legend-support {
+  position: absolute;
+  bottom: 0;
+  right: calc(100% + 14px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: rgba(248, 250, 252, 0.92);
+  border-radius: 10px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  pointer-events: auto;
+  z-index: 12;
+}
+
+.legend-support:hover,
+.legend-support:focus-visible {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.4);
+}
+
+.legend-support img {
+  display: block;
+  height: 36px;
+}
+
+.legend.collapsed .legend-support {
+  right: calc(100% + 10px);
+  bottom: 4px;
+}
+
+@media (max-width: 768px) {
+  .legend-support {
+    position: static;
+    margin-top: 12px;
+    align-self: flex-start;
+    right: auto;
+    margin-top: 16px;
+  }
+}
+
 .legend-toggle {
   display: flex;
   align-items: center;
@@ -596,6 +638,40 @@
 .info-popup.popup-variant-sheet .close-btn {
   top: 18px;
   right: 18px;
+}
+
+.info-popup.popup-variant-sheet .popup-traffic-lights {
+  display: none;
+}
+
+.popup-sheet-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.popup-sheet-handle {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.popup-sheet-close {
+  flex: 0 0 auto;
+  border: none;
+  background: rgba(28, 28, 30, 0.12);
+  color: #1d1d1f;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.info-popup.popup-variant-sheet h3 {
+  margin-top: 0;
 }
 
 @keyframes popupSheetSlide {

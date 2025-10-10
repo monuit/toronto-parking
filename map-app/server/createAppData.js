@@ -38,9 +38,9 @@ export async function createAppData() {
   ]);
 
   const [parkingLiveTotals, redLiveTotals, aseLiveTotals] = await Promise.all([
-    getDatasetTotals('parking_tickets').catch(() => null),
-    getDatasetTotals('red_light_locations').catch(() => null),
-    getDatasetTotals('ase_locations').catch(() => null),
+    getDatasetTotals('parking_tickets', { forceRefresh: true }).catch(() => null),
+    getDatasetTotals('red_light_locations', { forceRefresh: true }).catch(() => null),
+    getDatasetTotals('ase_locations', { forceRefresh: true }).catch(() => null),
   ]);
 
   const versionComponents = [

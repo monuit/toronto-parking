@@ -1,3 +1,4 @@
+import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Pool } from 'pg';
 import { getPostgresConfig } from './runtimeConfig.js';
@@ -5,6 +6,51 @@ import { loadTicketsSummary, loadDatasetSummary } from './ticketsDataStore.js';
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1200;
+const DEFAULT_CACHE_SECONDS = Number.parseInt(process.env.DATASET_TOTALS_CACHE_SECONDS || '300', 10);
+const DATASET_TOTALS_CACHE_MS = Number.isFinite(DEFAULT_CACHE_SECONDS) && DEFAULT_CACHE_SECONDS > 0
+  ? DEFAULT_CACHE_SECONDS * 1000
+  : 300_000;
+
+const datasetTotalsCache = new Map();
+
+function getCacheEntry(dataset) {
+  const entry = datasetTotalsCache.get(dataset);
+  if (!entry) {
+    return null;
+  }
+  if (entry.expiresAt > Date.now()) {
+    return entry.payload;
+  }
+  datasetTotalsCache.delete(dataset);
+  return null;
+}
+
+function setCacheEntry(dataset, payload, ttlMs = DATASET_TOTALS_CACHE_MS) {
+  if (!payload) {
+    datasetTotalsCache.delete(dataset);
+    return;
+  }
+  const expiresAt = Date.now() + (Number.isFinite(ttlMs) && ttlMs > 0 ? ttlMs : DATASET_TOTALS_CACHE_MS);
+  datasetTotalsCache.set(dataset, {
+    payload,
+    expiresAt,
+  });
+}
+
+export function clearDatasetTotalsCache(dataset = null) {
+  if (!dataset) {
+    datasetTotalsCache.clear();
+    return;
+  }
+  datasetTotalsCache.delete(dataset);
+}
+
+export function primeDatasetTotalsCache(dataset, payload, ttlMs = DATASET_TOTALS_CACHE_MS) {
+  if (!dataset || !payload) {
+    return;
+  }
+  setCacheEntry(dataset, payload, ttlMs);
+}
 
 let pool = null;
 
@@ -141,50 +187,66 @@ async function fetchASETotals() {
   });
 }
 
-export async function getDatasetTotals(dataset) {
+export async function getDatasetTotals(dataset, options = {}) {
   const normalised = dataset || 'parking_tickets';
+  const { forceRefresh = false } = options;
+
+  if (!forceRefresh) {
+    const cached = getCacheEntry(normalised);
+    if (cached) {
+      return { ...cached };
+    }
+  }
 
   try {
     if (normalised === 'parking_tickets') {
       const pgResult = await fetchParkingTicketTotals();
       if (pgResult) {
+        setCacheEntry(normalised, pgResult);
         return pgResult;
       }
       const summaryWrapper = await loadTicketsSummary();
       if (summaryWrapper?.data) {
         const summary = summaryWrapper.data;
-        return {
+        const fallback = {
           dataset: 'parking_tickets',
           featureCount: Number(summary.featureCount) || 0,
           ticketCount: Number(summary.ticketCount) || 0,
           totalRevenue: Number(summary.totalRevenue) || 0,
           source: 'local-summary',
         };
+        setCacheEntry(normalised, fallback);
+        return fallback;
       }
-      return {
+      const fallback = {
         dataset: 'parking_tickets',
         featureCount: 0,
         ticketCount: 0,
         totalRevenue: 0,
         source: 'fallback',
       };
+      setCacheEntry(normalised, fallback);
+      return fallback;
     }
 
     if (normalised === 'red_light_locations') {
       const pgResult = await fetchRedLightTotals();
       if (pgResult) {
+        setCacheEntry(normalised, pgResult);
         return pgResult;
       }
       const summaryWrapper = await loadDatasetSummary('red_light_locations');
       const summary = summaryWrapper?.data;
       if (summary?.totals) {
-        return {
+        const fallback = {
           dataset: 'red_light_locations',
           featureCount: Number(summary.totals.locationCount) || 0,
           ticketCount: Number(summary.totals.ticketCount) || 0,
           totalRevenue: Number(summary.totals.totalRevenue) || 0,
           source: 'local-summary',
         };
+        setCacheEntry(normalised, fallback);
+        return fallback;
       }
       return null;
     }
@@ -196,22 +258,26 @@ export async function getDatasetTotals(dataset) {
       ]);
       const summaryTotals = summaryWrapper?.data?.totals;
       if (pgResult) {
-        return {
+        const payload = {
           dataset: 'ase_locations',
           featureCount: Number(pgResult.featureCount) || Number(summaryTotals?.locationCount) || 0,
           ticketCount: Number(pgResult.ticketCount) || Number(summaryTotals?.ticketCount) || 0,
           totalRevenue: Number(pgResult.totalRevenue) || Number(summaryTotals?.totalRevenue) || 0,
           source: 'postgres',
         };
+        setCacheEntry(normalised, payload);
+        return payload;
       }
       if (summaryTotals) {
-        return {
+        const payload = {
           dataset: 'ase_locations',
           featureCount: Number(summaryTotals.locationCount) || 0,
           ticketCount: Number(summaryTotals.ticketCount) || 0,
           totalRevenue: Number(summaryTotals.totalRevenue) || 0,
           source: summaryWrapper?.source || 'local-summary',
         };
+        setCacheEntry(normalised, payload);
+        return payload;
       }
       return null;
     }
@@ -222,25 +288,29 @@ export async function getDatasetTotals(dataset) {
         const summaryWrapper = await loadTicketsSummary();
         if (summaryWrapper?.data) {
           const summary = summaryWrapper.data;
-          return {
+          const fallback = {
             dataset: 'parking_tickets',
             featureCount: Number(summary.featureCount) || 0,
             ticketCount: Number(summary.ticketCount) || 0,
             totalRevenue: Number(summary.totalRevenue) || 0,
             source: 'local-summary',
           };
+          setCacheEntry(normalised, fallback);
+          return fallback;
         }
       } else {
         const summaryWrapper = await loadDatasetSummary(normalised);
         const summary = summaryWrapper?.data;
         if (summary?.totals) {
-          return {
+          const fallback = {
             dataset: normalised,
             featureCount: Number(summary.totals.locationCount) || 0,
             ticketCount: Number(summary.totals.ticketCount) || 0,
             totalRevenue: Number(summary.totals.totalRevenue) || 0,
             source: 'local-summary',
           };
+          setCacheEntry(normalised, fallback);
+          return fallback;
         }
       }
       return null;

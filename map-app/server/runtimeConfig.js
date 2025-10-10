@@ -59,8 +59,22 @@ export function getPostgresConfig() {
     process.env.DATABASE_PUBLIC_URL ||
     process.env.POSTGRES_URL ||
     null;
+  const replicaConnectionString =
+    process.env.DATABASE_REPLICA_URL ||
+    process.env.DATABASE_RO_URL ||
+    process.env.POSTGRES_READONLY_URL ||
+    null;
+  const poolConnectionString =
+    process.env.DATABASE_POOL_URL ||
+    process.env.PGBOUNCER_URL ||
+    null;
   if (!connectionString) {
-    return { enabled: false, connectionString: null };
+    return {
+      enabled: false,
+      connectionString: null,
+      readOnlyConnectionString: null,
+      poolConnectionString: null,
+    };
   }
   const forceDisable = process.env.FORCE_LOCAL_DB === '1';
   const disableInDev = process.env.DISABLE_DB_IN_DEV === '1';
@@ -83,6 +97,9 @@ export function getPostgresConfig() {
     enabled,
     connectionString: enabled ? connectionString : null,
     rawConnectionString: connectionString,
+    readOnlyConnectionString: enabled ? (replicaConnectionString || poolConnectionString || connectionString) : null,
+    poolConnectionString: enabled ? (poolConnectionString || null) : null,
+    replicaConnectionString: enabled ? (replicaConnectionString || null) : null,
     ssl: sslOptions,
   };
 }
