@@ -9,7 +9,7 @@ application start without requiring a full ETL re-run.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable
 
 from src.etl.postgres import PostgresClient
 
@@ -50,20 +50,30 @@ class TileSchemaManager:
     pg: PostgresClient
     quadkey_zoom: int = 12
     quadkey_prefix_length: int = 6
+    logger: Callable[[str], None] | None = None
 
     def ensure(self) -> None:
         """Apply all schema guarantees (idempotent)."""
 
+        self._log("Ensuring PostGIS extensions")
         self.pg.ensure_extensions()
+        self._log("Ensuring helper functions")
         self._ensure_helper_functions()
+        self._log("Ensuring base columns and indexes")
         self._ensure_base_columns()
+        self._log("Ensuring tile tables and partitions")
         self._ensure_tile_tables()
 
     # ------------------------------------------------------------------
     # Helpers
+    def _log(self, message: str) -> None:
+        if self.logger:
+            self.logger(message)
+
     def _ensure_helper_functions(self) -> None:
         """Create SQL helper functions for quadkey and tile math."""
 
+        self._log("  Creating mercator_quadkey_prefix function")
         self.pg.execute(
             """
             CREATE OR REPLACE FUNCTION mercator_quadkey_prefix(
@@ -120,6 +130,7 @@ class TileSchemaManager:
         )
 
         # Function to compute tile bounds in Web Mercator for a given xyz.
+    self._log("  Creating tile_envelope_3857 function")
         self.pg.execute(
             """
             CREATE OR REPLACE FUNCTION tile_envelope_3857(z integer, x integer, y integer)
@@ -139,6 +150,8 @@ class TileSchemaManager:
             geom = table_meta["geom"]
             geom_3857 = table_meta["geom_3857"]
 
+            self._log(f"  Processing base table '{table}'")
+            self._log(f"    Adding {geom_3857} column if missing")
             self.pg.execute(
                 f"""
                 ALTER TABLE {table}
@@ -147,7 +160,8 @@ class TileSchemaManager:
             )
 
             # Ensure all rows have Web Mercator geometry populated.
-            self.pg.execute(
+            self._log(f"    Populating {geom_3857} where empty or invalid")
+            updated_geom = self.pg.execute(
                 f"""
                 UPDATE {table}
                 SET {geom_3857} = ST_Transform({geom}, 3857)
@@ -155,19 +169,24 @@ class TileSchemaManager:
                   AND ({geom_3857} IS NULL OR ST_SRID({geom_3857}) <> 3857)
                 """
             )
+            if updated_geom:
+                self._log(f"      Updated {updated_geom} rows")
 
+            self._log(f"    Ensuring GIST index on {geom_3857}")
             self.pg.execute(
                 f"CREATE INDEX IF NOT EXISTS {table}_geom_3857_idx ON {table} USING GIST ({geom_3857});"
             )
 
             # Tile prefix column to support pruning.
+            self._log("    Adding tile_qk_prefix column if missing")
             self.pg.execute(
                 f"""
                 ALTER TABLE {table}
                 ADD COLUMN IF NOT EXISTS tile_qk_prefix TEXT
                 """
             )
-            self.pg.execute(
+            self._log("    Populating tile_qk_prefix where empty")
+            updated_prefix = self.pg.execute(
                 f"""
                 UPDATE {table}
                 SET tile_qk_prefix = mercator_quadkey_prefix({geom_3857}, {self.quadkey_zoom}, {self.quadkey_prefix_length})
@@ -175,6 +194,8 @@ class TileSchemaManager:
                   AND (tile_qk_prefix IS NULL OR tile_qk_prefix = '')
                 """
             )
+            if updated_prefix:
+                self._log(f"      Updated {updated_prefix} rows")
             self.pg.execute(
                 f"CREATE INDEX IF NOT EXISTS {table}_tile_qk_prefix_idx ON {table} (tile_qk_prefix);"
             )
@@ -322,6 +343,7 @@ class TileSchemaManager:
         )
 
         for table_name, base_table, populate_sql in builders:
+            self._log(f"  Ensuring tile table '{table_name}' (source: {base_table})")
             parent_definition = f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
                     tile_id BIGSERIAL PRIMARY KEY,
@@ -342,13 +364,16 @@ class TileSchemaManager:
                     ward TEXT
                 ) PARTITION BY LIST (tile_qk_group);
             """
+            self._log("    Creating parent partitioned table if needed")
             self.pg.execute(parent_definition)
 
             self._ensure_quadkey_partitions(table_name)
 
             # Clear and repopulate to avoid duplicate entries.
+            self._log("    Truncating existing tile rows")
             self.pg.execute(f"TRUNCATE {table_name} RESTART IDENTITY;")
-            self.pg.execute(
+            self._log("    Populating tile table")
+            inserted_rows = self.pg.execute(
                 f"""
                 INSERT INTO {table_name} (
                     dataset,
@@ -370,7 +395,10 @@ class TileSchemaManager:
                 {populate_sql}
                 """
             )
+            if inserted_rows:
+                self._log(f"      Inserted {inserted_rows} rows into {table_name}")
 
+            self._log("    Creating indexes")
             self.pg.execute(
                 f"CREATE INDEX IF NOT EXISTS {table_name}_geom_idx ON {table_name} USING GIST (geom);"
             )
@@ -386,6 +414,7 @@ class TileSchemaManager:
 
         for symbol in ("0", "1", "2", "3"):
             partition_name = f"{parent}_p{symbol}"
+            self._log(f"    Ensuring partition {partition_name}")
             self.pg.execute(
                 f"""
                 CREATE TABLE IF NOT EXISTS {partition_name}

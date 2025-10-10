@@ -22,6 +22,7 @@ import { MAP_CONFIG } from './lib/mapSources.js';
 import { prefetchCameraDatasets } from './lib/cameraDatasetLoader.js';
 import { prefetchGlowDatasets } from './lib/glowDatasetLoader.js';
 import { useBreakpoint, useTouchDevice } from './hooks/useBreakpoint.js';
+import { PmtilesProvider } from './context/PmtilesContext.jsx';
 import './App.css';
 import './styles/MobileLayout.css';
 
@@ -1772,11 +1773,13 @@ export default function App({ initialData = null }) {
   ), [initialData]);
 
   return (
-    <AppProviders initialData={initialData}>
-      <AppContent
-        fallbackTopStreets={fallbackTopStreets}
-        fallbackTopNeighbourhoods={fallbackTopNeighbourhoods}
-      />
-    </AppProviders>
+    <PmtilesProvider>
+      <AppProviders initialData={initialData}>
+        <AppContent
+          fallbackTopStreets={fallbackTopStreets}
+          fallbackTopNeighbourhoods={fallbackTopNeighbourhoods}
+        />
+      </AppProviders>
+    </PmtilesProvider>
   );
 }

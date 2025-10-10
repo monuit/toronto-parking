@@ -1,6 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources.js';
+import { usePmtiles } from '../context/PmtilesContext.jsx';
+import { getPmtilesDataset, getPmtilesShardUrl } from '../lib/pmtilesProtocol.js';
 
 const SUPPORTED_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
 
@@ -20,11 +22,23 @@ export function WardChoroplethLayer({
   onWardClick,
   onWardHover,
 }) {
+  const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
+  const pmtilesDataset = useMemo(
+    () => (pmtilesReady ? getPmtilesDataset(pmtilesManifest, dataset, 'wardDatasets') : null),
+    [pmtilesManifest, pmtilesReady, dataset],
+  );
+  const pmtilesUrl = useMemo(() => {
+    const shardUrl = getPmtilesShardUrl(pmtilesDataset);
+    return shardUrl ? `pmtiles://${shardUrl}` : null;
+  }, [pmtilesDataset]);
   const sourceId = useMemo(() => `${dataset}-ward-source`, [dataset]);
   const fillLayerId = useMemo(() => `${dataset}-ward-fill`, [dataset]);
   const outlineLayerId = useMemo(() => `${dataset}-ward-outline`, [dataset]);
   const tileUrl = useMemo(
     () => {
+      if (pmtilesUrl) {
+        return pmtilesUrl;
+      }
       if (!SUPPORTED_DATASETS.has(dataset)) {
         return null;
       }
@@ -37,12 +51,12 @@ export function WardChoroplethLayer({
       }
       return template;
     },
-    [dataset],
+    [dataset, pmtilesUrl],
   );
 
   const layerSourceProps = useMemo(
-    () => ({ 'source-layer': STYLE_CONSTANTS.WARD_TILE_SOURCE_LAYER }),
-    [],
+    () => ({ 'source-layer': pmtilesDataset?.vectorLayer || STYLE_CONSTANTS.WARD_TILE_SOURCE_LAYER }),
+    [pmtilesDataset],
   );
 
   const fillPaint = useMemo(
@@ -162,9 +176,9 @@ export function WardChoroplethLayer({
       key={sourceId}
       id={sourceId}
       type="vector"
-      tiles={[tileUrl]}
-      minzoom={0}
-      maxzoom={14}
+  tiles={[tileUrl]}
+  minzoom={pmtilesDataset?.minZoom ?? 0}
+  maxzoom={pmtilesDataset?.maxZoom ?? 14}
     >
       <Layer
         id={fillLayerId}

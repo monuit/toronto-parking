@@ -65,14 +65,14 @@ const REDIS_CAMERA_WARD_SUMMARY_KEYS = {
   cameras_combined: `${REDIS_NAMESPACE}:cameras:wards:summary:v1`,
 };
 const REDIS_TTL_SECONDS = Number.parseInt(process.env.MAP_DATA_REDIS_TTL || '86400', 10);
-const CAMERA_LOCATIONS_CACHE_SECONDS = Number.parseInt(process.env.CAMERA_LOCATIONS_CACHE_SECONDS || '300', 10);
+const CAMERA_LOCATIONS_CACHE_SECONDS = Number.parseInt(process.env.CAMERA_LOCATIONS_CACHE_SECONDS || '1800', 10);
 const CAMERA_LOCATIONS_CACHE_MS = Number.isFinite(CAMERA_LOCATIONS_CACHE_SECONDS) && CAMERA_LOCATIONS_CACHE_SECONDS > 0
   ? CAMERA_LOCATIONS_CACHE_SECONDS * 1000
-  : 300_000;
-const CAMERA_WARD_CACHE_SECONDS = Number.parseInt(process.env.CAMERA_WARD_CACHE_SECONDS || '300', 10);
+  : 1_800_000;
+const CAMERA_WARD_CACHE_SECONDS = Number.parseInt(process.env.CAMERA_WARD_CACHE_SECONDS || '1800', 10);
 const CAMERA_WARD_CACHE_MS = Number.isFinite(CAMERA_WARD_CACHE_SECONDS) && CAMERA_WARD_CACHE_SECONDS > 0
   ? CAMERA_WARD_CACHE_SECONDS * 1000
-  : 300_000;
+  : 1_800_000;
 
 let redisClientPromise = null;
 let cachedManifest = null;

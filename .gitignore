@@ -1,47 +1,77 @@
+# Toronto Parking - Git Ignore Configuration
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# ============================================================================
 # MARK: Node and frontend tooling
+# ============================================================================
 node_modules/
 .pnp
 .pnp.js
 .turbo/
 .vercel/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
+# ============================================================================
 # MARK: Frontend build outputs
+# ============================================================================
 .next/
 out/
 build/
 dist/
+map-app/dist/
+map-app/build/
 
+# ============================================================================
 # MARK: Testing artifacts
+# ============================================================================
 coverage/
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/*
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
 
+# ============================================================================
 # MARK: Debug logs
+# ============================================================================
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 
-# MARK: Environment files
+# ============================================================================
+# MARK: Environment files (CRITICAL - contains secrets!)
+# ============================================================================
 .env
-.env*.local
+.env.*
+!.env.example
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
+# ============================================================================
 # MARK: Python bytecode and caches
+# ============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.pytype/
+*.pyo
+*.pyd
 
+# ============================================================================
 # MARK: Python environments and build artifacts
+# ============================================================================
 .venv/
 venv/
 env/
@@ -66,10 +96,11 @@ var/
 *.manifest
 *.spec
 
-# MARK: Data files and archives
+# ============================================================================
+# MARK: Data files and archives (large files)
+# ============================================================================
 *.csv
 *.tsv
-*.log
 *.sqlite
 *.db
 *.zip
@@ -84,34 +115,146 @@ var/
 *.xls
 *.xlsx
 
+# ============================================================================
+# MARK: Large binary/tile files
+# ============================================================================
+*.pmtiles
+*.mbtiles
+*.pbf
+*.mvt
+
+# ============================================================================
 # MARK: Temporary and test files
+# ============================================================================
 test_*.py
 test_*.json
 *_cache.json
-failed_*.json
+*_cache/
+cache/
+.cache/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ============================================================================
+# MARK: Geocoding outputs and intermediate files
+# ============================================================================
+geocoding_*.json
+geocode_*.json
+failed_addresses.json
+geocoded_addresses*.json
+geocoded_addresses*.jsonl
+*_geocoded.json
+*_geocoded.jsonl
+*_failures.jsonl
+*_retry*.jsonl
+unique_queries.json
+unique_addresses.csv
+unique_addresses.jsonl
+
+# ============================================================================
+# MARK: Local datasets and outputs (LARGE DIRECTORIES)
+# ============================================================================
+/output/
+!/output/.gitkeep
+/external_data/
+!/external_data/.gitkeep
+/parking_data/
+!/parking_data/.gitkeep
+/pmtiles/
+!/pmtiles/.gitkeep
+
+# ============================================================================
+# MARK: ETL and processing outputs
+# ============================================================================
+output/etl/
+output/fine_tuning/
+output/spatiotemporal/
+extraction_summary.json
+*_summary.json
+
+# ============================================================================
+# MARK: Map data files
+# ============================================================================
+# Large merged GeoJSON file (generated at runtime from chunks)
+map-app/public/data/tickets_aggregated.geojson
+map-app/public/data/*.geojson
+# But allow the split chunks to be committed
+!map-app/public/data/tickets_aggregated_part*.geojson
+!map-app/public/data/.gitkeep
+
+# ============================================================================
+# MARK: Archived/deprecated files
+# ============================================================================
+docs/analysis/*.ipynb
 split_geojson.py
 minio_diagnostic.py
 MINIO_DIAGNOSTIC.md
 QUICK_FIX.md
+*_old.py
+*_backup.py
+*_deprecated.py
 
-# MARK: Local datasets and outputs
-/output/
-/external_data/
-/parking_data/
-# Large merged GeoJSON file (generated at runtime from chunks)
-map-app/public/data/tickets_aggregated.geojson
-# But allow the split chunks to be committed
-!map-app/public/data/tickets_aggregated_part*.geojson
-
+# ============================================================================
 # MARK: System files
+# ============================================================================
 .DS_Store
 Thumbs.db
+desktop.ini
+*.bak
+*~
 
-# MARK: Credentials & certificates
+# ============================================================================
+# MARK: Credentials & certificates (CRITICAL - security!)
+# ============================================================================
 *.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+secrets.json
+credentials.json
 
+# ============================================================================
 # MARK: IDE and editor settings
+# ============================================================================
 .idea/
 .vscode/
 *.swp
 *.swo
+*.swn
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================================
+# MARK: Database dumps and backups
+# ============================================================================
+*.sql
+*.dump
+*.bak
+backup/
+backups/
+
+# ============================================================================
+# MARK: OS-specific
+# ============================================================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+.directory
+.Trash-*
