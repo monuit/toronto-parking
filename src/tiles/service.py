@@ -68,7 +68,10 @@ class TileService:
 
     def __post_init__(self) -> None:  # pragma: no cover - integration hook
         if not getattr(TileService, "_schema_initialized", False):
-            TileSchemaManager(self.pg, quadkey_prefix_length=self.quadkey_prefix_length).ensure()
+            TileSchemaManager(
+                self.pg,
+                quadkey_prefix_length=self.quadkey_prefix_length,
+            ).ensure(include_tile_tables=False)
             TileService._schema_initialized = True
 
     def get_tile(
