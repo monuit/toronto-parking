@@ -1,10 +1,10 @@
 """Build PMTiles archives for heavy map layers.
 
-This script connects directly to PostGIS using the existing tile tables and
-generates sharded PMTiles files that can be pushed to the MinIO-backed edge
-bucket.  Each shard enumerates the relevant z/x/y tiles, renders the vector
-tile payload using the same SQL as the live tile service, and writes the tiles
-into a compressed PMTiles archive.
+This script connects directly to PostGIS, streams vector tiles from the source
+tables, and generates sharded PMTiles files that can be pushed to the
+MinIO-backed edge bucket.  Each shard enumerates the relevant z/x/y tiles,
+renders the vector tile payload using dataset-specific SQL, and writes the
+tiles into a compressed PMTiles archive.
 
 Usage
 -----
@@ -23,19 +23,20 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
-import math
 import os
 import sys
 import time
+from urllib.parse import quote_plus
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple, Sequence
 
 import psycopg
 from dotenv import load_dotenv
 from pmtiles.tile import Compression, TileType, zxy_to_tileid
 from pmtiles.writer import write as pmtiles_write
+import boto3
 
 # Ensure the project root is on the Python path so we can import ``src`` modules.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -47,7 +48,6 @@ if DOTENV_PATH.exists():
     load_dotenv(DOTENV_PATH)
 
 from src.etl.postgres import PostgresClient  # noqa: E402
-from src.tiles.service import TILE_DATASET_DEFINITIONS  # noqa: E402
 from src.tiles.schema import TileSchemaManager  # noqa: E402
 
 
@@ -68,71 +68,49 @@ class ShardDefinition:
         return ((west + east) / 2.0, (south + north) / 2.0)
 
 
-# Geographic sharding configuration.  Ontario/GTA tiles are stored in a shard
-# separate from the "rest of Canada" fallback so that the initial viewport hits
-# a short-range PMTiles file and avoids cross-country fetches.
-SHARDS: Tuple[ShardDefinition, ...] = (
-    ShardDefinition(
-        dataset="parking_tickets",
-        shard_id="ontario",
-        filename="parking_tickets-ontario.pmtiles",
-        bounds=(-81.0, 42.0, -78.0, 44.4),
-        min_zoom=8,
-        max_zoom=16,
-        name="Parking tickets – Ontario",
-        description="Aggregated parking ticket clusters for Southern Ontario",
-    ),
-    ShardDefinition(
-        dataset="parking_tickets",
-        shard_id="canada",
-        filename="parking_tickets-canada.pmtiles",
-        bounds=(-142.0, 41.0, -52.0, 70.0),
-        min_zoom=6,
-        max_zoom=12,
-        name="Parking tickets – Canada fallback",
-        description="Low-zoom overview tiles covering the rest of Canada",
-    ),
-    ShardDefinition(
-        dataset="red_light_locations",
-        shard_id="ontario",
-        filename="red-light-ontario.pmtiles",
-        bounds=(-81.0, 42.0, -78.0, 44.4),
-        min_zoom=8,
-        max_zoom=16,
-        name="Red light cameras – Ontario",
-        description="Red light camera enforcement coverage across Ontario",
-    ),
-    ShardDefinition(
-        dataset="red_light_locations",
-        shard_id="canada",
-        filename="red-light-canada.pmtiles",
-        bounds=(-142.0, 41.0, -52.0, 70.0),
-        min_zoom=6,
-        max_zoom=12,
-        name="Red light cameras – Canada fallback",
-        description="Low-zoom red light camera coverage for the rest of Canada",
-    ),
-    ShardDefinition(
-        dataset="ase_locations",
-        shard_id="ontario",
-        filename="ase-ontario.pmtiles",
-        bounds=(-81.0, 42.0, -78.0, 44.4),
-        min_zoom=8,
-        max_zoom=16,
-        name="ASE cameras – Ontario",
-        description="Automated speed enforcement cameras in Ontario",
-    ),
-    ShardDefinition(
-        dataset="ase_locations",
-        shard_id="canada",
-        filename="ase-canada.pmtiles",
-        bounds=(-142.0, 41.0, -52.0, 70.0),
-        min_zoom=6,
-        max_zoom=12,
-        name="ASE cameras – Canada fallback",
-        description="Low-zoom automated speed enforcement coverage for Canada",
-    ),
-)
+DATASET_SOURCES: Dict[str, Dict[str, str]] = {
+    "parking_tickets": {
+        "table": "parking_tickets",
+        "geom_column": "geom_3857",
+    },
+    "red_light_locations": {
+        "table": "red_light_camera_locations",
+        "geom_column": "geom_3857",
+    },
+    "ase_locations": {
+        "table": "ase_camera_locations",
+        "geom_column": "geom_3857",
+    },
+}
+
+SHARD_CONFIG_PATH = PROJECT_ROOT / "shared" / "pmtiles" / "shards.json"
+with open(SHARD_CONFIG_PATH, "r", encoding="utf-8") as shard_file:
+    SHARD_CONFIG = json.load(shard_file)
+
+DATASET_CONFIG: Dict[str, Dict[str, object]] = SHARD_CONFIG.get("datasets", {})
+WARD_DATASET_CONFIG: Dict[str, Dict[str, object]] = SHARD_CONFIG.get("wardDatasets", {})
+
+
+def _load_shard_definitions() -> Tuple[ShardDefinition, ...]:
+    shards: List[ShardDefinition] = []
+    for dataset, config in DATASET_CONFIG.items():
+        for shard in config.get("shards", []):
+            shards.append(
+                ShardDefinition(
+                    dataset=dataset,
+                    shard_id=shard["id"],
+                    filename=shard["filename"],
+                    bounds=tuple(shard["bounds"]),
+                    min_zoom=int(shard["minZoom"]),
+                    max_zoom=int(shard["maxZoom"]),
+                    name=shard.get("name", f"{dataset} – {shard['id']}").strip(),
+                    description=shard.get("description", ""),
+                )
+            )
+    return tuple(shards)
+
+
+SHARDS: Tuple[ShardDefinition, ...] = _load_shard_definitions()
 
 
 def _can_connect(dsn: str) -> bool:
@@ -156,138 +134,300 @@ def resolve_database_dsn() -> str:
     for candidate in candidates:
         if candidate and _can_connect(candidate):
             return candidate
+
+    host = os.getenv("POSTGRES_HOST") or os.getenv("PGHOST")
+    user = os.getenv("POSTGRES_USER") or os.getenv("PGUSER")
+    password = os.getenv("POSTGRES_PASSWORD") or os.getenv("PGPASSWORD")
+    database = (
+        os.getenv("POSTGRES_DB")
+        or os.getenv("POSTGRES_DATABASE")
+        or os.getenv("PGDATABASE")
+        or "postgres"
+    )
+    port = os.getenv("POSTGRES_PORT") or os.getenv("PGPORT") or "5432"
+
+    if host and user:
+        password_part = f":{quote_plus(password)}" if password else ""
+        dsn = f"postgresql://{quote_plus(user)}{password_part}@{host}:{port}/{database}"
+        if _can_connect(dsn):
+            return dsn
+
     raise RuntimeError(
-        "DATABASE_URL / DATABASE_PRIVATE_URL environment variable is required"
+        "Unable to resolve Postgres DSN. Set DATABASE_PRIVATE_URL or POSTGRES_HOST/USER/PASSWORD variables."
     )
 
 
-def table_exists(pg: PostgresClient, table_name: str) -> bool:
-    sql = """
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name = %s
-        LIMIT 1
+def quadkey_to_zxy(quadkey: str) -> Tuple[int, int, int]:
+    if not quadkey:
+        raise ValueError("Quadkey must be non-empty")
+    z = len(quadkey)
+    x = 0
+    y = 0
+    for i, char in enumerate(quadkey):
+        digit = int(char)
+        mask = 1 << (z - i - 1)
+        if digit & 1:
+            x |= mask
+        if digit & 2:
+            y |= mask
+    return z, x, y
+
+
+def collect_tiles_for_shard(pg: PostgresClient, shard: ShardDefinition) -> List[Tuple[int, int, int]]:
+    source = DATASET_SOURCES.get(shard.dataset)
+    if not source:
+        raise ValueError(f"Dataset '{shard.dataset}' is not configured for PMTiles export")
+
+    table = source["table"]
+    geom_column = source["geom_column"]
+    west, south, east, north = shard.bounds
+
+    sql = f"""
+        WITH bounds AS (
+            SELECT ST_Transform(ST_SetSRID(ST_MakeEnvelope(%s, %s, %s, %s), 4326), 3857) AS geom
+        ), features AS (
+            SELECT {geom_column} AS geom_3857
+            FROM {table}
+            CROSS JOIN bounds
+            WHERE {geom_column} IS NOT NULL
+              AND {geom_column} && bounds.geom
+        ), series AS (
+            SELECT DISTINCT zoom, mercator_quadkey_prefix(geom_3857, zoom, zoom) AS quadkey
+            FROM features, generate_series(%s::int, %s::int) AS zoom
+        )
+        SELECT zoom, quadkey
+        FROM series
+        WHERE quadkey IS NOT NULL AND quadkey <> ''
     """
-    return pg.fetch_one(sql, (table_name,)) is not None
+
+    tiles_set: set[Tuple[int, int, int]] = set()
+    with pg.connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (west, south, east, north, shard.min_zoom, shard.max_zoom))
+            for zoom, quadkey in cur.fetchall():
+                if not quadkey:
+                    continue
+                z, x, y = quadkey_to_zxy(str(quadkey))
+                tiles_set.add((z, x, y))
+
+    return sorted(tiles_set)
 
 
-def clamp_lat(lat: float) -> float:
-    return max(min(lat, 85.05112878), -85.05112878)
-
-
-def lng_to_tile_x(lng: float, zoom: int) -> int:
-    scale = 2 ** zoom
-    return int((lng + 180.0) / 360.0 * scale)
-
-
-def lat_to_tile_y(lat: float, zoom: int) -> int:
-    lat_rad = math.radians(clamp_lat(lat))
-    scale = 2 ** zoom
-    return int(
-        ((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0)
-        * scale
-    )
-
-
-def iter_tiles_for_bounds(
-    bounds: Tuple[float, float, float, float], min_zoom: int, max_zoom: int
-) -> Iterator[Tuple[int, int, int]]:
-    west, south, east, north = bounds
-    for zoom in range(min_zoom, max_zoom + 1):
-        min_x = max(lng_to_tile_x(west, zoom), 0)
-        max_x = min(lng_to_tile_x(east, zoom), (2 ** zoom) - 1)
-        min_y = max(lat_to_tile_y(north, zoom), 0)
-        max_y = min(lat_to_tile_y(south, zoom), (2 ** zoom) - 1)
-        for x in range(min_x, max_x + 1):
-            for y in range(min_y, max_y + 1):
-                yield zoom, x, y
-
-
-def count_tiles_for_bounds(
-    bounds: Tuple[float, float, float, float], min_zoom: int, max_zoom: int
-) -> int:
-    total = 0
-    west, south, east, north = bounds
-    for zoom in range(min_zoom, max_zoom + 1):
-        min_x = max(lng_to_tile_x(west, zoom), 0)
-        max_x = min(lng_to_tile_x(east, zoom), (2 ** zoom) - 1)
-        min_y = max(lat_to_tile_y(north, zoom), 0)
-        max_y = min(lat_to_tile_y(south, zoom), (2 ** zoom) - 1)
-        if max_x < min_x or max_y < min_y:
-            continue
-        total += (max_x - min_x + 1) * (max_y - min_y + 1)
-    return total
-
-
-def quadkey_prefix(z: int, x: int, y: int, prefix_length: int = 6) -> str:
-    if z <= 0:
-        return ""
-    chars: List[str] = []
-    for i in range(z, 0, -1):
-        mask = 1 << (i - 1)
-        digit = 0
-        if x & mask:
-            digit += 1
-        if y & mask:
-            digit += 2
-        chars.append(str(digit))
-    return "".join(chars[:prefix_length])
-
-
-def build_tile_sql(definition: Dict[str, object]) -> str:
-    attributes = ", ".join(definition["attributes"])
-    geom_column = definition["geom_column"]
-    min_zoom_column = definition["min_zoom_column"]
-    max_zoom_column = definition["max_zoom_column"]
-    tile_prefix_column = definition["tile_prefix_column"]
-    tile_group_column = definition["tile_group_column"]
-
-    return f"""
+def _build_parking_tile_query(z: int, x: int, y: int) -> Tuple[str, Tuple[object, ...]]:
+    sql = """
         WITH bounds AS (
             SELECT ST_SetSRID(ST_TileEnvelope(%s::integer, %s::integer, %s::integer), 3857) AS geom
+        ), ranked AS (
+            SELECT
+                COALESCE(centreline_id::text, street_normalized, location1, ticket_hash) AS feature_id,
+                geom_3857,
+                street_normalized,
+                centreline_id,
+                COUNT(*) OVER (PARTITION BY COALESCE(centreline_id::text, street_normalized, location1, ticket_hash)) AS ticket_count,
+                SUM(COALESCE(set_fine_amount, 0)) OVER (PARTITION BY COALESCE(centreline_id::text, street_normalized, location1, ticket_hash)) AS total_fine_amount,
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(centreline_id::text, street_normalized, location1, ticket_hash)
+                    ORDER BY date_of_infraction DESC NULLS LAST, time_of_infraction DESC NULLS LAST
+                ) AS rn
+            FROM parking_tickets
+            CROSS JOIN bounds
+            WHERE geom_3857 IS NOT NULL
+              AND geom_3857 && bounds.geom
+        ), aggregated AS (
+            SELECT
+                feature_id,
+                ticket_count,
+                total_fine_amount,
+                geom_3857,
+                street_normalized,
+                centreline_id
+            FROM ranked
+            WHERE rn = 1
+        ), variants AS (
+            SELECT
+                agg.feature_id,
+                agg.ticket_count,
+                agg.total_fine_amount,
+                agg.street_normalized,
+                agg.centreline_id,
+                variant.min_zoom,
+                variant.max_zoom,
+                (ST_Dump(variant.geom_variant)).geom AS geom
+            FROM aggregated AS agg
+            CROSS JOIN LATERAL (
+                SELECT 0 AS min_zoom, 10 AS max_zoom, subdivided.geom AS geom_variant
+                FROM ST_Subdivide(ST_SimplifyPreserveTopology(agg.geom_3857, 25), 32) AS subdivided(geom)
+                UNION ALL
+                SELECT 11 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
+                FROM ST_Subdivide(agg.geom_3857, 4) AS subdivided(geom)
+            ) AS variant
         ), features AS (
             SELECT
                 ST_AsMVTGeom(
-                    data.{geom_column},
+                    variants.geom,
                     bounds.geom,
                     4096,
                     64,
                     true
                 ) AS geom,
-                {attributes}
-            FROM {definition['table']} AS data
+                'parking_tickets' AS dataset,
+                variants.feature_id,
+                variants.ticket_count,
+                variants.total_fine_amount,
+                variants.street_normalized,
+                variants.centreline_id::BIGINT AS centreline_id
+            FROM variants
             CROSS JOIN bounds
-            WHERE data.{geom_column} && bounds.geom
-              AND %s::integer BETWEEN data.{min_zoom_column} AND data.{max_zoom_column}
-              AND (%s = '' OR data.{tile_group_column} = %s)
-              AND data.{tile_prefix_column} LIKE %s
+            WHERE variants.geom && bounds.geom
+              AND %s BETWEEN variants.min_zoom AND variants.max_zoom
         )
         SELECT ST_AsMVT(features, %s, 4096, 'geom') FROM features;
     """
+    params = (z, x, y, z, 'parking_tickets')
+    return sql, params
+
+
+def _build_red_light_tile_query(z: int, x: int, y: int) -> Tuple[str, Tuple[object, ...]]:
+    sql = """
+        WITH bounds AS (
+            SELECT ST_SetSRID(ST_TileEnvelope(%s::integer, %s::integer, %s::integer), 3857) AS geom
+        ), base AS (
+            SELECT
+                intersection_id,
+                location_name,
+                ticket_count,
+                total_fine_amount,
+                ward_1,
+                geom_3857
+            FROM red_light_camera_locations
+            CROSS JOIN bounds
+            WHERE geom_3857 IS NOT NULL
+              AND geom_3857 && bounds.geom
+        ), variants AS (
+            SELECT
+                base.intersection_id,
+                base.location_name,
+                base.ticket_count,
+                base.total_fine_amount,
+                base.ward_1,
+                variant.min_zoom,
+                variant.max_zoom,
+                (ST_Dump(variant.geom_variant)).geom AS geom
+            FROM base
+            CROSS JOIN LATERAL (
+                SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
+                FROM ST_Subdivide(ST_SimplifyPreserveTopology(base.geom_3857, 30), 32) AS subdivided(geom)
+                UNION ALL
+                SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
+                FROM ST_Subdivide(base.geom_3857, 4) AS subdivided(geom)
+            ) AS variant
+        ), features AS (
+            SELECT
+                ST_AsMVTGeom(
+                    variants.geom,
+                    bounds.geom,
+                    4096,
+                    64,
+                    true
+                ) AS geom,
+                'red_light_locations' AS dataset,
+                variants.intersection_id::TEXT AS feature_id,
+                variants.ticket_count,
+                variants.total_fine_amount,
+                variants.location_name,
+                variants.ward_1 AS ward
+            FROM variants
+            CROSS JOIN bounds
+            WHERE variants.geom && bounds.geom
+              AND %s BETWEEN variants.min_zoom AND variants.max_zoom
+        )
+        SELECT ST_AsMVT(features, %s, 4096, 'geom') FROM features;
+    """
+    params = (z, x, y, z, 'red_light_locations')
+    return sql, params
+
+
+def _build_ase_tile_query(z: int, x: int, y: int) -> Tuple[str, Tuple[object, ...]]:
+    sql = """
+        WITH bounds AS (
+            SELECT ST_SetSRID(ST_TileEnvelope(%s::integer, %s::integer, %s::integer), 3857) AS geom
+        ), base AS (
+            SELECT
+                location_code,
+                location,
+                status,
+                ward,
+                ticket_count,
+                total_fine_amount,
+                geom_3857
+            FROM ase_camera_locations
+            CROSS JOIN bounds
+            WHERE geom_3857 IS NOT NULL
+              AND geom_3857 && bounds.geom
+        ), variants AS (
+            SELECT
+                base.location_code,
+                base.location,
+                base.status,
+                base.ward,
+                base.ticket_count,
+                base.total_fine_amount,
+                variant.min_zoom,
+                variant.max_zoom,
+                (ST_Dump(variant.geom_variant)).geom AS geom
+            FROM base
+            CROSS JOIN LATERAL (
+                SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
+                FROM ST_Subdivide(ST_SimplifyPreserveTopology(base.geom_3857, 30), 32) AS subdivided(geom)
+                UNION ALL
+                SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
+                FROM ST_Subdivide(base.geom_3857, 4) AS subdivided(geom)
+            ) AS variant
+        ), features AS (
+            SELECT
+                ST_AsMVTGeom(
+                    variants.geom,
+                    bounds.geom,
+                    4096,
+                    64,
+                    true
+                ) AS geom,
+                'ase_locations' AS dataset,
+                variants.location_code::TEXT AS feature_id,
+                variants.ticket_count,
+                variants.total_fine_amount,
+                variants.location,
+                variants.status,
+                variants.ward
+            FROM variants
+            CROSS JOIN bounds
+            WHERE variants.geom && bounds.geom
+              AND %s BETWEEN variants.min_zoom AND variants.max_zoom
+        )
+        SELECT ST_AsMVT(features, %s, 4096, 'geom') FROM features;
+    """
+    params = (z, x, y, z, 'ase_locations')
+    return sql, params
+
+
+def _build_tile_query(dataset: str, z: int, x: int, y: int) -> Tuple[str, Tuple[object, ...]]:
+    if dataset == 'parking_tickets':
+        return _build_parking_tile_query(z, x, y)
+    if dataset == 'red_light_locations':
+        return _build_red_light_tile_query(z, x, y)
+    if dataset == 'ase_locations':
+        return _build_ase_tile_query(z, x, y)
+    raise ValueError(f"Unsupported dataset '{dataset}' for PMTiles export")
 
 
 def fetch_tile(
     pg: PostgresClient,
-    sql: str,
     dataset: str,
     z: int,
     x: int,
     y: int,
-    quadkey: str,
 ) -> Optional[bytes]:
-    group_value = quadkey[0] if quadkey else ""
-    prefix_like = f"{quadkey}%" if quadkey else "%"
-    params: Tuple[object, ...] = (
-        z,
-        x,
-        y,
-        z,
-        group_value,
-        group_value,
-        prefix_like,
-        dataset,
-    )
+    sql, params = _build_tile_query(dataset, z, x, y)
     with pg.connect() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
@@ -309,10 +449,13 @@ def build_vector_layers(dataset: str) -> List[Dict[str, object]]:
         "status": "String",
         "ward": "String",
     }
+    dataset_config = DATASET_CONFIG.get(dataset, {})
+    vector_layer = dataset_config.get("vectorLayer", dataset)
+    label = dataset_config.get("label", dataset.replace("_", " ").title())
     return [
         {
-            "id": dataset,
-            "description": dataset.replace("_", " ").title(),
+            "id": vector_layer,
+            "description": label,
             "fields": field_types,
         }
     ]
@@ -365,17 +508,15 @@ def build_header(shard: ShardDefinition, min_zoom: int, max_zoom: int) -> Dict[s
 
 
 def generate_pmtiles_for_shard(
-    shard: ShardDefinition, pg: PostgresClient, output_dir: Path
+    shard: ShardDefinition,
+    pg: PostgresClient,
+    output_dir: Path,
+    tiles: List[Tuple[int, int, int]],
 ) -> Dict[str, object]:
-    definition = TILE_DATASET_DEFINITIONS.get(shard.dataset)
-    if not definition:
-        raise ValueError(f"Dataset '{shard.dataset}' is not configured for tiles")
-
-    sql = build_tile_sql(definition)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / shard.filename
 
-    total_tiles_target = count_tiles_for_bounds(shard.bounds, shard.min_zoom, shard.max_zoom)
+    total_tiles_target = len(tiles)
     written_tiles = 0
     progress_step = max(1, int(os.getenv("PMTILES_PROGRESS_STEP", "500")))
     if os.getenv("PMTILES_PROGRESS_PERCENT"):
@@ -385,17 +526,34 @@ def generate_pmtiles_for_shard(
         except ValueError:
             pass
 
+    if total_tiles_target == 0:
+        if output_path.exists():
+            try:
+                output_path.unlink()
+            except OSError:
+                pass
+        return {
+            "dataset": shard.dataset,
+            "shard": shard.shard_id,
+            "filename": shard.filename,
+            "path": str(output_path),
+            "minZoom": shard.min_zoom,
+            "maxZoom": shard.max_zoom,
+            "bounds": shard.bounds,
+            "totalTiles": 0,
+            "writtenTiles": 0,
+        }
+
+    actual_min_zoom = min(z for z, _, _ in tiles)
+    actual_max_zoom = max(z for z, _, _ in tiles)
+
     with pmtiles_write(output_path) as writer:
-        for index, (z, x, y) in enumerate(
-            iter_tiles_for_bounds(shard.bounds, shard.min_zoom, shard.max_zoom),
-            start=1,
-        ):
-            quadkey = quadkey_prefix(z, x, y)
-            tile_bytes = fetch_tile(pg, sql, shard.dataset, z, x, y, quadkey)
+        for index, (z, tile_x, tile_y) in enumerate(tiles, start=1):
+            tile_bytes = fetch_tile(pg, shard.dataset, z, tile_x, tile_y)
             if not tile_bytes:
                 continue
             compressed = gzip.compress(tile_bytes, compresslevel=6)
-            writer.write_tile(zxy_to_tileid(z, x, y), compressed)
+            writer.write_tile(zxy_to_tileid(z, tile_x, tile_y), compressed)
             written_tiles += 1
             if total_tiles_target and written_tiles % progress_step == 0:
                 percent = (written_tiles / total_tiles_target) * 100
@@ -404,8 +562,8 @@ def generate_pmtiles_for_shard(
                     flush=True,
                 )
 
-        header = build_header(shard, shard.min_zoom, shard.max_zoom)
-        metadata = build_metadata(shard, shard.min_zoom, shard.max_zoom)
+        header = build_header(shard, actual_min_zoom, actual_max_zoom)
+        metadata = build_metadata(shard, actual_min_zoom, actual_max_zoom)
         writer.finalize(header, metadata)
 
     return {
@@ -413,56 +571,64 @@ def generate_pmtiles_for_shard(
         "shard": shard.shard_id,
         "filename": shard.filename,
         "path": str(output_path),
-        "minZoom": shard.min_zoom,
-        "maxZoom": shard.max_zoom,
+        "minZoom": actual_min_zoom,
+        "maxZoom": actual_max_zoom,
         "bounds": shard.bounds,
         "totalTiles": total_tiles_target,
         "writtenTiles": written_tiles,
     }
 
 
-def run(output_dir: Path) -> None:
+def run(
+    output_dir: Path,
+    upload: bool,
+    upload_prefix: str | None,
+    force_schema_refresh: bool,
+    dataset_filter: Optional[set[str]] = None,
+    shard_filter: Optional[set[str]] = None,
+) -> List[Dict[str, object]]:
     dsn = resolve_database_dsn()
     pg_client = PostgresClient(dsn=dsn, application_name="pmtiles-export", statement_timeout_ms=240_000)
-    missing_tables = [
-        definition["table"]
-        for definition in TILE_DATASET_DEFINITIONS.values()
-        if not table_exists(pg_client, definition["table"])
-    ]
-    if missing_tables:
-        print(
-            "Required tile tables missing (" + ", ".join(sorted(set(missing_tables))) + "); generating via TileSchemaManager",
-            flush=True,
-        )
-        schema_client = PostgresClient(
-            dsn=dsn,
-            application_name="pmtiles-export-schema",
-            statement_timeout_ms=None,
-        )
-        def schema_log(message: str) -> None:
-            print(f"[schema] {message}", flush=True)
+    schema_client = PostgresClient(
+        dsn=dsn,
+        application_name="pmtiles-export-schema",
+        statement_timeout_ms=None,
+    )
 
+    def schema_log(message: str) -> None:
+        print(f"[schema] {message}", flush=True)
+
+    if force_schema_refresh:
+        print("Forcing tile schema refresh", flush=True)
         schema_manager = TileSchemaManager(schema_client, logger=schema_log)
-        started_at = time.monotonic()
-        schema_manager.ensure()
-        elapsed = time.monotonic() - started_at
-        print(f"[schema] Completed in {elapsed:.1f}s", flush=True)
-        missing_tables = [
-            definition["table"]
-            for definition in TILE_DATASET_DEFINITIONS.values()
-            if not table_exists(pg_client, definition["table"])
-        ]
-        if missing_tables:
-            raise RuntimeError(
-                "Required tile tables are still missing after schema creation: "
-                + ", ".join(sorted(set(missing_tables)))
-            )
+        started = time.monotonic()
+        schema_manager.ensure(include_tile_tables=False)
+        print(f"[schema] Refresh completed in {time.monotonic() - started:.1f}s", flush=True)
+    else:
+        schema_manager = TileSchemaManager(schema_client, logger=schema_log)
+        schema_manager.ensure_helpers()
+
+    filtered_shards = []
+    for shard in SHARDS:
+        if dataset_filter and shard.dataset not in dataset_filter:
+            continue
+        shard_key = f"{shard.dataset}:{shard.shard_id}"
+        if shard_filter and shard_key not in shard_filter:
+            continue
+        filtered_shards.append(shard)
+
+    if not filtered_shards:
+        raise RuntimeError("No shards selected for PMTiles generation")
 
     manifest: List[Dict[str, object]] = []
-    for shard in SHARDS:
+    for shard in filtered_shards:
         print(f"Building shard {shard.dataset}:{shard.shard_id} -> {shard.filename}", flush=True)
         shard_started = time.monotonic()
-        summary = generate_pmtiles_for_shard(shard, pg_client, output_dir)
+        tiles = collect_tiles_for_shard(pg_client, shard)
+        print(f"  tile candidates={len(tiles)}", flush=True)
+        if not tiles:
+            print("  no tiles discovered for shard; consider rerunning with --refresh-schema", flush=True)
+        summary = generate_pmtiles_for_shard(shard, pg_client, output_dir, tiles)
         shard_elapsed = time.monotonic() - shard_started
         print(
             f"  tiles considered={summary['totalTiles']} written={summary['writtenTiles']} path={summary['path']} time={shard_elapsed:.1f}s",
@@ -476,7 +642,49 @@ def run(output_dir: Path) -> None:
         "shards": manifest,
     }
     manifest_path.write_text(json.dumps(manifest_payload, indent=2))
-    print(f"Wrote manifest → {manifest_path}")
+    print(f"Wrote manifest -> {manifest_path}")
+    if upload:
+        upload_manifest(manifest, output_dir, upload_prefix)
+    return manifest
+
+
+def upload_manifest(manifest: List[Dict[str, object]], output_dir: Path, prefix: str | None) -> None:
+    bucket = os.getenv("PMTILES_BUCKET", "pmtiles")
+    endpoint = os.getenv("MINIO_PUBLIC_ENDPOINT") or os.getenv("MINIO_ENDPOINT")
+    access_key = os.getenv("MINIO_ROOT_USER") or os.getenv("AWS_ACCESS_KEY_ID")
+    secret_key = os.getenv("MINIO_ROOT_PASSWORD") or os.getenv("AWS_SECRET_ACCESS_KEY")
+    region = os.getenv("MINIO_REGION", "us-east-1")
+
+    if not endpoint or not access_key or not secret_key:
+        raise RuntimeError("MINIO_PUBLIC_ENDPOINT, MINIO_ROOT_USER, and MINIO_ROOT_PASSWORD must be set for upload")
+
+    normalized_prefix = prefix
+    if normalized_prefix is None:
+        normalized_prefix = os.getenv("PMTILES_PREFIX", "pmtiles/")
+    if normalized_prefix and not normalized_prefix.endswith('/'):
+        normalized_prefix = f"{normalized_prefix}/"
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=region,
+    )
+
+    for shard in manifest:
+        file_path = Path(shard["path"])
+        if not file_path.exists():
+            print(f"[upload] Skipping missing file {file_path}")
+            continue
+        key = f"{normalized_prefix or ''}{file_path.name}" if normalized_prefix else file_path.name
+        print(f"[upload] {file_path.name} → s3://{bucket}/{key}")
+        extra_args = {
+            "ContentType": "application/octet-stream",
+            "CacheControl": "public, immutable, max-age=31536000",
+        }
+        client.upload_file(str(file_path), bucket, key, ExtraArgs=extra_args)
+        print(f"[upload] Uploaded {file_path.name}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -486,10 +694,49 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=str(PROJECT_ROOT / "pmtiles"),
         help="Directory to write PMTiles files into (default: ./pmtiles)",
     )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Upload generated PMTiles to MinIO/S3 using environment credentials",
+    )
+    parser.add_argument(
+        "--upload-prefix",
+        default=None,
+        help="Object key prefix when uploading (overrides PMTILES_PREFIX)",
+    )
+    parser.add_argument(
+        "--refresh-schema",
+        action="store_true",
+        help="Force TileSchemaManager.ensure() before building PMTiles",
+    )
+    parser.add_argument(
+        "--datasets",
+        default=None,
+        help="Comma-separated dataset identifiers to build (default: all)",
+    )
+    parser.add_argument(
+        "--shards",
+        default=None,
+        help="Comma-separated shard identifiers in dataset:shard form (default: all)",
+    )
     args = parser.parse_args(argv)
 
     output_dir = Path(args.output_dir).resolve()
-    run(output_dir)
+    dataset_filter = None
+    if args.datasets:
+        dataset_filter = {entry.strip() for entry in args.datasets.split(",") if entry.strip()}
+    shard_filter = None
+    if args.shards:
+        shard_filter = {entry.strip() for entry in args.shards.split(",") if entry.strip()}
+
+    run(
+        output_dir,
+        args.upload,
+        args.upload_prefix,
+        args.refresh_schema,
+        dataset_filter,
+        shard_filter,
+    )
     return 0
 
 

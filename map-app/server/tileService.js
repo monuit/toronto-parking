@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
+import { performance } from 'node:perf_hooks';
 import { Pool } from 'pg';
 import Supercluster from 'supercluster';
 import geojsonvt from 'geojson-vt';
@@ -35,7 +36,24 @@ const redisSettings = getRedisConfig();
 const TILE_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
 const TILE_REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
 const TILE_REDIS_PREFIX = `${TILE_REDIS_NAMESPACE}:tiles:parking:v3`;
+const TILE_REDIS_LIVE_PREFIX = `${TILE_REDIS_PREFIX}:live`;
+const TILE_REDIS_STALE_PREFIX = `${TILE_REDIS_PREFIX}:stale`;
+const TILE_REDIS_META_PREFIX = `${TILE_REDIS_PREFIX}:meta`;
+const TILE_REDIS_LOCK_PREFIX = `${TILE_REDIS_PREFIX}:lock`;
 const TILE_REDIS_TTL_OVERRIDE = Number.parseInt(process.env.MAP_TILE_REDIS_TTL || '', 10);
+const TILE_REDIS_MAX_BYTES = Number.parseInt(process.env.MAP_TILE_REDIS_MAX_BYTES || '', 10) || 1_000_000;
+const TILE_REDIS_GUARD_INTERVAL_MS = Number.parseInt(
+  process.env.MAP_TILE_REDIS_GUARD_INTERVAL_MS || '',
+  10,
+) || 15 * 60 * 1000;
+const TILE_REDIS_STALE_TTL_SECONDS = Number.parseInt(
+  process.env.MAP_TILE_REDIS_STALE_SECONDS || '',
+  10,
+) || 6 * 60 * 60;
+const TILE_REDIS_LOCK_TTL_SECONDS = Number.parseInt(
+  process.env.MAP_TILE_REDIS_LOCK_SECONDS || '',
+  10,
+) || 45;
 const TILE_TTL_RULES = [
   { maxZoom: 11, ttl: 60 * 60 * 24 },
   { maxZoom: 14, ttl: 60 * 60 * 2 },
@@ -95,6 +113,78 @@ function createAbortError(reason) {
 function throwIfAborted(signal) {
   if (signal?.aborted) {
     throw createAbortError(signal.reason);
+  }
+}
+
+function getLiveKey(z, x, y) {
+  return `${TILE_REDIS_LIVE_PREFIX}:${z}:${x}:${y}`;
+}
+
+function getStaleKey(z, x, y) {
+  return `${TILE_REDIS_STALE_PREFIX}:${z}:${x}:${y}`;
+}
+
+function getMetaKey(z, x, y) {
+  return `${TILE_REDIS_META_PREFIX}:${z}:${x}:${y}`;
+}
+
+function getLockKey(z, x, y) {
+  return `${TILE_REDIS_LOCK_PREFIX}:${z}:${x}:${y}`;
+}
+
+function extractTileCoordinatesFromKey(key) {
+  if (typeof key !== 'string') {
+    return null;
+  }
+  const parts = key.split(':');
+  if (parts.length < 3) {
+    return null;
+  }
+  const z = Number.parseInt(parts[parts.length - 3], 10);
+  const x = Number.parseInt(parts[parts.length - 2], 10);
+  const y = Number.parseInt(parts[parts.length - 1], 10);
+  if (![z, x, y].every(Number.isFinite)) {
+    return null;
+  }
+  return { z, x, y };
+}
+
+async function tryAcquireTileRedisLock(z, x, y) {
+  if (!TILE_REDIS_ENABLED || TILE_REDIS_LOCK_TTL_SECONDS <= 0) {
+    return true;
+  }
+  const client = await getTileRedisClient();
+  if (!client) {
+    return true;
+  }
+  try {
+    const result = await client.set(
+      getLockKey(z, x, y),
+      Date.now().toString(),
+      {
+        NX: true,
+        EX: TILE_REDIS_LOCK_TTL_SECONDS,
+      },
+    );
+    return result === 'OK';
+  } catch (error) {
+    console.warn('Failed to acquire tile Redis lock:', error.message);
+    return true;
+  }
+}
+
+async function releaseTileRedisLock(z, x, y) {
+  if (!TILE_REDIS_ENABLED) {
+    return;
+  }
+  const client = await getTileRedisClient();
+  if (!client) {
+    return;
+  }
+  try {
+    await client.del(getLockKey(z, x, y));
+  } catch (error) {
+    console.warn('Failed to release tile Redis lock:', error.message);
   }
 }
 
@@ -162,6 +252,37 @@ let tileRedisPromise = null;
 let tilePostgresPool = null;
 let tilePostgresSignature = null;
 const parkingTileSnapshotCache = new Map();
+
+const tileMetrics = {
+  activeRenders: 0,
+  totalColdMisses: 0,
+  coldDurations: [],
+};
+
+function recordColdRender(durationMs) {
+  tileMetrics.totalColdMisses += 1;
+  tileMetrics.coldDurations.push(durationMs);
+  if (tileMetrics.coldDurations.length > 200) {
+    tileMetrics.coldDurations.shift();
+  }
+}
+
+function computeP95(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
+  return sorted[index];
+}
+
+function getTileMetricsSnapshot() {
+  return {
+    activeRenders: Math.max(0, tileMetrics.activeRenders),
+    totalColdMisses: Math.max(0, tileMetrics.totalColdMisses),
+    p95ColdRenderMs: computeP95(tileMetrics.coldDurations),
+  };
+}
 
 async function getTileRedisClient() {
   if (!TILE_REDIS_ENABLED) {
@@ -351,7 +472,7 @@ async function fetchParkingFeaturesFromPostgres() {
   }
 }
 
-async function readTileFromRedis(version, z, x, y) {
+async function readTileFromRedis(versionHint, z, x, y) {
   if (!TILE_REDIS_ENABLED) {
     return null;
   }
@@ -359,38 +480,81 @@ async function readTileFromRedis(version, z, x, y) {
   if (!client) {
     return null;
   }
-  const key = `${TILE_REDIS_PREFIX}:${version ?? 'noversion'}:${z}:${x}:${y}`;
-  try {
-    const raw = await client.sendCommand(['GET', key], { returnBuffers: true });
-    if (!raw) {
+
+  const liveKey = getLiveKey(z, x, y);
+  const staleKey = getStaleKey(z, x, y);
+  const metaKey = getMetaKey(z, x, y);
+
+  const decodeEnvelope = async (key, envelope, forceRawVersion) => {
+    if (!envelope) {
       return null;
     }
-    const envelope = Buffer.from(raw);
-    if (envelope.length === 0) {
+    const buffer = Buffer.from(envelope);
+    if (buffer.length === 0) {
       return null;
     }
-    const flag = envelope[0];
+    const flag = buffer[0];
     const hasEnvelopeHeader = flag === TILE_PAYLOAD_FLAG_RAW || flag === TILE_PAYLOAD_FLAG_BROTLI;
-    const payload = hasEnvelopeHeader ? envelope.subarray(1) : envelope;
+    const payload = hasEnvelopeHeader ? buffer.subarray(1) : buffer;
     if (hasEnvelopeHeader && flag === TILE_PAYLOAD_FLAG_BROTLI) {
       try {
         return brotliDecompressSync(payload);
       } catch (error) {
-        if (!BROTLI_LEGACY_REWRITE_KEYS.has(key)) {
-          console.warn('Failed to decompress cached tile payload, rewriting legacy entry:', error.message);
-          BROTLI_LEGACY_REWRITE_KEYS.add(key);
+        const cacheKey = `${key}:legacy`;
+        if (!BROTLI_LEGACY_REWRITE_KEYS.has(cacheKey)) {
+          console.warn(`Failed to decompress cached tile payload (${key}), rewriting legacy entry:`, error.message);
+          BROTLI_LEGACY_REWRITE_KEYS.add(cacheKey);
         }
         const rawBuffer = Buffer.from(payload);
         try {
           await client.del(key);
         } catch (delError) {
-          console.warn('Failed to purge corrupt tile cache entry:', delError.message);
+          console.warn(`Failed to purge corrupt tile cache entry (${key}):`, delError.message);
         }
-        await writeTileToRedis(version, z, x, y, rawBuffer, { forceRaw: true });
+        if (Number.isFinite(forceRawVersion) || forceRawVersion) {
+          await writeTileToRedis(forceRawVersion, z, x, y, rawBuffer, { forceRaw: true });
+        }
         return rawBuffer;
       }
     }
     return Buffer.from(payload);
+  };
+
+  try {
+    const [envelope, metaEntries] = await Promise.all([
+      client.sendCommand(['GET', liveKey], { returnBuffers: true }),
+      client.hGetAll(metaKey),
+    ]);
+    const hasMeta = metaEntries && Object.keys(metaEntries).length > 0;
+    const resolvedVersion = hasMeta && metaEntries.version ? metaEntries.version : (versionHint ?? null);
+    const resolvedEtag = hasMeta && metaEntries.etag ? metaEntries.etag : null;
+
+    if (envelope) {
+      const buffer = await decodeEnvelope(liveKey, envelope, resolvedVersion);
+      if (buffer) {
+        return {
+          buffer,
+          version: resolvedVersion !== null && resolvedVersion !== undefined ? resolvedVersion : versionHint ?? null,
+          etag: resolvedEtag,
+          source: 'redis-live',
+        };
+      }
+    }
+
+    const staleEnvelope = await client.sendCommand(['GET', staleKey], { returnBuffers: true });
+    if (staleEnvelope) {
+      const buffer = await decodeEnvelope(staleKey, staleEnvelope, resolvedVersion);
+      if (buffer) {
+        return {
+          buffer,
+          version: resolvedVersion !== null && resolvedVersion !== undefined ? resolvedVersion : versionHint ?? null,
+          etag: resolvedEtag,
+          source: 'redis-stale',
+          stale: true,
+        };
+      }
+    }
+    return null;
   } catch (error) {
     console.warn('Failed to read tile from Redis:', error.message);
     return null;
@@ -405,8 +569,12 @@ async function writeTileToRedis(version, z, x, y, buffer, options = {}) {
   if (!client) {
     return;
   }
-  const key = `${TILE_REDIS_PREFIX}:${version ?? 'noversion'}:${z}:${x}:${y}`;
+
   const ttlSeconds = resolveTileTtl(z);
+  const staleTtlSeconds = Number.isFinite(ttlSeconds) && ttlSeconds > 0
+    ? Math.min(TILE_REDIS_STALE_TTL_SECONDS, Math.max(ttlSeconds * 3, ttlSeconds))
+    : TILE_REDIS_STALE_TTL_SECONDS;
+
   let envelope;
   if (options.forceRaw) {
     envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_RAW]), Buffer.from(buffer)]);
@@ -419,8 +587,44 @@ async function writeTileToRedis(version, z, x, y, buffer, options = {}) {
       envelope = Buffer.concat([Buffer.from([TILE_PAYLOAD_FLAG_RAW]), buffer]);
     }
   }
+
+  if (envelope.length > TILE_REDIS_MAX_BYTES) {
+    console.warn(
+      `Skipping Redis cache for tile ${z}/${x}/${y} (size ${envelope.length} exceeds limit ${TILE_REDIS_MAX_BYTES}).`,
+    );
+    return;
+  }
+
+  const liveKey = getLiveKey(z, x, y);
+  const staleKey = getStaleKey(z, x, y);
+  const metaKey = getMetaKey(z, x, y);
+  const lockKey = getLockKey(z, x, y);
+
   try {
-    await client.set(key, envelope, { EX: ttlSeconds });
+    const pipeline = client.multi();
+    const liveExpireOptions = Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? { EX: ttlSeconds } : {};
+    pipeline.set(liveKey, envelope, liveExpireOptions);
+    if (!options.skipStale) {
+      const staleExpireOptions = Number.isFinite(staleTtlSeconds) && staleTtlSeconds > 0
+        ? { EX: staleTtlSeconds }
+        : {};
+      pipeline.set(staleKey, envelope, staleExpireOptions);
+    }
+    const metadata = {
+      etag: version !== null && version !== undefined ? String(version) : '',
+      version: version !== null && version !== undefined ? String(version) : '',
+      storedAt: Date.now().toString(),
+      size: envelope.length.toString(),
+    };
+    pipeline.hSet(metaKey, metadata);
+    const metaExpireSeconds = options.skipStale
+      ? ttlSeconds
+      : Math.max(ttlSeconds || 0, staleTtlSeconds || 0);
+    if (Number.isFinite(metaExpireSeconds) && metaExpireSeconds > 0) {
+      pipeline.expire(metaKey, metaExpireSeconds);
+    }
+    pipeline.del(lockKey);
+    await pipeline.exec();
   } catch (error) {
     console.warn('Failed to cache tile in Redis:', error.message);
   }
@@ -529,6 +733,74 @@ function scheduleTilePrewarm(tileService) {
 
   const initialDelay = Math.max(0, TILE_PREWARM_INITIAL_DELAY_MS) + jitterDelay(TILE_PREWARM_JITTER_MS);
   scheduleRun(initialDelay);
+}
+
+async function enforceTileRedisGuardrails() {
+  if (!TILE_REDIS_ENABLED || TILE_REDIS_MAX_BYTES <= 0) {
+    return;
+  }
+  const client = await getTileRedisClient();
+  if (!client) {
+    return;
+  }
+  const processed = new Set();
+  let checked = 0;
+  let evicted = 0;
+
+  const inspectKey = async (key) => {
+    const coords = extractTileCoordinatesFromKey(key);
+    if (!coords) {
+      return;
+    }
+    const coordKey = `${coords.z}/${coords.x}/${coords.y}`;
+    if (processed.has(coordKey)) {
+      return;
+    }
+    processed.add(coordKey);
+    let size = await client.strLen(getLiveKey(coords.z, coords.x, coords.y));
+    if (!Number.isInteger(size) || size === 0) {
+      size = await client.strLen(getStaleKey(coords.z, coords.x, coords.y));
+    }
+    checked += 1;
+    if (Number.isInteger(size) && size > TILE_REDIS_MAX_BYTES) {
+      await client.del(getLiveKey(coords.z, coords.x, coords.y));
+      await client.del(getStaleKey(coords.z, coords.x, coords.y));
+      await client.del(getMetaKey(coords.z, coords.x, coords.y));
+      await client.del(getLockKey(coords.z, coords.x, coords.y));
+      evicted += 1;
+    }
+  };
+
+  try {
+    for await (const liveKey of client.scanIterator({ MATCH: `${TILE_REDIS_LIVE_PREFIX}:*`, COUNT: 200 })) {
+      await inspectKey(liveKey);
+    }
+    for await (const staleKey of client.scanIterator({ MATCH: `${TILE_REDIS_STALE_PREFIX}:*`, COUNT: 200 })) {
+      await inspectKey(staleKey);
+    }
+    if (evicted > 0) {
+      console.warn(`Tile Redis guardrails evicted ${evicted} oversized keys (checked ${checked}).`);
+    }
+  } catch (error) {
+    console.warn('Tile Redis guardrail sweep failed:', error.message);
+  }
+}
+
+function scheduleTileRedisGuardrails() {
+  if (!TILE_REDIS_ENABLED || TILE_REDIS_MAX_BYTES <= 0) {
+    return;
+  }
+  const intervalMs = Math.max(60_000, TILE_REDIS_GUARD_INTERVAL_MS);
+  const run = () => {
+    enforceTileRedisGuardrails().catch((error) => {
+      console.warn('Tile Redis guardrail enforcement failed:', error.message);
+    });
+  };
+  run();
+  const timer = setInterval(run, intervalMs);
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
 }
 
 const CLUSTER_VISIBILITY_RULES = [
@@ -1238,7 +1510,7 @@ class TileService {
 
     const cached = this.tileCache.get(key);
     if (cached) {
-      return cached;
+      return { ...cached, source: 'memory' };
     }
 
     const inflight = this.inflightTiles.get(key);
@@ -1246,11 +1518,19 @@ class TileService {
       return inflight;
     }
 
-    const redisBuffer = await readTileFromRedis(cacheVersion, z, x, y);
+    const redisPayload = await readTileFromRedis(cacheVersion, z, x, y);
     throwIfAborted(signal);
-    if (redisBuffer) {
-      const payload = { buffer: redisBuffer, version: cacheVersion };
+    if (redisPayload && redisPayload.buffer) {
+      const payload = {
+        buffer: redisPayload.buffer,
+        version: redisPayload.version ?? cacheVersion,
+        source: redisPayload.source || 'redis',
+        etag: redisPayload.etag ?? null,
+      };
       this.cacheTile(key, payload);
+      if (redisPayload.stale && revalidate) {
+        this.queueTileRevalidate(z, x, y);
+      }
       return payload;
     }
 
@@ -1261,6 +1541,7 @@ class TileService {
         const payload = {
           buffer: snapshot.buffer,
           version: snapshot.version ?? cacheVersion,
+          source: 'snapshot',
         };
         this.cacheTile(key, payload);
         if (revalidate) {
@@ -1283,7 +1564,10 @@ class TileService {
     if (!payload) {
       return;
     }
-    this.tileCache.set(key, payload);
+    this.tileCache.set(key, {
+      buffer: payload.buffer,
+      version: payload.version ?? null,
+    });
     if (this.tileCache.size > TILE_CACHE_LIMIT) {
       const oldestKey = this.tileCache.keys().next().value;
       if (oldestKey) {
@@ -1298,31 +1582,43 @@ class TileService {
       return;
     }
     this.revalidateQueue.add(key);
-    const run = () => {
-      this.generateFreshTile({
-        key,
-        z,
-        x,
-        y,
-        signal: null,
-        background: true,
-      })
-        .catch((error) => {
-          if (error?.name !== 'AbortError') {
-            console.warn('Tile revalidation failed:', error.message);
-          }
-        })
-        .finally(() => {
-          this.revalidateQueue.delete(key);
+    const run = async () => {
+      let lockAcquired = false;
+      try {
+        lockAcquired = await tryAcquireTileRedisLock(z, x, y);
+        if (!lockAcquired) {
+          return;
+        }
+        await this.generateFreshTile({
+          key,
+          z,
+          x,
+          y,
+          signal: null,
+          background: true,
         });
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.warn('Tile revalidation failed:', error.message);
+        }
+      } finally {
+        if (lockAcquired) {
+          await releaseTileRedisLock(z, x, y);
+        }
+        this.revalidateQueue.delete(key);
+      }
     };
     if (TILE_REVALIDATE_DELAY_MS > 0) {
-      const timer = setTimeout(run, TILE_REVALIDATE_DELAY_MS);
+      const timer = setTimeout(() => {
+        void run();
+      }, TILE_REVALIDATE_DELAY_MS);
       if (typeof timer?.unref === 'function') {
         timer.unref();
       }
     } else {
-      const timer = setTimeout(run, 0);
+      const timer = setTimeout(() => {
+        void run();
+      }, 0);
       if (typeof timer?.unref === 'function') {
         timer.unref();
       }
@@ -1335,10 +1631,17 @@ class TileService {
     }
     const promise = (async () => {
       let releaseFn = null;
+      const foreground = !background;
+      let renderStart = null;
+      let rendered = false;
       try {
         throwIfAborted(signal);
         if (renderSemaphore) {
           releaseFn = await renderSemaphore.acquire(signal);
+        }
+        if (foreground) {
+          tileMetrics.activeRenders += 1;
+          renderStart = performance.now();
         }
         throwIfAborted(signal);
         const layers = this.buildTileLayers(z, x, y, signal);
@@ -1347,10 +1650,15 @@ class TileService {
         }
         const buffer = vtpbf.fromGeojsonVt(layers, { extent: 4096, version: 2 });
         const cacheVersion = this.dataVersion ?? null;
-        const payload = { buffer, version: cacheVersion };
+        const payload = {
+          buffer,
+          version: cacheVersion,
+          source: foreground ? 'fresh' : 'background',
+        };
         this.cacheTile(key, payload);
-        writeTileToRedis(cacheVersion, z, x, y, buffer);
-        writeParkingTileSnapshot(z, x, y, buffer, cacheVersion);
+        await writeTileToRedis(cacheVersion, z, x, y, buffer);
+        await writeParkingTileSnapshot(z, x, y, buffer, cacheVersion);
+        rendered = true;
         return payload;
       } catch (error) {
         if (background) {
@@ -1363,6 +1671,12 @@ class TileService {
       } finally {
         if (typeof releaseFn === 'function') {
           releaseFn();
+        }
+        if (foreground) {
+          tileMetrics.activeRenders = Math.max(0, tileMetrics.activeRenders - 1);
+          if (rendered && renderStart !== null) {
+            recordColdRender(performance.now() - renderStart);
+          }
         }
         this.inflightTiles.delete(key);
       }
@@ -1577,9 +1891,13 @@ export function createTileService() {
   }
   const service = new TileService();
   scheduleTilePrewarm(service);
+  scheduleTileRedisGuardrails();
   return service;
 }
 
+export function getTileMetrics() {
+  return getTileMetricsSnapshot();
+}
 
 export { TILE_HARD_TIMEOUT_MS, EMPTY_TILE_BUFFER };
 

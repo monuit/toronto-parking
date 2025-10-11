@@ -9,7 +9,7 @@ application start without requiring a full ETL re-run.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Callable, Iterable, List, Optional, Tuple
 
 from src.etl.postgres import PostgresClient
 
@@ -52,23 +52,182 @@ class TileSchemaManager:
     quadkey_prefix_length: int = 6
     logger: Callable[[str], None] | None = None
 
-    def ensure(self) -> None:
-        """Apply all schema guarantees (idempotent)."""
+    def ensure(self, *, include_tile_tables: bool = True) -> None:
+        """Apply schema guarantees (idempotent).
 
-        self._log("Ensuring PostGIS extensions")
-        self.pg.ensure_extensions()
-        self._log("Ensuring helper functions")
-        self._ensure_helper_functions()
+        Parameters
+        ----------
+        include_tile_tables:
+            When ``True`` (default) the legacy ``*_tiles`` partitioned tables are
+            rebuilt.  Set to ``False`` to skip that expensive step when relying on
+            streaming tile generation instead of precomputed tables.
+        """
+
+        self.ensure_helpers()
         self._log("Ensuring base columns and indexes")
         self._ensure_base_columns()
-        self._log("Ensuring tile tables and partitions")
-        self._ensure_tile_tables()
+        if include_tile_tables:
+            self._log("Ensuring tile tables and partitions")
+            self._ensure_tile_tables()
+        else:
+            self._log("Skipping tile table rebuild (include_tile_tables=False)")
 
     # ------------------------------------------------------------------
     # Helpers
     def _log(self, message: str) -> None:
         if self.logger:
             self.logger(message)
+
+    def ensure_helpers(self) -> None:
+        self._log("Ensuring PostGIS extensions")
+        self.pg.ensure_extensions()
+        self._log("Ensuring helper functions")
+        self._ensure_helper_functions()
+
+    def _quote_ident(self, value: str) -> str:
+        return f'"{str(value).replace("\"", "\"\"")}"'
+
+    def _column_exists(self, table: str, column: str) -> bool:
+        sql = """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = %s
+              AND column_name = %s
+            LIMIT 1
+        """
+        return self.pg.fetch_one(sql, (table, column)) is not None
+
+    def _column_has_data(self, table: str, column: str, *, treat_blank_as_null: bool = False) -> bool:
+        conditions = [f"{self._quote_ident(column)} IS NOT NULL"]
+        if treat_blank_as_null:
+            conditions.append(f"{self._quote_ident(column)} <> ''")
+        predicate = " AND ".join(conditions)
+        sql = f"SELECT EXISTS (SELECT 1 FROM {self._quote_ident(table)} WHERE {predicate} LIMIT 1)"
+        row = self.pg.fetch_one(sql)
+        return bool(row[0]) if row else False
+
+    def _get_column_metadata(self, table: str) -> List[Tuple[str, bool, Optional[str]]]:
+        rows = self.pg.fetch_all(
+            """
+            SELECT column_name, is_nullable = 'NO' AS not_null, column_default
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            (table,),
+        )
+        return [(row[0], bool(row[1]), row[2]) for row in rows]
+
+    def _get_primary_key_info(self, table: str) -> Optional[Tuple[str, List[str]]]:
+        rows = self.pg.fetch_all(
+            """
+            SELECT tc.constraint_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+            WHERE tc.table_schema = 'public'
+              AND tc.table_name = %s
+              AND tc.constraint_type = 'PRIMARY KEY'
+            ORDER BY kcu.ordinal_position
+            """,
+            (table,),
+        )
+        if not rows:
+            return None
+        constraint = rows[0][0]
+        columns = [row[1] for row in rows]
+        return constraint, columns
+
+    def _get_index_definitions(self, table: str) -> List[Tuple[str, str]]:
+        rows = self.pg.fetch_all(
+            """
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND tablename = %s
+            """,
+            (table,),
+        )
+        return [(row[0], row[1]) for row in rows]
+
+    def _rebuild_base_table(self, table_meta: dict[str, str]) -> None:
+        table = table_meta["table"]
+        geom_column = table_meta["geom"]
+        geom_3857_column = table_meta["geom_3857"]
+        tile_prefix_column = "tile_qk_prefix"
+
+        column_metadata = self._get_column_metadata(table)
+        existing_columns = [name for name, _, _ in column_metadata if name not in (geom_3857_column, tile_prefix_column)]
+        not_null_columns = [name for name, required, _ in column_metadata if required and name in existing_columns]
+        defaults = {name: default for name, _, default in column_metadata if default is not None and name in existing_columns}
+        primary_key = self._get_primary_key_info(table)
+        index_definitions = self._get_index_definitions(table)
+
+        select_columns = ",\n                ".join(self._quote_ident(column) for column in existing_columns)
+        tmp_table = f"{table}__geom_refresh_tmp"
+        backup_table = f"{table}__geom_refresh_old"
+
+        self._log(f"    Creating temporary replacement table '{tmp_table}'")
+        self.pg.execute(f"DROP TABLE IF EXISTS {self._quote_ident(tmp_table)} CASCADE")
+
+        create_sql = f"""
+            CREATE TABLE {self._quote_ident(tmp_table)} AS
+            WITH base AS (
+                SELECT
+                    {select_columns},
+                    ST_Transform({self._quote_ident(geom_column)}, 3857) AS {self._quote_ident(geom_3857_column)}
+                FROM {self._quote_ident(table)}
+            )
+            SELECT
+                base.*,
+                CASE
+                    WHEN base.{self._quote_ident(geom_3857_column)} IS NULL THEN NULL
+                    ELSE mercator_quadkey_prefix(base.{self._quote_ident(geom_3857_column)}, {self.quadkey_zoom}, {self.quadkey_prefix_length})
+                END AS {self._quote_ident(tile_prefix_column)}
+            FROM base;
+        """
+        self.pg.execute(create_sql)
+
+        self._log(f"    Swapping new table into place for '{table}'")
+        self.pg.execute(f"DROP TABLE IF EXISTS {self._quote_ident(backup_table)} CASCADE")
+        self.pg.execute(f"ALTER TABLE {self._quote_ident(table)} RENAME TO {self._quote_ident(backup_table)}")
+        self.pg.execute(f"ALTER TABLE {self._quote_ident(tmp_table)} RENAME TO {self._quote_ident(table)}")
+        self.pg.execute(f"DROP TABLE {self._quote_ident(backup_table)} CASCADE")
+
+        self._log("    Restoring column defaults and nullability")
+        for column, default in defaults.items():
+            self.pg.execute(
+                f"ALTER TABLE {self._quote_ident(table)} ALTER COLUMN {self._quote_ident(column)} SET DEFAULT {default}"
+            )
+        for column in not_null_columns:
+            self.pg.execute(
+                f"ALTER TABLE {self._quote_ident(table)} ALTER COLUMN {self._quote_ident(column)} SET NOT NULL"
+            )
+
+        if primary_key:
+            constraint, columns = primary_key
+            cols_sql = ", ".join(self._quote_ident(col) for col in columns)
+            self._log(f"    Reinstating primary key {constraint}")
+            self.pg.execute(
+                f"ALTER TABLE {self._quote_ident(table)} ADD CONSTRAINT {self._quote_ident(constraint)} PRIMARY KEY ({cols_sql})"
+            )
+
+        self._log("    Recreating secondary indexes")
+        pk_name = primary_key[0] if primary_key else None
+        for index_name, index_def in index_definitions:
+            if pk_name and index_name == pk_name:
+                continue
+            self.pg.execute(index_def)
+
+        self.pg.execute(
+            f"CREATE INDEX IF NOT EXISTS {self._quote_ident(f'{table}_geom_3857_idx')} ON {self._quote_ident(table)} USING GIST ({self._quote_ident(geom_3857_column)});"
+        )
+        self.pg.execute(
+            f"CREATE INDEX IF NOT EXISTS {self._quote_ident(f'{table}_tile_qk_prefix_idx')} ON {self._quote_ident(table)} ({self._quote_ident(tile_prefix_column)});"
+        )
 
     def _ensure_helper_functions(self) -> None:
         """Create SQL helper functions for quadkey and tile math."""
@@ -130,7 +289,7 @@ class TileSchemaManager:
         )
 
         # Function to compute tile bounds in Web Mercator for a given xyz.
-    self._log("  Creating tile_envelope_3857 function")
+        self._log("  Creating tile_envelope_3857 function")
         self.pg.execute(
             """
             CREATE OR REPLACE FUNCTION tile_envelope_3857(z integer, x integer, y integer)
@@ -147,58 +306,26 @@ class TileSchemaManager:
 
         for table_meta in BASE_POINT_TABLES:
             table = table_meta["table"]
-            geom = table_meta["geom"]
             geom_3857 = table_meta["geom_3857"]
 
             self._log(f"  Processing base table '{table}'")
-            self._log(f"    Adding {geom_3857} column if missing")
-            self.pg.execute(
-                f"""
-                ALTER TABLE {table}
-                ADD COLUMN IF NOT EXISTS {geom_3857} geometry(Point, 3857)
-                """
+            has_geom = self._column_exists(table, geom_3857) and self._column_has_data(table, geom_3857)
+            has_prefix = self._column_exists(table, "tile_qk_prefix") and self._column_has_data(
+                table, "tile_qk_prefix", treat_blank_as_null=True
             )
 
-            # Ensure all rows have Web Mercator geometry populated.
-            self._log(f"    Populating {geom_3857} where empty or invalid")
-            updated_geom = self.pg.execute(
-                f"""
-                UPDATE {table}
-                SET {geom_3857} = ST_Transform({geom}, 3857)
-                WHERE {geom} IS NOT NULL
-                  AND ({geom_3857} IS NULL OR ST_SRID({geom_3857}) <> 3857)
-                """
-            )
-            if updated_geom:
-                self._log(f"      Updated {updated_geom} rows")
-
-            self._log(f"    Ensuring GIST index on {geom_3857}")
-            self.pg.execute(
-                f"CREATE INDEX IF NOT EXISTS {table}_geom_3857_idx ON {table} USING GIST ({geom_3857});"
-            )
-
-            # Tile prefix column to support pruning.
-            self._log("    Adding tile_qk_prefix column if missing")
-            self.pg.execute(
-                f"""
-                ALTER TABLE {table}
-                ADD COLUMN IF NOT EXISTS tile_qk_prefix TEXT
-                """
-            )
-            self._log("    Populating tile_qk_prefix where empty")
-            updated_prefix = self.pg.execute(
-                f"""
-                UPDATE {table}
-                SET tile_qk_prefix = mercator_quadkey_prefix({geom_3857}, {self.quadkey_zoom}, {self.quadkey_prefix_length})
-                WHERE {geom_3857} IS NOT NULL
-                  AND (tile_qk_prefix IS NULL OR tile_qk_prefix = '')
-                """
-            )
-            if updated_prefix:
-                self._log(f"      Updated {updated_prefix} rows")
-            self.pg.execute(
-                f"CREATE INDEX IF NOT EXISTS {table}_tile_qk_prefix_idx ON {table} (tile_qk_prefix);"
-            )
+            if not has_geom or not has_prefix:
+                self._log("    Missing projected columns detected; rebuilding table via CTAS")
+                self._rebuild_base_table(table_meta)
+                continue
+            else:
+                self._log(f"    {geom_3857} already present; ensuring supporting indexes")
+                self.pg.execute(
+                    f"CREATE INDEX IF NOT EXISTS {table}_geom_3857_idx ON {table} USING GIST ({geom_3857});"
+                )
+                self.pg.execute(
+                    f"CREATE INDEX IF NOT EXISTS {table}_tile_qk_prefix_idx ON {table} (tile_qk_prefix);"
+                )
 
     def _ensure_tile_tables(self) -> None:
         """Create partitioned tile tables populated from the base tables."""
@@ -207,7 +334,7 @@ class TileSchemaManager:
             (
                 "parking_ticket_tiles",
                 "parking_tickets",
-                """
+                f"""
                     WITH ranked AS (
                         SELECT
                             COALESCE(centreline_id::text, street_normalized, location1, ticket_hash) AS feature_id,
@@ -248,9 +375,11 @@ class TileSchemaManager:
                         NULL::TEXT AS ward
                     FROM aggregated AS agg
                     CROSS JOIN LATERAL (
-                        VALUES
-                            (0, 10, ST_Subdivide(ST_SimplifyPreserveTopology(agg.geom_3857, 25), 32)),
-                            (11, 16, ST_Subdivide(agg.geom_3857, 4))
+                        SELECT 0 AS min_zoom, 10 AS max_zoom, subdivided.geom AS geom_variant
+                        FROM ST_Subdivide(ST_SimplifyPreserveTopology(agg.geom_3857, 25), 32) AS subdivided(geom)
+                        UNION ALL
+                        SELECT 11 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
+                        FROM ST_Subdivide(agg.geom_3857, 4) AS subdivided(geom)
                     ) AS variants(min_zoom, max_zoom, geom_variant)
                     CROSS JOIN LATERAL (
                         SELECT (ST_Dump(geom_variant)).geom
@@ -260,7 +389,7 @@ class TileSchemaManager:
             (
                 "red_light_camera_tiles",
                 "red_light_camera_locations",
-                """
+                f"""
                     SELECT
                         'red_light_locations' AS dataset,
                         base.intersection_id AS feature_id,
@@ -289,9 +418,11 @@ class TileSchemaManager:
                         WHERE geom_3857 IS NOT NULL
                     ) AS base
                     CROSS JOIN LATERAL (
-                        VALUES
-                            (0, 11, ST_Subdivide(ST_SimplifyPreserveTopology(base.geom_3857, 30), 32)),
-                            (12, 16, ST_Subdivide(base.geom_3857, 4))
+                        SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
+                        FROM ST_Subdivide(ST_SimplifyPreserveTopology(base.geom_3857, 30), 32) AS subdivided(geom)
+                        UNION ALL
+                        SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
+                        FROM ST_Subdivide(base.geom_3857, 4) AS subdivided(geom)
                     ) AS variants(min_zoom, max_zoom, geom_variant)
                     CROSS JOIN LATERAL (
                         SELECT (ST_Dump(geom_variant)).geom
@@ -301,7 +432,7 @@ class TileSchemaManager:
             (
                 "ase_camera_tiles",
                 "ase_camera_locations",
-                """
+                f"""
                     SELECT
                         'ase_locations' AS dataset,
                         base.location_code AS feature_id,
@@ -331,9 +462,11 @@ class TileSchemaManager:
                         WHERE geom_3857 IS NOT NULL
                     ) AS base
                     CROSS JOIN LATERAL (
-                        VALUES
-                            (0, 11, ST_Subdivide(ST_SimplifyPreserveTopology(base.geom_3857, 30), 32)),
-                            (12, 16, ST_Subdivide(base.geom_3857, 4))
+                        SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
+                        FROM ST_Subdivide(ST_SimplifyPreserveTopology(base.geom_3857, 30), 32) AS subdivided(geom)
+                        UNION ALL
+                        SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
+                        FROM ST_Subdivide(base.geom_3857, 4) AS subdivided(geom)
                     ) AS variants(min_zoom, max_zoom, geom_variant)
                     CROSS JOIN LATERAL (
                         SELECT (ST_Dump(geom_variant)).geom
@@ -346,7 +479,7 @@ class TileSchemaManager:
             self._log(f"  Ensuring tile table '{table_name}' (source: {base_table})")
             parent_definition = f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
-                    tile_id BIGSERIAL PRIMARY KEY,
+                    tile_id BIGSERIAL,
                     dataset TEXT NOT NULL,
                     feature_id TEXT NOT NULL,
                     min_zoom INTEGER NOT NULL,
@@ -361,11 +494,49 @@ class TileSchemaManager:
                     location_name TEXT,
                     location TEXT,
                     status TEXT,
-                    ward TEXT
+                    ward TEXT,
+                    PRIMARY KEY (tile_qk_group, tile_id)
                 ) PARTITION BY LIST (tile_qk_group);
             """
             self._log("    Creating parent partitioned table if needed")
             self.pg.execute(parent_definition)
+
+            self.pg.execute(
+                f"""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.table_constraints
+                        WHERE table_schema = 'public'
+                          AND table_name = '{table_name}'
+                          AND constraint_type = 'PRIMARY KEY'
+                    ) THEN
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM information_schema.key_column_usage
+                            WHERE table_schema = 'public'
+                              AND table_name = '{table_name}'
+                              AND constraint_name = '{table_name}_pkey'
+                              AND column_name = 'tile_qk_group'
+                        ) THEN
+                            EXECUTE 'ALTER TABLE {table_name} DROP CONSTRAINT {table_name}_pkey';
+                        END IF;
+                    END IF;
+
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.table_constraints
+                        WHERE table_schema = 'public'
+                          AND table_name = '{table_name}'
+                          AND constraint_type = 'PRIMARY KEY'
+                    ) THEN
+                        EXECUTE 'ALTER TABLE {table_name} ADD PRIMARY KEY (tile_qk_group, tile_id)';
+                    END IF;
+                END
+                $$;
+                """
+            )
 
             self._ensure_quadkey_partitions(table_name)
 

@@ -160,6 +160,19 @@ class ETLConfig:
 
         datasets: list[DatasetConfig] = [
             DatasetConfig(
+                slug="centreline",
+                package_id="toronto-centreline-tcl",
+                handler="src.etl.datasets.centreline:CentrelineETL",
+                incremental_field=None,
+                primary_key=("centreline_id",),
+                resources=apply_overrides(
+                    "centreline",
+                    {
+                        "metadata": CKANResourceConfig(resource_id="7bc94ccf-7bcf-4a7d-88b1-bdfc8ec5aaf1"),
+                    },
+                ),
+            ),
+            DatasetConfig(
                 slug="parking_tickets",
                 package_id="parking-tickets",
                 handler="src.etl.datasets.parking_tickets:ParkingTicketsETL",
@@ -170,19 +183,6 @@ class ETLConfig:
                     {
                         name: CKANResourceConfig(resource_id=resource_id, format_hint="zip")
                         for name, resource_id in PARKING_TICKET_RESOURCES.items()
-                    },
-                ),
-            ),
-            DatasetConfig(
-                slug="centreline",
-                package_id="toronto-centreline-tcl",
-                handler="src.etl.datasets.centreline:CentrelineETL",
-                incremental_field=None,
-                primary_key=("centreline_id",),
-                resources=apply_overrides(
-                    "centreline",
-                    {
-                        "metadata": CKANResourceConfig(resource_id="7bc94ccf-7bcf-4a7d-88b1-bdfc8ec5aaf1"),
                     },
                 ),
             ),
