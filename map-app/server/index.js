@@ -5,6 +5,7 @@ import express from 'express';
 import path from 'path';
 import process from 'node:process';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
+import { performance } from 'node:perf_hooks';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -18,6 +19,7 @@ import {
   prewarmWardTiles,
   EMPTY_TILE_BUFFER,
   TILE_HARD_TIMEOUT_MS,
+  getTileMetrics,
 } from './tileService.js';
 import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
 import { getDatasetTotals } from './datasetTotalsService.js';
@@ -196,6 +198,8 @@ const MAPTILER_FONT_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalida
 const MAPTILER_DEFAULT_CACHE_CONTROL = 'public, max-age=3600, stale-while-revalidate=600';
 const MAPTILER_FALLBACK_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_FALLBACK_TIMEOUT_MS || '', 10) || 20_000;
 
+const TILE_SLOW_LOG_THRESHOLD_MS = Number.parseInt(process.env.TILE_SLOW_LOG_MS || '', 10) || 800;
+
 const pmtilesRuntimeConfig = getPmtilesRuntimeConfig();
 const pmtilesManifest = buildPmtilesManifest(pmtilesRuntimeConfig);
 if (pmtilesManifest.enabled) {
@@ -205,6 +209,64 @@ if (pmtilesManifest.enabled) {
 let maptilerRedisPromise = null;
 const maptilerInflight = new Map();
 const TEXT_CONTENT_TYPE_REGEX = /json|text|javascript|xml/i;
+
+let healthPgPool = null;
+
+async function checkRedisHealth() {
+  const config = getRedisConfig();
+  if (!config.enabled || !config.url) {
+    return { status: 'disabled' };
+  }
+  const client = createClient({ url: config.url });
+  try {
+    await client.connect();
+    await client.ping();
+    return { status: 'ok' };
+  } catch (error) {
+    return { status: 'error', error: error.message };
+  } finally {
+    try {
+      if (client.isOpen) {
+        await client.quit();
+      }
+    } catch (quitError) {
+      console.warn('Failed to close Redis client during health check:', quitError.message);
+    }
+  }
+}
+
+function getHealthPgPool() {
+  if (healthPgPool) {
+    return healthPgPool;
+  }
+  const pgConfig = getPostgresConfig();
+  const connectionString = pgConfig.readOnlyConnectionString || pgConfig.connectionString;
+  if (!pgConfig.enabled || !connectionString) {
+    return null;
+  }
+  healthPgPool = new Pool({
+    connectionString,
+    ssl: pgConfig.ssl,
+    application_name: 'healthz',
+  });
+  healthPgPool.on('error', (error) => {
+    console.warn('[healthz] Postgres pool error:', error.message);
+  });
+  return healthPgPool;
+}
+
+async function checkPostgresHealth() {
+  const pool = getHealthPgPool();
+  if (!pool) {
+    return { status: 'disabled' };
+  }
+  try {
+    await pool.query('SELECT 1');
+    return { status: 'ok' };
+  } catch (error) {
+    return { status: 'error', error: error.message };
+  }
+}
 
 class MaptilerHttpError extends Error {
   constructor(status, body = '', headers = {}) {
@@ -817,6 +879,23 @@ async function bootstrapStartup() {
 bootstrapStartup();
 
 function registerTileRoutes(app) {
+  app.get('/healthz', async (req, res) => {
+    const [redisStatus, postgresStatus] = await Promise.all([
+      checkRedisHealth().catch((error) => ({ status: 'error', error: error.message })),
+      checkPostgresHealth().catch((error) => ({ status: 'error', error: error.message })),
+    ]);
+    const checks = {
+      redis: redisStatus,
+      postgres: postgresStatus,
+    };
+    const healthy = Object.values(checks).every((entry) => entry.status === 'ok' || entry.status === 'disabled');
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? 'ok' : 'degraded',
+      uptimeSeconds: Math.round(process.uptime()),
+      checks,
+    });
+  });
+
   app.get('/proxy/maptiler/:path(*)', async (req, res) => {
     const key = process.env.MAPLIBRE_API_KEY || process.env.MAPTILER_API_KEY || '';
     if (!key) {
@@ -960,19 +1039,55 @@ function registerTileRoutes(app) {
       ? req.query.dataset.trim()
       : 'parking_tickets';
 
+    const startTime = performance.now();
+    let tileDurationMs = 0;
+    let encodeDurationMs = 0;
+    let tileSource = 'none';
+    let headersApplied = false;
+    let slowLogged = false;
+
+    const applyHeadersIfNeeded = () => {
+      const totalMs = performance.now() - startTime;
+      if (!headersApplied && !res.headersSent) {
+        const timings = [`total;dur=${totalMs.toFixed(1)}`];
+        if (tileDurationMs > 0) {
+          timings.push(`tile;dur=${tileDurationMs.toFixed(1)}`);
+        }
+        if (encodeDurationMs > 0) {
+          timings.push(`encode;dur=${encodeDurationMs.toFixed(1)}`);
+        }
+        res.setHeader('Server-Timing', timings.join(', '));
+        const metrics = getTileMetrics();
+        res.setHeader('X-Tiles-Active-Renders', String(metrics.activeRenders));
+        res.setHeader('X-Tiles-Cold-Miss-P95', metrics.p95ColdRenderMs.toFixed(1));
+        res.setHeader('X-Tiles-Cold-Miss-Count', String(metrics.totalColdMisses));
+        res.setHeader('X-Tiles-Source', tileSource);
+        headersApplied = true;
+      }
+      if (!slowLogged && totalMs > TILE_SLOW_LOG_THRESHOLD_MS) {
+        console.warn(`[tiles] slow response dataset=${dataset} z=${z} x=${x} y=${y} source=${tileSource} (${totalMs.toFixed(1)}ms)`);
+        slowLogged = true;
+      }
+    };
+
     if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y)) {
+      tileSource = 'invalid-coords';
+      applyHeadersIfNeeded();
       res.status(400).json({ error: 'Invalid tile coordinates' });
       return;
     }
 
     if (dataset === 'parking_tickets' && z < TICKET_TILE_MIN_ZOOM) {
+      tileSource = 'zoom-restricted';
+      applyHeadersIfNeeded();
       res.status(204).end();
       return;
     }
 
     if (dataset !== 'parking_tickets') {
-      // Camera datasets are delivered via static GeoJSON sources on the client.
+      tileSource = 'dataset-disabled';
       res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      applyHeadersIfNeeded();
       res.status(204).end();
       return;
     }
@@ -981,11 +1096,17 @@ function registerTileRoutes(app) {
       ? TILE_HARD_TIMEOUT_MS
       : 450;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error('Tile render budget exceeded')), hardTimeoutMs);
+    const timer = setTimeout(
+      () => controller.abort(new Error('Tile render budget exceeded')),
+      hardTimeoutMs,
+    );
 
-    const respondWithEmptyTile = (statusCode = 200) => {
+    const respondWithEmptyTile = (statusCode = 200, sourceTag = 'empty') => {
+      tileSource = sourceTag;
       const acceptEncoding = req.headers['accept-encoding'] || '';
+      const encodeStart = performance.now();
       const { buffer: encoded, encoding } = encodeTileBuffer(EMPTY_TILE_BUFFER, acceptEncoding);
+      encodeDurationMs += performance.now() - encodeStart;
       res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
       res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
       res.setHeader('Vary', 'Accept-Encoding');
@@ -997,18 +1118,29 @@ function registerTileRoutes(app) {
       if (!res.headersSent) {
         res.status(statusCode);
       }
+      applyHeadersIfNeeded();
       res.end(encoded);
     };
 
     try {
-      const tile = await tileService.getTile(z, x, y, {
-        signal: controller.signal,
-        allowStale: true,
-        revalidate: true,
-      });
+      let tile = null;
+      const fetchStart = performance.now();
+      try {
+        tile = await tileService.getTile(z, x, y, {
+          signal: controller.signal,
+          allowStale: true,
+          revalidate: true,
+        });
+      } finally {
+        tileDurationMs = performance.now() - fetchStart;
+      }
+
+      tileSource = tile?.source || 'empty';
 
       if (!tile || !tile.buffer) {
-        res.status(204).end();
+        res.status(204);
+        applyHeadersIfNeeded();
+        res.end();
         return;
       }
 
@@ -1016,12 +1148,17 @@ function registerTileRoutes(app) {
         ? `W/"tickets:${tile.version}"`
         : null;
       if (etag && req.headers['if-none-match'] === etag) {
+        tileSource = 'not-modified';
+        applyHeadersIfNeeded();
         res.status(304).end();
         return;
       }
 
       const acceptEncoding = req.headers['accept-encoding'] || '';
+      const encodeStart = performance.now();
       const { buffer: encoded, encoding } = encodeTileBuffer(tile.buffer, acceptEncoding);
+      encodeDurationMs += performance.now() - encodeStart;
+
       res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
       res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600');
       res.setHeader('Vary', 'Accept-Encoding');
@@ -1035,18 +1172,28 @@ function registerTileRoutes(app) {
       if (tileTimestamp) {
         res.setHeader('Last-Modified', new Date(tileTimestamp).toUTCString());
       }
+      applyHeadersIfNeeded();
       res.end(encoded);
     } catch (error) {
       if (error?.name === 'AbortError') {
         console.warn(`Tile request exceeded hard timeout for ${z}/${x}/${y}`);
-        respondWithEmptyTile(200);
+        respondWithEmptyTile(200, 'timeout');
         return;
       }
       console.error('Failed to serve vector tile', error);
-      respondWithEmptyTile(200);
+      respondWithEmptyTile(200, 'error');
     } finally {
       clearTimeout(timer);
+      applyHeadersIfNeeded();
     }
+  });
+
+  app.get('/metrics/tiles', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ...getTileMetrics(),
+      timestamp: Date.now(),
+    });
   });
 
   app.get('/api/app-data', async (req, res) => {

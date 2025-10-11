@@ -1,6 +1,7 @@
 import { getPmtilesRuntimeConfig } from './runtimeConfig.js';
+import { getShardConfig } from '../../shared/pmtiles/index.js';
 
-const DEFAULT_DATASET_CONFIG = {
+const FALLBACK_DATASET_CONFIG = {
   parking_tickets: {
     label: 'Parking tickets (Ontario primary shard)',
     vectorLayer: 'parking_tickets',
@@ -63,7 +64,7 @@ const DEFAULT_DATASET_CONFIG = {
   },
 };
 
-const DEFAULT_WARD_DATASET_CONFIG = {
+const FALLBACK_WARD_DATASET_CONFIG = {
   red_light_locations: {
     label: 'Red light ward choropleth',
     vectorLayer: 'ward_polygons',
@@ -86,6 +87,17 @@ const DEFAULT_WARD_DATASET_CONFIG = {
     maxZoom: 12,
   },
 };
+
+let DEFAULT_DATASET_CONFIG = FALLBACK_DATASET_CONFIG;
+let DEFAULT_WARD_DATASET_CONFIG = FALLBACK_WARD_DATASET_CONFIG;
+
+try {
+  const shardConfig = getShardConfig();
+  DEFAULT_DATASET_CONFIG = shardConfig.datasets || FALLBACK_DATASET_CONFIG;
+  DEFAULT_WARD_DATASET_CONFIG = shardConfig.wardDatasets || FALLBACK_WARD_DATASET_CONFIG;
+} catch (error) {
+  console.warn('[pmtilesManifest] Failed to load shard configuration JSON:', error.message);
+}
 
 function normalizeFilename(filename) {
   if (!filename) {

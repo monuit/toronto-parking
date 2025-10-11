@@ -5,11 +5,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
+import { config as loadEnv } from 'dotenv';
 import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const DOTENV_PATH = path.join(PROJECT_ROOT, '.env');
+
+loadEnv({ path: DOTENV_PATH, override: false });
 
 function usage() {
   console.log('Usage: node scripts/pmtiles/upload_to_minio.mjs [--dir <path>] [--bucket <name>] [--prefix <key-prefix>]');
@@ -40,9 +44,9 @@ function parseArgs(argv) {
 }
 
 function resolveEndpoint() {
-  const privateEndpoint = process.env.MINIO_PRIVATE_ENDPOINT || process.env.MINIO_ENDPOINT;
   const publicEndpoint = process.env.MINIO_PUBLIC_ENDPOINT;
-  return privateEndpoint || publicEndpoint || null;
+  const privateEndpoint = process.env.MINIO_PRIVATE_ENDPOINT || process.env.MINIO_ENDPOINT;
+  return publicEndpoint || privateEndpoint || null;
 }
 
 async function collectPmtilesFiles(directory) {

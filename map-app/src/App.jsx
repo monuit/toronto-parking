@@ -604,6 +604,10 @@ function AppContent({
 
   const discrepancyByDataset = useMemo(() => {
     const importantKeys = ['parking_tickets', 'red_light_locations', 'ase_locations'];
+    const toNumber = (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : 0;
+    };
     const map = {};
     importantKeys.forEach((key) => {
       const current = sanitizedTotalsByDataset[key];
@@ -611,12 +615,14 @@ function AppContent({
       if (!current || !legacy) {
         return;
       }
-      const currentTicket = Number(current.ticketCount ?? current.featureCount ?? 0);
-      const legacyTicket = Number(legacy.ticketCount ?? legacy.featureCount ?? 0);
-      const currentRevenue = Number(current.totalRevenue ?? 0);
-      const legacyRevenue = Number(legacy.totalRevenue ?? 0);
-      const currentLocations = Number(current.locationCount ?? current.featureCount ?? 0);
-      const legacyLocations = Number(legacy.locationCount ?? legacy.featureCount ?? 0);
+      const currentTicket = toNumber(current.ticketCount ?? current.featureCount);
+      const legacyTicket = toNumber(legacy.ticketCount ?? legacy.featureCount);
+      const currentRevenue = toNumber(current.totalRevenue);
+      const legacyRevenue = toNumber(legacy.totalRevenue);
+      const currentLocations = toNumber(current.locationCount ?? current.featureCount);
+      const legacyLocations = toNumber(legacy.locationCount ?? legacy.featureCount);
+      const datasetSnapshot = datasetSnapshots?.[key] || {};
+      const meta = datasetSnapshot?.meta || {};
       const entry = {
         current: {
           ticketCount: currentTicket,
@@ -635,26 +641,43 @@ function AppContent({
         },
       };
       if (key === 'ase_locations') {
+        const unresolvedIds = Array.isArray(meta.historicalLocationsWithoutGeometry)
+          ? meta.historicalLocationsWithoutGeometry.length
+          : toNumber(meta.historicalLocationCount);
+        const unresolvedTickets = toNumber(meta.historicalTicketCount);
         entry.note = {
-          title: 'Automated Speed Enforcement (ASE)',
-          lines: [
-            '• The feed lists 199 sites (150 Active, 49 Planned) with mapped geometry.',
-            '• Yearly rollups still include 520 historical rotation codes from spreadsheet exports without geometry.',
-            '• Public reports 199 sites / 1,040,119 tickets, while ward rollups include 2,054,677 tickets across historical codes.',
-            '• Ward and leaderboard totals therefore exceed the 199 active cameras even though ticket volumes align with expectations.',
-          ],
-          footnote: 'Root cause: historical spreadsheet rotations remain aggregated alongside current locations until the feed reconciliation is finished (bad data from the city).',
+          type: 'aseHistorical',
+          resolvedLocations: currentLocations,
+          unresolvedLocations: unresolvedIds,
+          unresolvedTicketCount: unresolvedTickets,
+          totalLocations: currentLocations + unresolvedIds,
+          footnote: 'Legacy rotation codes without published coordinates remain aggregated in the charges spreadsheets provided by the city.',
+        };
+        entry.forceShow = true;
+      } else if (key === 'red_light_locations') {
+        const unresolvedCount = toNumber(meta.historicalLocationCount ?? (meta.historicalLocationCodes?.length ?? 0));
+        const unresolvedTickets = toNumber(meta.historicalTicketCount);
+        entry.note = {
+          type: 'rlcHistorical',
+          resolvedLocations: currentLocations,
+          unresolvedLocations: unresolvedCount,
+          unresolvedTicketCount: unresolvedTickets,
+          totalLocations: currentLocations + unresolvedCount,
+          footnote: 'Historic intersection codes without coordinates remain outstanding in the city releases and are tracked separately until geometry is provided.',
         };
         entry.forceShow = true;
       } else if (key === 'parking_tickets') {
         entry.delta.locationCount = 0;
-        entry.note = null;
+        entry.note = {
+          type: 'parkingLegacy',
+          footnote: 'We are reconciling the older exports so both sources align without duplicates.',
+        };
         entry.forceShow = true;
       }
       map[key] = entry;
     });
     return map;
-  }, [sanitizedTotalsByDataset, legacyTotalsByDataset]);
+  }, [sanitizedTotalsByDataset, legacyTotalsByDataset, datasetSnapshots]);
 
   const displayTotalsByDataset = useMemo(() => {
     const keys = new Set([
