@@ -1,7 +1,7 @@
 /**
  * HowItWorks - Modal component explaining the dashboard
  */
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import '../styles/HowItWorks.css';
 
 const TABS = [
@@ -10,66 +10,26 @@ const TABS = [
   { id: 'ase', label: 'Automated Speed Enforcement' },
 ];
 
-const KOFI_TEXT = 'Buy me a coffee if you liked this';
-const KOFI_COLOR = '#72a4f2';
-const KOFI_ID = 'Z8Z51MBSO5';
+const KOFI_URL = 'https://ko-fi.com/Z8Z51MBSO5';
 
 function KofiButton({ active }) {
-  const containerRef = useRef(null);
+  if (!active) {
+    return null;
+  }
 
-  useEffect(() => {
-    if (!active) {
-      return undefined;
-    }
-
-    const renderButton = () => {
-      if (typeof window === 'undefined') {
-        return;
-      }
-      if (window.kofiwidget2 && containerRef.current) {
-        window.kofiwidget2.init(KOFI_TEXT, KOFI_COLOR, KOFI_ID);
-        containerRef.current.innerHTML = window.kofiwidget2.getHTML();
-      }
-    };
-
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-
-    window.__kofiWidgetQueue = window.__kofiWidgetQueue || [];
-
-    if (window.kofiwidget2) {
-      renderButton();
-      return undefined;
-    }
-
-    window.__kofiWidgetQueue.push(renderButton);
-
-    if (!window.__kofiWidgetLoading) {
-      window.__kofiWidgetLoading = true;
-      const script = document.createElement('script');
-      script.src = 'https://storage.ko-fi.com/cdn/widget/Widget_2.js';
-      script.async = true;
-      script.onload = () => {
-        window.__kofiWidgetLoaded = true;
-        const queue = window.__kofiWidgetQueue || [];
-        queue.forEach((callback) => callback());
-        window.__kofiWidgetQueue = [];
-      };
-      script.onerror = () => {
-        window.__kofiWidgetQueue = [];
-      };
-      document.body.appendChild(script);
-    }
-
-    return () => {
-      if (window.__kofiWidgetQueue) {
-        window.__kofiWidgetQueue = window.__kofiWidgetQueue.filter((callback) => callback !== renderButton);
-      }
-    };
-  }, [active]);
-
-  return <div className="modal-kofi" ref={containerRef} />;
+  return (
+    <div className="modal-kofi">
+      <a
+        className="modal-kofi-button"
+        href={KOFI_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <span aria-hidden="true">☕</span>
+        <span>Support Moe on Ko-fi</span>
+      </a>
+    </div>
+  );
 }
 
 export function HowItWorks() {
