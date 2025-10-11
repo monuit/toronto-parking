@@ -10,6 +10,7 @@ node_modules/
 .turbo/
 .vercel/
 package-lock.json
+!tools/pmtiles/package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
