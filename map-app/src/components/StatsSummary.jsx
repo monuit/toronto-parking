@@ -150,6 +150,150 @@ export function StatsSummary({
     setInfoOpen((current) => !current);
   };
 
+  const legacyToggleControl = showLegacyToggle ? (
+    <label className="discrepancy-toggle">
+      <input
+        type="checkbox"
+        checked={useLegacyTotals}
+        onChange={(event) => onToggleLegacy(Boolean(event.target?.checked))}
+      />
+      <span>Include earlier unverified totals</span>
+    </label>
+  ) : null;
+
+  const renderDiscrepancyDetails = () => {
+    if (!discrepancyCurrent || !discrepancyLegacy) {
+      return null;
+    }
+
+    if (discrepancyNote?.type === 'parkingLegacy') {
+      return (
+        <>
+          <p>
+            Latest processed totals show {formatNumber(discrepancyCurrent.ticketCount)} tickets worth {formatCurrency(discrepancyCurrent.totalRevenue)}.
+            {' '}Earlier exports recorded {formatNumber(discrepancyLegacy.ticketCount)} tickets worth {formatCurrency(discrepancyLegacy.totalRevenue)}.
+          </p>
+          {ticketDelta !== 0 ? (
+            <p className="discrepancy-note">
+              {formatNumber(Math.abs(ticketDelta))} tickets {ticketDelta > 0 ? 'remain in the legacy export' : 'have been removed from the reconciled dataset'}.
+            </p>
+          ) : null}
+          {Math.abs(revenueDelta) > 0 ? (
+            <p className="discrepancy-note">
+              Revenue totals differ by {formatCurrency(Math.abs(revenueDelta))}.
+            </p>
+          ) : null}
+          {discrepancyNote.footnote ? (
+            <p className="discrepancy-note discrepancy-note--footnote">{discrepancyNote.footnote}</p>
+          ) : null}
+          {legacyToggleControl}
+        </>
+      );
+    }
+
+    if (discrepancyNote?.type === 'aseHistorical' || discrepancyNote?.type === 'rlcHistorical') {
+      const resolvedLocations = toNumber(discrepancyNote.resolvedLocations, discrepancyCurrent.locationCount);
+      const unresolvedLocations = toNumber(discrepancyNote.unresolvedLocations, 0);
+      const totalLocations = toNumber(discrepancyNote.totalLocations, resolvedLocations + unresolvedLocations);
+      const unresolvedTicketCount = toNumber(discrepancyNote.unresolvedTicketCount, 0);
+      const datasetLabel = discrepancyNote.type === 'aseHistorical' ? 'ASE camera' : 'red light camera';
+      return (
+        <>
+          <p>
+            {formatNumber(resolvedLocations)} {datasetLabel}{resolvedLocations === 1 ? '' : 's'} now include mapped geometry in the live dataset.
+          </p>
+          {unresolvedLocations > 0 ? (
+            <p className="discrepancy-note">
+              {formatNumber(unresolvedLocations)} historical {datasetLabel}{unresolvedLocations === 1 ? '' : 's'} remain without coordinates, representing {formatNumber(unresolvedTicketCount)} tickets.
+            </p>
+          ) : (
+            <p className="discrepancy-note">
+              All {formatNumber(totalLocations)} historical {datasetLabel}{totalLocations === 1 ? '' : 's'} now include mapped geometry.
+            </p>
+          )}
+          {discrepancyNote.footnote ? (
+            <p className="discrepancy-note discrepancy-note--footnote">{discrepancyNote.footnote}</p>
+          ) : null}
+          {legacyToggleControl}
+        </>
+      );
+    }
+
+    if (discrepancyNote && (discrepancyNote.title || Array.isArray(discrepancyNote.lines))) {
+      return (
+        <>
+          {discrepancyNote.title ? (
+            <h4>{discrepancyNote.title}</h4>
+          ) : null}
+          {Array.isArray(discrepancyNote.lines) && discrepancyNote.lines.length > 0 ? (
+            <ul>
+              {discrepancyNote.lines.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ul>
+          ) : null}
+          {discrepancyNote.footnote ? (
+            <p className="discrepancy-note discrepancy-note--footnote">{discrepancyNote.footnote}</p>
+          ) : null}
+          {legacyToggleControl}
+        </>
+      );
+    }
+
+    if (isParkingDataset) {
+      return (
+        <>
+          <p>
+            Latest processed totals show {formatNumber(discrepancyCurrent.ticketCount)} tickets worth {formatCurrency(discrepancyCurrent.totalRevenue)}.
+            {' '}Previous snapshot captured {formatNumber(discrepancyLegacy.ticketCount)} tickets worth {formatCurrency(discrepancyLegacy.totalRevenue)}.
+          </p>
+          {ticketDelta !== 0 ? (
+            <p className="discrepancy-note">
+              Difference: {formatNumber(Math.abs(ticketDelta))} tickets {ticketDelta > 0 ? 'still present in the legacy export' : 'removed from the reconciled dataset'}.
+            </p>
+          ) : null}
+          {Math.abs(revenueDelta) > 0 ? (
+            <p className="discrepancy-note">
+              Revenue totals differ by {formatCurrency(Math.abs(revenueDelta))}.
+            </p>
+          ) : null}
+          {legacyToggleControl}
+        </>
+      );
+    }
+
+    return (
+      <>
+        {hasMeaningfulDelta ? (
+          <p>
+            Latest processed totals show {formatNumber(discrepancyCurrent.ticketCount)} tickets
+            {ticketDelta !== 0 ? ` (${ticketDelta > 0 ? '+' : ''}${formatNumber(ticketDelta)} vs. earlier snapshot)` : ''}
+            {discrepancyCurrent.totalRevenue !== null
+              ? ` worth ${formatCurrency(discrepancyCurrent.totalRevenue)}`
+              : ''}
+            . Previous snapshot captured {formatNumber(discrepancyLegacy.ticketCount)} tickets
+            {ticketDelta !== 0 ? ` (${ticketDelta > 0 ? '+' : ''}${formatNumber(ticketDelta)})` : ''}.
+          </p>
+        ) : (
+          <p>
+            Latest processed totals now match the published snapshot for this dataset.
+          </p>
+        )}
+        {Math.abs(locationDelta) > 0 ? (
+          <p className="discrepancy-note">
+            Locations recorded differ by {formatNumber(Math.abs(locationDelta))}.
+          </p>
+        ) : null}
+        {Math.abs(revenueDelta) > 0 ? (
+          <p className="discrepancy-note">
+            Revenue totals differ by {formatCurrency(Math.abs(revenueDelta))}.
+          </p>
+        ) : null}
+        {legacyToggleControl}
+      </>
+    );
+  };
+
   if (variant === 'compact') {
     classes.push('stats-summary--compact');
   }
@@ -188,95 +332,7 @@ export function StatsSummary({
                     id={`dataset-discrepancy-${dataset}`}
                     className="discrepancy-popover"
                   >
-                    {isParkingDataset ? (
-                      <>
-                        <p>
-                          Latest processed totals show 38,491,084 tickets (+667,277 vs. earlier snapshot) worth $1,798,416,110.
-                          {' '}Previous snapshot captured 39,158,361 tickets (+667,277).
-                        </p>
-                        <p className="discrepancy-note">Revenue totals differ by $5,116,670.</p>
-                        <ul className="discrepancy-list">
-                          <li>Current totals reflect deduplicated tickets from the live database ingestion.</li>
-                          <li>The alternate toggle loads earlier exports that still contain duplicate or unverified ticket records.</li>
-                        </ul>
-                        <p className="discrepancy-note discrepancy-note--footnote">
-                          We are reconciling the unverified exports so the two sources can be displayed.
-                        </p>
-                        {showLegacyToggle ? (
-                          <label className="discrepancy-toggle">
-                            <input
-                              type="checkbox"
-                              checked={useLegacyTotals}
-                              onChange={(event) => onToggleLegacy(Boolean(event.target?.checked))}
-                            />
-                            <span>Include earlier unverified totals</span>
-                          </label>
-                        ) : null}
-                      </>
-                    ) : (
-                      <>
-                        {hasMeaningfulDelta ? (
-                          <p>
-                            Latest processed totals show {formatNumber(discrepancyCurrent.ticketCount)} tickets
-                            {ticketDelta !== 0
-                              ? ` (${ticketDelta > 0 ? '+' : ''}${formatNumber(ticketDelta)} vs. earlier snapshot)`
-                              : ''}
-                            {discrepancyCurrent.totalRevenue !== null
-                              ? ` worth ${formatCurrency(discrepancyCurrent.totalRevenue)}`
-                              : ''}
-                            . Previous snapshot captured {formatNumber(discrepancyLegacy.ticketCount)} tickets
-                            {ticketDelta !== 0
-                              ? ` (${ticketDelta > 0 ? '+' : ''}${formatNumber(ticketDelta)})`
-                              : ''}
-                            .
-                          </p>
-                        ) : null}
-                        {!hasMeaningfulDelta && !discrepancyNote ? (
-                          <p>
-                            Latest processed totals now match the published snapshot for this dataset.
-                          </p>
-                        ) : null}
-                        {Math.abs(locationDelta) > 0 ? (
-                          <p className="discrepancy-note">
-                            Locations recorded differ by {formatNumber(Math.abs(locationDelta))}.
-                          </p>
-                        ) : null}
-                        {Math.abs(revenueDelta) > 0 ? (
-                          <p className="discrepancy-note">
-                            Revenue totals differ by {formatCurrency(Math.abs(revenueDelta))}.
-                          </p>
-                        ) : null}
-                        {discrepancyNote ? (
-                          <div className="discrepancy-details">
-                            {discrepancyNote.title ? (
-                              <h4>{discrepancyNote.title}</h4>
-                            ) : null}
-                            {Array.isArray(discrepancyNote.lines) && discrepancyNote.lines.length > 0 ? (
-                              <ul>
-                                {discrepancyNote.lines.map((line, index) => (
-                                  <li key={index}>{line}</li>
-                                ))}
-                              </ul>
-                            ) : null}
-                            {discrepancyNote.footnote ? (
-                              <p className="discrepancy-note discrepancy-note--footnote">
-                                {discrepancyNote.footnote}
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        {showLegacyToggle ? (
-                          <label className="discrepancy-toggle">
-                            <input
-                              type="checkbox"
-                              checked={useLegacyTotals}
-                              onChange={(event) => onToggleLegacy(Boolean(event.target?.checked))}
-                            />
-                            <span>Include earlier unverified totals</span>
-                          </label>
-                        ) : null}
-                      </>
-                    )}
+                    {renderDiscrepancyDetails()}
                   </div>
                 ) : null}
               </div>

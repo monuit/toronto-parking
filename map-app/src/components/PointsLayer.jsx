@@ -573,7 +573,7 @@ export function PointsLayer({
       strokeColor: '#fff',
       strokeWidth: 1,
       opacity: 0.85,
-      minZoom: MAP_CONFIG.TILE_MIN_ZOOM,
+        minZoom: MAP_CONFIG.TILE_MIN_ZOOM,
       radiusExpression: [
         'interpolate',
         ['linear'],
@@ -585,23 +585,169 @@ export function PointsLayer({
       ],
     };
   }, [dataset]);
-  const pointLayer = {
-    id: MAP_CONFIG.LAYER_IDS.TICKETS_POINTS,
-    type: 'circle',
-    ...(isParkingDataset ? { 'source-layer': TILE_LAYER_NAME } : {}),
-    minzoom: datasetStyle.minZoom,
-    paint: {
-      'circle-color': datasetStyle.pointColor,
-      'circle-radius': datasetStyle.radiusExpression,
-      'circle-stroke-width': datasetStyle.strokeWidth,
-      'circle-stroke-color': datasetStyle.strokeColor,
-      'circle-opacity': datasetStyle.opacity
+  const clusterFilter = useMemo(() => buildFilterExpression(true, filter), [filter]);
+  const pointLayer = useMemo(() => {
+    const layer = {
+      id: MAP_CONFIG.LAYER_IDS.TICKETS_POINTS,
+      type: 'circle',
+      minzoom: isParkingDataset
+        ? Math.max(datasetStyle.minZoom, RAW_POINT_ZOOM)
+        : datasetStyle.minZoom,
+      maxzoom: 18,
+      filter: pointFilter,
+      paint: {
+        'circle-color': datasetStyle.pointColor,
+        'circle-radius': datasetStyle.radiusExpression,
+        'circle-stroke-width': datasetStyle.strokeWidth,
+        'circle-stroke-color': datasetStyle.strokeColor,
+        'circle-opacity': datasetStyle.opacity,
+      },
+    };
+    if (isParkingDataset) {
+      layer['source-layer'] = TILE_LAYER_NAME;
     }
-  };
+    return layer;
+  }, [datasetStyle, pointFilter, isParkingDataset]);
+
+  const clusterLayer = useMemo(() => {
+    if (!isParkingDataset) {
+      return null;
+    }
+    return {
+      id: MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER,
+      type: 'circle',
+      'source-layer': TILE_LAYER_NAME,
+      minzoom: datasetStyle.minZoom,
+      maxzoom: RAW_POINT_ZOOM,
+      filter: ['all', clusterFilter, ['>=', ['coalesce', ['get', 'point_count'], ['get', 'count'], 0], 3]],
+      paint: {
+        'circle-color': [
+          'interpolate',
+          ['linear'],
+          ['coalesce', ['get', 'point_count'], ['get', 'count'], 0],
+          0, '#7A89F0',
+          50, '#6C5CCF',
+          150, '#9B6DD7',
+          300, '#CF58AD',
+          600, '#FF5C5C',
+        ],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 1.2,
+        'circle-opacity': 0.85,
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['coalesce', ['get', 'point_count'], ['get', 'count'], 1],
+          1, 10,
+          25, 14,
+          100, 18,
+          250, 24,
+          500, 32,
+        ],
+      },
+    };
+  }, [clusterFilter, datasetStyle, isParkingDataset]);
+
+  const clusterCountLayer = useMemo(() => {
+    if (!isParkingDataset) {
+      return null;
+    }
+    return {
+      id: MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER_COUNT,
+      type: 'symbol',
+      'source-layer': TILE_LAYER_NAME,
+      minzoom: datasetStyle.minZoom,
+      maxzoom: RAW_POINT_ZOOM + 0.01,
+      filter: clusterFilter,
+      layout: {
+        'text-field': ['get', 'point_count_abbreviated'],
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-size': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          datasetStyle.minZoom, 11,
+          RAW_POINT_ZOOM, 13.5,
+        ],
+        'text-allow-overlap': true,
+      },
+      paint: {
+        'text-color': '#14274e',
+        'text-halo-color': 'rgba(255,255,255,0.9)',
+        'text-halo-width': 1.6,
+      },
+    };
+  }, [clusterFilter, datasetStyle, isParkingDataset]);
+
   const vectorSourceKey = pmtilesSource?.shardId ? `${dataset}-${pmtilesSource.shardId}` : dataset;
   const vectorSourceProps = pmtilesSource?.url
     ? { url: pmtilesSource.url }
     : { tiles: [tileUrl] };
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const createdLinks = [];
+    const seenOrigins = new Set();
+
+    const appendLink = (rel, href, attributes = {}) => {
+      if (!href) {
+        return;
+      }
+      const link = document.createElement('link');
+      link.rel = rel;
+      link.href = href;
+      Object.entries(attributes).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          link.setAttribute(key, value);
+        }
+      });
+      document.head.appendChild(link);
+      createdLinks.push(link);
+    };
+
+    const addOriginHints = (candidate) => {
+      if (!candidate) {
+        return;
+      }
+      try {
+        const url = new URL(candidate, window.location.origin);
+        if (seenOrigins.has(url.origin)) {
+          return;
+        }
+        seenOrigins.add(url.origin);
+        appendLink('preconnect', url.origin, { crossorigin: 'anonymous' });
+        appendLink('dns-prefetch', url.origin);
+      } catch {
+        /* ignore invalid URLs */
+      }
+    };
+
+    addOriginHints(tileUrl);
+    addOriginHints(MAP_CONFIG.STYLE_URL);
+
+    if (pmtilesSource?.url?.startsWith('pmtiles://')) {
+      const normalized = pmtilesSource.url.replace('pmtiles://', '');
+      addOriginHints(normalized);
+    }
+
+    try {
+      const styleUrl = new URL(MAP_CONFIG.STYLE_URL, window.location.origin).toString();
+      appendLink('prefetch', styleUrl, { as: 'fetch', crossorigin: 'anonymous' });
+    } catch {
+      /* ignore */
+    }
+
+    return () => {
+      createdLinks.forEach((link) => {
+        if (link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+      });
+    };
+  }, [tileUrl, pmtilesSource]);
   if (!isParkingDataset && !geojsonData) {
     return null;
   }
@@ -619,7 +765,9 @@ export function PointsLayer({
       minzoom={datasetStyle.minZoom}
       maxzoom={18}
     >
-      <Layer {...pointLayer} filter={pointFilter} />
+      {clusterLayer ? <Layer {...clusterLayer} /> : null}
+      {clusterCountLayer ? <Layer {...clusterCountLayer} /> : null}
+      <Layer {...pointLayer} />
     </Source>
   ) : (
     <Source
@@ -629,7 +777,7 @@ export function PointsLayer({
       data={geojsonData}
       generateId
     >
-      <Layer {...pointLayer} filter={pointFilter} />
+      <Layer {...pointLayer} />
     </Source>
   );
 }

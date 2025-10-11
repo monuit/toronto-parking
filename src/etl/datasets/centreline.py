@@ -157,7 +157,7 @@ class CentrelineETL(DatasetETL):
                 feature_code INTEGER,
                 feature_code_desc TEXT,
                 jurisdiction TEXT,
-                geom geometry(LINESTRING, 4326)
+                geom geometry(MULTILINESTRING, 4326)
             )
             """
         )
@@ -188,6 +188,17 @@ class CentrelineETL(DatasetETL):
         staging_table = "centreline_segments_staging"
         inserted = self.pg.copy_rows(staging_table, CENTRELINE_COLUMNS, staging_rows)
 
+        self.pg.execute(
+            """
+            ALTER TABLE centreline_segments
+            ALTER COLUMN geom TYPE geometry(MULTILINESTRING, 4326)
+            USING CASE
+                WHEN geom IS NULL THEN NULL
+                ELSE ST_Multi(ST_Force2D(geom))
+            END
+            """
+        )
+
         if inserted:
             self.pg.execute(
                 """
@@ -209,7 +220,7 @@ class CentrelineETL(DatasetETL):
                     jurisdiction,
                     geom
                 )
-                SELECT
+                SELECT DISTINCT ON (centreline_id)
                     centreline_id,
                     linear_name,
                     linear_name_type,
@@ -227,9 +238,10 @@ class CentrelineETL(DatasetETL):
                     jurisdiction,
                     CASE
                         WHEN geometry_geojson IS NULL OR geometry_geojson = '' THEN NULL
-                        ELSE ST_SetSRID(ST_GeomFromGeoJSON(geometry_geojson), 4326)
+                        ELSE ST_SetSRID(ST_Multi(ST_GeomFromGeoJSON(geometry_geojson)), 4326)
                     END
                 FROM centreline_segments_staging
+                ORDER BY centreline_id
                 ON CONFLICT (centreline_id) DO UPDATE SET
                     linear_name = EXCLUDED.linear_name,
                     linear_name_type = EXCLUDED.linear_name_type,

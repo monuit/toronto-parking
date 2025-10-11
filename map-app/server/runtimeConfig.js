@@ -159,6 +159,30 @@ export function getPmtilesRuntimeConfig() {
     wardDatasetOverrides,
   };
 }
+
+export function getPmtilesBuildConfig() {
+  const stream = process.env.PMTILES_BUILD_STREAM || 'pmtiles:build:requests';
+  const failureStream = process.env.PMTILES_BUILD_FAILURE_STREAM || 'pmtiles:build:failures';
+  const progressPrefix = process.env.PMTILES_BUILD_PROGRESS_PREFIX || 'pmtiles:build:progress';
+  const consumerGroup = process.env.PMTILES_BUILD_CONSUMER_GROUP || 'pmtiles-workers';
+  const stagingDir = process.env.PMTILES_STAGING_DIR || path.resolve(PROJECT_ROOT, '..', 'pmtiles', 'staging');
+  const maxAttempts = Number.parseInt(process.env.PMTILES_BUILD_MAX_ATTEMPTS || '5', 10);
+  const batchCount = Number.parseInt(process.env.PMTILES_BUILD_BATCH_COUNT || '10', 10);
+  const rebuildInterval = Number.parseInt(process.env.PMTILES_REBUILD_INTERVAL || '500', 10);
+  const uploadOnRebuild = process.env.PMTILES_REBUILD_UPLOAD === '1';
+
+  return {
+    stream,
+    failureStream,
+    progressPrefix,
+    consumerGroup,
+    stagingDir,
+    maxAttempts: Number.isFinite(maxAttempts) && maxAttempts > 0 ? maxAttempts : 5,
+    batchCount: Number.isFinite(batchCount) && batchCount > 0 ? batchCount : 10,
+    rebuildInterval: Number.isFinite(rebuildInterval) && rebuildInterval > 0 ? rebuildInterval : 500,
+    uploadOnRebuild,
+  };
+}
 export function getDataDir(defaultDir) {
   return process.env.DATA_DIR || defaultDir;
 }
