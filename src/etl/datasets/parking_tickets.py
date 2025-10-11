@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import os
 import sys
 import zipfile
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import pandas as pd
+import logging
 
 from geocoding.centreline_geocoder import CentrelineGeocoder, GeocodeResult
 
@@ -106,15 +108,23 @@ def _normalise_time(value: Optional[str]) -> Optional[str]:
     return value
 
 
+logger = logging.getLogger(__name__)
+
+
 class ParkingTicketsETL(DatasetETL):
     """Loader for the full Toronto parking ticket archive."""
 
-    BATCH_SIZE = 5000
+    COPY_PROGRESS_INTERVAL = max(1, int(os.getenv("PARKING_TICKETS_COPY_PROGRESS", "50000")))
 
     def __init__(self, config, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
         self._geocoder: Optional[CentrelineGeocoder] = None
-        self._geocode_cache: Dict[Tuple[str, str, str, str], object | GeocodeResult] = {}
+        self._geocode_cache: Dict[Tuple[str, str, str, str], Any] = {}
+        self._location_lookup = self._load_location_lookup()
+        disable_geo_env = os.getenv("PARKING_TICKETS_DISABLE_GEOCODER")
+        if disable_geo_env is None:
+            disable_geo_env = os.getenv("PARKING_TICKETS_SKIP_GEOCODE", "0")
+        self._disable_geocoder = disable_geo_env.lower() in {"1", "true", "yes"}
         years_env = os.getenv("PARKING_TICKETS_YEARS")
         if years_env:
             parsed: List[int] = []
@@ -212,6 +222,7 @@ class ParkingTicketsETL(DatasetETL):
             year = descriptor.get("year")
             rows_written = self._load_resource_year(year, path)
             total_rows += rows_written
+            logger.info("[parking_tickets] loaded %s rows for year %s", rows_written, year)
 
             meta = dict(payload["resource_metadata"].get(name, {}))
             meta["row_count"] = rows_written
@@ -251,45 +262,136 @@ class ParkingTicketsETL(DatasetETL):
 
         start = date(year, 1, 1)
         end = date(year + 1, 1, 1)
-        self.pg.execute(
-            "DELETE FROM parking_tickets WHERE date_of_infraction >= %s AND date_of_infraction < %s",
-            (start.isoformat(), end.isoformat()),
-        )
-
         self._geocode_cache.clear()
 
-        batch: List[Tuple[Any, ...]] = []
         rows_written = 0
+        column_list = ",".join(STAGING_COLUMNS)
+        copy_sql = f"COPY parking_tickets_staging ({column_list}) FROM STDIN WITH (FORMAT text)"
 
-        for row in self._iter_archive_rows(archive_path):
-            batch.append(row)
-            if len(batch) >= self.BATCH_SIZE:
-                self._load_rows(batch)
-                rows_written += len(batch)
-                batch.clear()
+        with self.pg.connect() as conn:
+            conn.execute("SET LOCAL synchronous_commit TO OFF")
+            conn.execute(
+                "DELETE FROM parking_tickets WHERE date_of_infraction >= %s AND date_of_infraction < %s",
+                (start.isoformat(), end.isoformat()),
+            )
+            conn.execute("TRUNCATE parking_tickets_staging")
 
-        if batch:
-            self._load_rows(batch)
-            rows_written += len(batch)
+            with conn.cursor().copy(copy_sql) as copy:
+                for row in self._iter_archive_rows(archive_path):
+                    copy.write_row(row)
+                    rows_written += 1
+                    if rows_written % self.COPY_PROGRESS_INTERVAL == 0:
+                        logger.info(
+                            "[parking_tickets] streamed %s rows for year %s", rows_written, year,
+                        )
+
+            conn.execute(
+                """
+                INSERT INTO parking_tickets AS target (
+                    ticket_hash,
+                    ticket_number,
+                    date_of_infraction,
+                    time_of_infraction,
+                    infraction_code,
+                    infraction_description,
+                    set_fine_amount,
+                    location1,
+                    location2,
+                    location3,
+                    location4,
+                    street_normalized,
+                    centreline_id,
+                    geom
+                )
+                SELECT DISTINCT ON (ticket_hash)
+                    ticket_hash,
+                    ticket_number,
+                    NULLIF(date_of_infraction, '')::DATE,
+                    time_of_infraction,
+                    infraction_code,
+                    infraction_description,
+                    NULLIF(set_fine_amount, '')::NUMERIC,
+                    location1,
+                    location2,
+                    location3,
+                    location4,
+                    street_normalized,
+                    centreline_id,
+                    CASE
+                        WHEN longitude IS NULL OR latitude IS NULL THEN NULL
+                        ELSE ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+                    END
+                FROM parking_tickets_staging
+                ORDER BY ticket_hash, NULLIF(date_of_infraction, '')::DATE DESC, time_of_infraction DESC
+                ON CONFLICT (ticket_hash) DO UPDATE SET
+                    ticket_number = EXCLUDED.ticket_number,
+                    date_of_infraction = EXCLUDED.date_of_infraction,
+                    time_of_infraction = EXCLUDED.time_of_infraction,
+                    infraction_code = EXCLUDED.infraction_code,
+                    infraction_description = EXCLUDED.infraction_description,
+                    set_fine_amount = EXCLUDED.set_fine_amount,
+                    location1 = EXCLUDED.location1,
+                    location2 = EXCLUDED.location2,
+                    location3 = EXCLUDED.location3,
+                    location4 = EXCLUDED.location4,
+                    street_normalized = COALESCE(EXCLUDED.street_normalized, target.street_normalized),
+                    centreline_id = COALESCE(EXCLUDED.centreline_id, target.centreline_id),
+                    geom = COALESCE(EXCLUDED.geom, target.geom),
+                    updated_at = NOW()
+                """
+            )
+            conn.execute("TRUNCATE parking_tickets_staging")
+            conn.commit()
 
         return rows_written
 
     def _iter_archive_rows(self, archive_path: Path) -> Iterator[Tuple[Any, ...]]:
         with zipfile.ZipFile(archive_path) as archive:
+            csv.field_size_limit(min(sys.maxsize, 2 ** 31 - 1))
             for member in sorted(archive.namelist()):
-                if not member.lower().endswith(".csv"):
+                name_lower = member.lower()
+                if member.endswith("/"):
                     continue
+                if "parking_tags" not in name_lower:
+                    continue
+                encoding = self._detect_member_encoding(archive, member)
                 with archive.open(member) as handle:
-                    csv.field_size_limit(min(sys.maxsize, 2 ** 31 - 1))
-                    reader = csv.DictReader(
-                        io.TextIOWrapper(handle, encoding="utf-8", errors="ignore")
+                    wrapper = io.TextIOWrapper(
+                        handle,
+                        encoding=encoding,
+                        errors="ignore",
+                        newline="",
                     )
+                    reader = csv.DictReader(wrapper)
                     for record in reader:
                         prepared = self._prepare_row(record)
                         if prepared is not None:
                             yield prepared
 
+    @staticmethod
+    def _detect_member_encoding(archive: zipfile.ZipFile, member: str) -> str:
+        try:
+            with archive.open(member) as sample:
+                prefix = sample.read(4)
+        except KeyError:
+            return "utf-8"
+
+        if prefix.startswith(b"\xff\xfe"):
+            return "utf-16-le"
+        if prefix.startswith(b"\xfe\xff"):
+            return "utf-16-be"
+        if prefix.startswith(b"\xef\xbb\xbf"):
+            return "utf-8-sig"
+        if b"\x00" in prefix:
+            return "utf-16-le"
+        return "utf-8"
+
     def _prepare_row(self, record: Dict[str, Any]) -> Optional[Tuple[Any, ...]]:
+        if record:
+            record = {
+                (key.lstrip("\ufeff") if isinstance(key, str) else key): value
+                for key, value in record.items()
+            }
         ticket_number = (
             record.get("ticket_number")
             or record.get("tag_number_masked")
@@ -333,6 +435,22 @@ class ParkingTicketsETL(DatasetETL):
             location4,
         )
 
+        street_normalized: Optional[str] = None
+        centreline_id: Optional[int] = None
+        latitude: Optional[float] = None
+        longitude: Optional[float] = None
+
+        if isinstance(geocode_result, GeocodeResult):
+            street_normalized = geocode_result.street_normalized
+            centreline_id = geocode_result.centreline_id
+            latitude = geocode_result.latitude
+            longitude = geocode_result.longitude
+        elif isinstance(geocode_result, dict):
+            street_normalized = geocode_result.get("street_normalized")
+            centreline_id = geocode_result.get("centreline_id")
+            latitude = geocode_result.get("latitude")
+            longitude = geocode_result.get("longitude")
+
         return (
             ticket_hash,
             ticket_number,
@@ -345,13 +463,13 @@ class ParkingTicketsETL(DatasetETL):
             location2,
             location3,
             location4,
-            geocode_result.street_normalized if geocode_result else None,
-            geocode_result.centreline_id if geocode_result else None,
-            geocode_result.latitude if geocode_result else None,
-            geocode_result.longitude if geocode_result else None,
+            street_normalized,
+            centreline_id,
+            latitude,
+            longitude,
         )
 
-    def _geocode_record(self, record: Dict[str, Any]) -> Optional[GeocodeResult]:
+    def _geocode_record(self, record: Dict[str, Any]) -> Optional[Any]:
         address_parts = [
             record.get("location1"),
             record.get("location2"),
@@ -362,8 +480,17 @@ class ParkingTicketsETL(DatasetETL):
         cached = self._geocode_cache.get(key)
         if cached is _GEOCODE_MISS:
             return None
-        if isinstance(cached, GeocodeResult):
+        if isinstance(cached, (GeocodeResult, dict)):
             return cached
+
+        lookup_result = self._lookup_precomputed_location(record)
+        if lookup_result is not None:
+            self._geocode_cache[key] = lookup_result
+            return lookup_result
+
+        if self._disable_geocoder:
+            self._geocode_cache[key] = _GEOCODE_MISS
+            return None
 
         address = " ".join(part for part in key if part)
         if not address:
@@ -407,6 +534,62 @@ class ParkingTicketsETL(DatasetETL):
             )
         self._geocoder = CentrelineGeocoder(df)
         return self._geocoder
+
+    # Lookup helpers -------------------------------------------------
+    @staticmethod
+    def _normalize_location(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip().upper()
+        if not text or text.lower() == "nan":
+            return None
+        return text
+
+    def _load_location_lookup(self) -> Dict[str, Dict[str, Any]]:
+        lookup: Dict[str, Dict[str, Any]] = {}
+        env_path = os.getenv("PARKING_TICKETS_LOCATION_LOOKUP")
+        if env_path:
+            path = Path(env_path)
+        else:
+            repo_root = Path(__file__).resolve().parents[3]
+            path = repo_root / "map-app" / "public" / "data" / "tickets_aggregated.geojson"
+        if not path.exists():
+            return lookup
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return lookup
+
+        for feature in payload.get("features", []):
+            properties = feature.get("properties") or {}
+            geometry = feature.get("geometry") or {}
+            coords = geometry.get("coordinates") if isinstance(geometry, dict) else None
+            location = self._normalize_location(properties.get("location"))
+            if not location:
+                continue
+            if not isinstance(coords, (list, tuple)) or len(coords) < 2:
+                continue
+            longitude = coords[0]
+            latitude = coords[1]
+            if longitude is None or latitude is None:
+                continue
+            lookup[location] = {
+                "street_normalized": location,
+                "latitude": float(latitude),
+                "longitude": float(longitude),
+                "centreline_id": None,
+            }
+        return lookup
+
+    def _lookup_precomputed_location(self, record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        candidates = [
+            self._normalize_location(record.get("location2")),
+            self._normalize_location(record.get("location1")),
+        ]
+        for candidate in candidates:
+            if candidate and candidate in self._location_lookup:
+                return self._location_lookup[candidate]
+        return None
 
     def _ensure_tables(self) -> None:
         self.pg.execute(
@@ -452,6 +635,7 @@ class ParkingTicketsETL(DatasetETL):
             )
             """
         )
+        self.pg.execute("ALTER TABLE parking_tickets_staging SET UNLOGGED")
         self.pg.execute(
             """
             ALTER TABLE parking_tickets
@@ -518,65 +702,3 @@ class ParkingTicketsETL(DatasetETL):
             """
         )
 
-    def _load_rows(self, rows: Iterable[Tuple[Any, ...]]) -> None:
-        rows_list = list(rows)
-        if not rows_list:
-            return
-        self.pg.execute("TRUNCATE parking_tickets_staging")
-        self.pg.copy_rows("parking_tickets_staging", STAGING_COLUMNS, rows_list)
-        self.pg.execute(
-            """
-            INSERT INTO parking_tickets AS target (
-                ticket_hash,
-                ticket_number,
-                date_of_infraction,
-                time_of_infraction,
-                infraction_code,
-                infraction_description,
-                set_fine_amount,
-                location1,
-                location2,
-                location3,
-                location4,
-                street_normalized,
-                centreline_id,
-                geom
-            )
-            SELECT DISTINCT ON (ticket_hash)
-                ticket_hash,
-                ticket_number,
-                NULLIF(date_of_infraction, '')::DATE,
-                time_of_infraction,
-                infraction_code,
-                infraction_description,
-                NULLIF(set_fine_amount, '')::NUMERIC,
-                location1,
-                location2,
-                location3,
-                location4,
-                street_normalized,
-                centreline_id,
-                CASE
-                    WHEN longitude IS NULL OR latitude IS NULL THEN NULL
-                    ELSE ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-                END
-            FROM parking_tickets_staging
-            ORDER BY ticket_hash, NULLIF(date_of_infraction, '')::DATE DESC, time_of_infraction DESC
-            ON CONFLICT (ticket_hash) DO UPDATE SET
-                ticket_number = EXCLUDED.ticket_number,
-                date_of_infraction = EXCLUDED.date_of_infraction,
-                time_of_infraction = EXCLUDED.time_of_infraction,
-                infraction_code = EXCLUDED.infraction_code,
-                infraction_description = EXCLUDED.infraction_description,
-                set_fine_amount = EXCLUDED.set_fine_amount,
-                location1 = EXCLUDED.location1,
-                location2 = EXCLUDED.location2,
-                location3 = EXCLUDED.location3,
-                location4 = EXCLUDED.location4,
-                street_normalized = COALESCE(EXCLUDED.street_normalized, target.street_normalized),
-                centreline_id = COALESCE(EXCLUDED.centreline_id, target.centreline_id),
-                geom = COALESCE(EXCLUDED.geom, target.geom),
-                updated_at = NOW()
-            """
-        )
-        self.pg.execute("TRUNCATE parking_tickets_staging")

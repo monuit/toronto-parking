@@ -9,6 +9,8 @@ import json
 import logging
 import time
 
+import os
+
 import requests
 from requests import Response
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -42,6 +44,9 @@ class CKANClient:
         self.timeout = timeout
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": self.user_agent})
+        verify = os.getenv("REQUESTS_CA_BUNDLE") or os.getenv("SSL_CERT_FILE")
+        if verify and Path(verify).exists():
+            self._session.verify = verify
 
     def close(self) -> None:
         self._session.close()

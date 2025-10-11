@@ -20,7 +20,7 @@ async function run() {
     ORDER BY location_code
     LIMIT 20
   `);
-  
+
   console.log('yearly codes', rows);
 
   const counts = await client.query(`
