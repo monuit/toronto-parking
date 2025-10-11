@@ -588,7 +588,7 @@ def run(
     shard_filter: Optional[set[str]] = None,
 ) -> List[Dict[str, object]]:
     dsn = resolve_database_dsn()
-    pg_client = PostgresClient(dsn=dsn, application_name="pmtiles-export", statement_timeout_ms=240_000)
+    pg_client = PostgresClient(dsn=dsn, application_name="pmtiles-export", statement_timeout_ms=None)
     schema_client = PostgresClient(
         dsn=dsn,
         application_name="pmtiles-export-schema",
