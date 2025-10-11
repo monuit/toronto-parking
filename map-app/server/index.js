@@ -889,6 +889,9 @@ function registerTileRoutes(app) {
       postgres: postgresStatus,
     };
     const healthy = Object.values(checks).every((entry) => entry.status === 'ok' || entry.status === 'disabled');
+    if (!healthy) {
+      console.warn('[healthz] failing readiness check:', checks);
+    }
     res.status(healthy ? 200 : 503).json({
       status: healthy ? 'ok' : 'degraded',
       uptimeSeconds: Math.round(process.uptime()),
