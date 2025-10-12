@@ -1114,6 +1114,123 @@ function extractTimestamp(value) {
 const tileService = createTileService();
 const postgisTileService = createPostgisTileService();
 
+const startupState = {
+  startedAt: Date.now(),
+  listening: false,
+  readyAt: null,
+  dependencies: {
+    redis: 'unknown',
+    postgres: 'unknown',
+  },
+  merge: {
+    status: 'pending',
+    lastCompletedAt: null,
+    lastError: null,
+  },
+  warmup: {
+    appData: 'pending',
+    appDataError: null,
+    tileService: 'pending',
+    tileServiceError: null,
+    wardPrewarm: 'pending',
+    wardPrewarmError: null,
+  },
+};
+
+function markDependencyStatus(name, status) {
+  if (startupState.dependencies[name] !== status) {
+    startupState.dependencies[name] = status;
+  }
+}
+
+async function runGeojsonMergeOnce() {
+  startupState.merge.status = 'running';
+  startupState.merge.lastError = null;
+  try {
+    await mergeGeoJSONChunks();
+    startupState.merge.status = 'complete';
+    startupState.merge.lastCompletedAt = new Date().toISOString();
+  } catch (error) {
+    startupState.merge.status = 'failed';
+    startupState.merge.lastError = error?.message || String(error);
+    console.warn('GeoJSON merge failed:', error);
+  }
+}
+
+function scheduleGeojsonMerge() {
+  const timer = setTimeout(() => {
+    runGeojsonMergeOnce().catch((error) => {
+      startupState.merge.status = 'failed';
+      startupState.merge.lastError = error?.message || String(error);
+      console.warn('GeoJSON merge unhandled failure:', error);
+    });
+  }, 0);
+  if (typeof timer?.unref === 'function') {
+    timer.unref();
+  }
+}
+
+function setWarmupStatus(key, status, error = null) {
+  if (!Object.prototype.hasOwnProperty.call(startupState.warmup, key)) {
+    return;
+  }
+  startupState.warmup[key] = status;
+  const errorKey = `${key}Error`;
+  if (Object.prototype.hasOwnProperty.call(startupState.warmup, errorKey)) {
+    startupState.warmup[errorKey] = error;
+  }
+}
+
+function scheduleProductionWarmup() {
+  const timer = setTimeout(() => {
+    (async () => {
+      setWarmupStatus('appData', 'running');
+      try {
+        const label = 'app-data:warmup';
+        console.time(label);
+        try {
+          await createAppData({ bypassCache: true });
+        } finally {
+          console.timeEnd(label);
+        }
+        setWarmupStatus('appData', 'complete', null);
+      } catch (error) {
+        console.warn('Unable to warm app data cache:', error.message);
+        setWarmupStatus('appData', 'failed', error?.message || String(error));
+      }
+
+      setWarmupStatus('tileService', 'running');
+      try {
+        const label = 'tile-service:warmup';
+        console.time(label);
+        try {
+          await tileService.ensureLoaded();
+        } finally {
+          console.timeEnd(label);
+        }
+        setWarmupStatus('tileService', 'complete', null);
+      } catch (error) {
+        console.warn('Unable to warm tile cache:', error.message);
+        setWarmupStatus('tileService', 'failed', error?.message || String(error));
+      }
+
+      setWarmupStatus('wardPrewarm', 'running');
+      try {
+        await Promise.all([...WARD_DATASETS].map((dataset) => prewarmWardTiles(dataset)));
+        setWarmupStatus('wardPrewarm', 'complete', null);
+      } catch (error) {
+        console.warn('Ward tile prewarm failed:', error.message);
+        setWarmupStatus('wardPrewarm', 'failed', error?.message || String(error));
+      }
+    })().catch((error) => {
+      console.error('Production warmup encountered an unexpected error:', error);
+    });
+  }, 0);
+  if (typeof timer?.unref === 'function') {
+    timer.unref();
+  }
+}
+
 async function bootstrapStartup() {
   try {
     console.log('🚀 Initializing server...');
@@ -1122,8 +1239,17 @@ async function bootstrapStartup() {
       `   Redis: ${wakeResults.redis.enabled ? (wakeResults.redis.awake ? 'awake' : 'sleeping') : 'disabled'} | ` +
         `Postgres: ${wakeResults.postgres.enabled ? (wakeResults.postgres.awake ? 'awake' : 'sleeping') : 'disabled'}`,
     );
+    markDependencyStatus(
+      'redis',
+      wakeResults.redis.enabled ? (wakeResults.redis.awake ? 'ok' : 'error') : 'disabled',
+    );
+    markDependencyStatus(
+      'postgres',
+      wakeResults.postgres.enabled ? (wakeResults.postgres.awake ? 'ok' : 'error') : 'disabled',
+    );
+
     await resetRedisNamespaceOnBoot();
-    await mergeGeoJSONChunks();
+    scheduleGeojsonMerge();
 
     const refreshIntervalSeconds = Number.parseInt(
       process.env.APP_DATA_REFRESH_SECONDS || (isProd ? '900' : '0'),
@@ -1146,14 +1272,21 @@ async function bootstrapStartup() {
       backgroundRefresh.triggerNow();
     }
 
-    await Promise.all(
-      ['red_light_locations', 'ase_locations'].map((cameraDataset) =>
-        loadCameraLocations(cameraDataset).catch((error) => {
-          console.warn(`Camera dataset preload failed for ${cameraDataset}:`, error.message);
-          return null;
-        }),
-      ),
-    );
+    const preloadTimer = setTimeout(() => {
+      Promise.all(
+        ['red_light_locations', 'ase_locations'].map((cameraDataset) =>
+          loadCameraLocations(cameraDataset).catch((error) => {
+            console.warn(`Camera dataset preload failed for ${cameraDataset}:`, error.message);
+            return null;
+          }),
+        ),
+      ).catch((error) => {
+        console.warn('Camera dataset preload failed:', error.message);
+      });
+    }, 0);
+    if (typeof preloadTimer?.unref === 'function') {
+      preloadTimer.unref();
+    }
     schedulePostgresVacuum();
   } catch (error) {
     console.error('Startup initialization failed:', error);
@@ -1165,74 +1298,92 @@ bootstrapStartup();
 function registerTileRoutes(app) {
   const clientMetricsParser = express.json({ limit: '32kb' });
   app.get('/healthz', async (req, res) => {
-    const [redisStatus, postgresStatus] = await Promise.all([
-      checkRedisHealth().catch((error) => ({ status: 'error', error: error.message })),
-      checkPostgresHealth().catch((error) => ({ status: 'error', error: error.message })),
-    ]);
-    const checks = {
-      redis: redisStatus,
-      postgres: postgresStatus,
-    };
-    const healthy = Object.values(checks).every((entry) => entry.status === 'ok' || entry.status === 'disabled');
-    if (!healthy) {
-      console.warn('[healthz] failing readiness check:', checks);
-    }
-    const averageDurationMs = metrics.maptiler.requests > 0
-      ? Math.round((metrics.maptiler.totalDurationMs / metrics.maptiler.requests) * 100) / 100
-      : 0;
-    const ssrAverageMs = metrics.ssr.requests > 0
-      ? Math.round((metrics.ssr.totalDurationMs / metrics.ssr.requests) * 100) / 100
-      : 0;
-    const appDataAverageMs = metrics.ssr.appData.runs > 0
-      ? Math.round((metrics.ssr.appData.totalDurationMs / metrics.ssr.appData.runs) * 100) / 100
-      : 0;
-    const metricsSummary = {
-      maptiler: {
-        requests: metrics.maptiler.requests,
-        errors: metrics.maptiler.errors,
-        averageDurationMs,
-        maxDurationMs: metrics.maptiler.maxDurationMs,
-        slowCount: metrics.maptiler.slowCount,
-        modes: metrics.maptiler.modes,
-        fallbacks: metrics.maptiler.fallbacks,
-        lastStatus: metrics.maptiler.lastStatus,
-        lastDurationMs: metrics.maptiler.lastDurationMs,
-        lastErrorMessage: metrics.maptiler.lastErrorMessage,
-      },
-      pmtilesWarmup: {
-        tilesFetched: metrics.pmtiles.warmup.tilesFetched,
-        tilesFailed: metrics.pmtiles.warmup.tilesFailed,
-        originTiles: metrics.pmtiles.warmup.originTiles,
-        cdnTiles: metrics.pmtiles.warmup.cdnTiles,
-        lastRunStartedAt: metrics.pmtiles.warmup.lastRunStartedAt,
-        lastRunDurationMs: metrics.pmtiles.warmup.lastRunDurationMs,
-        lastRunTilesFetched: metrics.pmtiles.warmup.lastRunTilesFetched,
-        lastRunTilesFailed: metrics.pmtiles.warmup.lastRunTilesFailed,
-        lastRunOriginTiles: metrics.pmtiles.warmup.lastRunOriginTiles,
-        lastRunCdnTiles: metrics.pmtiles.warmup.lastRunCdnTiles,
-        lastErrorMessage: metrics.pmtiles.warmup.lastErrorMessage,
-      },
-      ssr: {
-        requests: metrics.ssr.requests,
-        cacheHits: metrics.ssr.cacheHits,
-        cacheMisses: metrics.ssr.cacheMisses,
-        averageDurationMs: ssrAverageMs,
-        maxDurationMs: metrics.ssr.maxDurationMs,
-        lastDurationMs: metrics.ssr.lastDurationMs,
-        appData: {
-          runs: metrics.ssr.appData.runs,
-          averageDurationMs: appDataAverageMs,
-          maxDurationMs: metrics.ssr.appData.maxDurationMs,
-          lastDurationMs: metrics.ssr.appData.lastDurationMs,
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.query.deep === '1') {
+      const [redisStatus, postgresStatus] = await Promise.all([
+        checkRedisHealth().catch((error) => ({ status: 'error', error: error.message })),
+        checkPostgresHealth().catch((error) => ({ status: 'error', error: error.message })),
+      ]);
+      const checks = {
+        redis: redisStatus,
+        postgres: postgresStatus,
+      };
+      const healthy = Object.values(checks).every(
+        (entry) => entry.status === 'ok' || entry.status === 'disabled',
+      );
+      if (!healthy) {
+        console.warn('[healthz deep] failing readiness check:', checks);
+      }
+      const averageDurationMs = metrics.maptiler.requests > 0
+        ? Math.round((metrics.maptiler.totalDurationMs / metrics.maptiler.requests) * 100) / 100
+        : 0;
+      const ssrAverageMs = metrics.ssr.requests > 0
+        ? Math.round((metrics.ssr.totalDurationMs / metrics.ssr.requests) * 100) / 100
+        : 0;
+      const appDataAverageMs = metrics.ssr.appData.runs > 0
+        ? Math.round((metrics.ssr.appData.totalDurationMs / metrics.ssr.appData.runs) * 100) / 100
+        : 0;
+      const metricsSummary = {
+        maptiler: {
+          requests: metrics.maptiler.requests,
+          errors: metrics.maptiler.errors,
+          averageDurationMs,
+          maxDurationMs: metrics.maptiler.maxDurationMs,
+          slowCount: metrics.maptiler.slowCount,
+          modes: metrics.maptiler.modes,
+          fallbacks: metrics.maptiler.fallbacks,
+          lastStatus: metrics.maptiler.lastStatus,
+          lastDurationMs: metrics.maptiler.lastDurationMs,
+          lastErrorMessage: metrics.maptiler.lastErrorMessage,
         },
-      },
+        pmtilesWarmup: {
+          tilesFetched: metrics.pmtiles.warmup.tilesFetched,
+          tilesFailed: metrics.pmtiles.warmup.tilesFailed,
+          originTiles: metrics.pmtiles.warmup.originTiles,
+          cdnTiles: metrics.pmtiles.warmup.cdnTiles,
+          lastRunStartedAt: metrics.pmtiles.warmup.lastRunStartedAt,
+          lastRunDurationMs: metrics.pmtiles.warmup.lastRunDurationMs,
+          lastRunTilesFetched: metrics.pmtiles.warmup.lastRunTilesFetched,
+          lastRunTilesFailed: metrics.pmtiles.warmup.lastRunTilesFailed,
+          lastRunOriginTiles: metrics.pmtiles.warmup.lastRunOriginTiles,
+          lastRunCdnTiles: metrics.pmtiles.warmup.lastRunCdnTiles,
+          lastErrorMessage: metrics.pmtiles.warmup.lastErrorMessage,
+        },
+        ssr: {
+          requests: metrics.ssr.requests,
+          cacheHits: metrics.ssr.cacheHits,
+          cacheMisses: metrics.ssr.cacheMisses,
+          averageDurationMs: ssrAverageMs,
+          maxDurationMs: metrics.ssr.maxDurationMs,
+          lastDurationMs: metrics.ssr.lastDurationMs,
+          appData: {
+            runs: metrics.ssr.appData.runs,
+            averageDurationMs: appDataAverageMs,
+            maxDurationMs: metrics.ssr.appData.maxDurationMs,
+            lastDurationMs: metrics.ssr.appData.lastDurationMs,
+          },
+        },
+      };
+      res.status(healthy ? 200 : 503).json({
+        status: healthy ? 'ok' : 'degraded',
+        timestamp: new Date().toISOString(),
+        checks,
+        metrics: metricsSummary,
+      });
+      return;
+    }
+
+    const payload = {
+      status: startupState.listening ? 'ok' : 'starting',
+      timestamp: new Date().toISOString(),
+      startedAt: new Date(startupState.startedAt).toISOString(),
+      readyAt: startupState.readyAt ? new Date(startupState.readyAt).toISOString() : null,
+      uptimeSeconds: Math.floor((Date.now() - startupState.startedAt) / 1000),
+      dependencies: startupState.dependencies,
+      merge: startupState.merge,
+      warmup: startupState.warmup,
     };
-    res.status(healthy ? 200 : 503).json({
-      status: healthy ? 'ok' : 'degraded',
-      uptimeSeconds: Math.round(process.uptime()),
-      checks,
-      metrics: metricsSummary,
-    });
+    res.json(payload);
   });
 
   app.get('/proxy/maptiler/:path(*)', async (req, res) => {
@@ -2304,21 +2455,7 @@ async function createDevServer() {
 
   app.use(vite.middlewares);
 
-  try {
-    console.time('app-data:warmup');
-    await createAppData({ bypassCache: true });
-    console.timeEnd('app-data:warmup');
-  } catch (error) {
-    console.warn('Unable to warm app data cache:', error.message);
-  }
-
-  try {
-    console.time('tile-service:warmup');
-    await tileService.ensureLoaded();
-    console.timeEnd('tile-service:warmup');
-  } catch (error) {
-    console.warn('Unable to warm tile cache:', error.message);
-  }
+  // Heavy warmup tasks run in the background after the server starts listening.
 
   app.use('*', async (req, res) => {
     const url = req.originalUrl;
@@ -2373,6 +2510,8 @@ async function createDevServer() {
 
   const port = Number(process.env.PORT ?? 5173);
   app.listen(port, () => {
+    startupState.listening = true;
+    startupState.readyAt = Date.now();
     console.log(`\nSSR dev server running at http://localhost:${port}`);
   });
 }
@@ -2451,9 +2590,13 @@ async function createProdServer() {
     }
   });
 
-  const port = Number(process.env.PORT ?? 4173);
-  app.listen(port, () => {
-    console.log(`\nSSR production server running at http://localhost:${port}`);
+  const port = Number.parseInt(process.env.PORT ?? '8080', 10);
+  const host = process.env.HOST || '0.0.0.0';
+  app.listen(port, host, () => {
+    startupState.listening = true;
+    startupState.readyAt = Date.now();
+    console.log(`\nSSR production server running at http://${host}:${port}`);
+    scheduleProductionWarmup();
   });
 }
 
