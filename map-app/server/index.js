@@ -207,11 +207,13 @@ console.log('[pmtiles] runtime config', {
   privateBaseUrl: pmtilesRuntimeConfig.privateBaseUrl,
   bucket: pmtilesRuntimeConfig.bucket,
   region: pmtilesRuntimeConfig.region,
+  objectPrefix: pmtilesRuntimeConfig.objectPrefix,
 });
 const pmtilesManifest = buildPmtilesManifest(pmtilesRuntimeConfig);
 console.log('[pmtiles] manifest status', {
   enabled: pmtilesManifest.enabled,
   baseUrl: pmtilesManifest.baseUrl,
+  objectPrefix: pmtilesManifest.objectPrefix,
   datasetCount: Object.keys(pmtilesManifest.datasets || {}).length,
   wardDatasetCount: Object.keys(pmtilesManifest.wardDatasets || {}).length,
 });
