@@ -2,7 +2,7 @@
 
 const TILE_CACHE_NAME = 'tile-cache-v2';
 const ASSET_CACHE_NAME = 'map-assets-v1';
-const MAX_TILE_ENTRIES = 360;
+const MAX_TILE_ENTRIES = 512;
 const PRECACHE_ASSETS = ['/styles/basic-style.json'];
 
 self.addEventListener('install', (event) => {
@@ -70,6 +70,15 @@ function isAssetRequest(request) {
 function canonicalTileKey(request) {
   const url = new URL(request.url);
   url.hash = '';
+  if (url.searchParams.has('ts')) {
+    url.searchParams.delete('ts');
+  }
+  if (url.searchParams.has('_')) {
+    url.searchParams.delete('_');
+  }
+  if (url.searchParams.has('cb')) {
+    url.searchParams.delete('cb');
+  }
   return url.toString();
 }
 
@@ -104,9 +113,10 @@ async function staleWhileRevalidate(request, cacheName) {
     .then(async (response) => {
       if (response && response.ok && (response.type === 'basic' || response.type === 'cors')) {
         if (isTileCache) {
-          if (response.status === 200 && canonicalKey) {
+          const isPartial = response.status === 206 || response.headers.get('Content-Range');
+          if (!isPartial && response.status === 200 && canonicalKey) {
             await cache.put(canonicalKey, response.clone());
-          } else {
+          } else if (!isPartial) {
             await cache.put(request, response.clone());
           }
           await trimCache(cacheName, MAX_TILE_ENTRIES);

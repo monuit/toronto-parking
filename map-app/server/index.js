@@ -265,6 +265,20 @@ const metrics = {
     lastSubmission: null,
     payload: null,
   },
+  ssr: {
+    requests: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    totalDurationMs: 0,
+    maxDurationMs: 0,
+    lastDurationMs: 0,
+    appData: {
+      runs: 0,
+      totalDurationMs: 0,
+      maxDurationMs: 0,
+      lastDurationMs: 0,
+    },
+  },
 };
 
 function recordMaptilerMetric({ durationMs, success, statusCode, mode, usedFallback = false, errorMessage = null }) {
@@ -292,6 +306,26 @@ function recordMaptilerMetric({ durationMs, success, statusCode, mode, usedFallb
   }
   if (usedFallback) {
     metrics.maptiler.fallbacks += 1;
+  }
+}
+
+function recordSsrMetric({ durationMs, fromCache, appDataDurationMs }) {
+  if (Number.isFinite(durationMs)) {
+    metrics.ssr.requests += 1;
+    metrics.ssr.totalDurationMs += durationMs;
+    metrics.ssr.maxDurationMs = Math.max(metrics.ssr.maxDurationMs, durationMs);
+    metrics.ssr.lastDurationMs = durationMs;
+  }
+  if (fromCache === true) {
+    metrics.ssr.cacheHits += 1;
+  } else if (fromCache === false) {
+    metrics.ssr.cacheMisses += 1;
+  }
+  if (Number.isFinite(appDataDurationMs)) {
+    metrics.ssr.appData.runs += 1;
+    metrics.ssr.appData.totalDurationMs += appDataDurationMs;
+    metrics.ssr.appData.maxDurationMs = Math.max(metrics.ssr.appData.maxDurationMs, appDataDurationMs);
+    metrics.ssr.appData.lastDurationMs = appDataDurationMs;
   }
 }
 
@@ -1144,6 +1178,12 @@ function registerTileRoutes(app) {
     const averageDurationMs = metrics.maptiler.requests > 0
       ? Math.round((metrics.maptiler.totalDurationMs / metrics.maptiler.requests) * 100) / 100
       : 0;
+    const ssrAverageMs = metrics.ssr.requests > 0
+      ? Math.round((metrics.ssr.totalDurationMs / metrics.ssr.requests) * 100) / 100
+      : 0;
+    const appDataAverageMs = metrics.ssr.appData.runs > 0
+      ? Math.round((metrics.ssr.appData.totalDurationMs / metrics.ssr.appData.runs) * 100) / 100
+      : 0;
     const metricsSummary = {
       maptiler: {
         requests: metrics.maptiler.requests,
@@ -1169,6 +1209,20 @@ function registerTileRoutes(app) {
         lastRunOriginTiles: metrics.pmtiles.warmup.lastRunOriginTiles,
         lastRunCdnTiles: metrics.pmtiles.warmup.lastRunCdnTiles,
         lastErrorMessage: metrics.pmtiles.warmup.lastErrorMessage,
+      },
+      ssr: {
+        requests: metrics.ssr.requests,
+        cacheHits: metrics.ssr.cacheHits,
+        cacheMisses: metrics.ssr.cacheMisses,
+        averageDurationMs: ssrAverageMs,
+        maxDurationMs: metrics.ssr.maxDurationMs,
+        lastDurationMs: metrics.ssr.lastDurationMs,
+        appData: {
+          runs: metrics.ssr.appData.runs,
+          averageDurationMs: appDataAverageMs,
+          maxDurationMs: metrics.ssr.appData.maxDurationMs,
+          lastDurationMs: metrics.ssr.appData.lastDurationMs,
+        },
       },
     };
     res.status(healthy ? 200 : 503).json({
@@ -1958,6 +2012,18 @@ function registerTileRoutes(app) {
       fpsSamples: Array.isArray(payload.fpsSamples) ? payload.fpsSamples.slice(0, 8) : [],
       panFps: Array.isArray(payload.panFps) ? payload.panFps.slice(0, 8) : [],
       tileRequests: Number.parseInt(payload.tileRequests, 10) || 0,
+      tileWindow: {
+        count: Number.parseInt(payload?.tileWindow?.count, 10) || 0,
+        windowMs: Number.parseInt(payload?.tileWindow?.windowMs, 10) || 10_000,
+      },
+      tileCompleted: Number.parseInt(payload.tileCompleted, 10) || 0,
+      tileAborted: Number.parseInt(payload.tileAborted, 10) || 0,
+      tileAbortRatio: Number.isFinite(Number(payload.tileAbortRatio)) ? Number(payload.tileAbortRatio) : null,
+      tileTtfb: Array.isArray(payload.tileTtfb) ? payload.tileTtfb.slice(0, 16) : [],
+      firstContentfulPaint: Number(payload.firstContentfulPaint) || null,
+      firstPaint: Number(payload.firstPaint) || null,
+      firstInputDelay: Number(payload.firstInputDelay) || null,
+      jsBytes: Number.parseInt(payload.jsBytes, 10) || 0,
       generatedAt: payload.generatedAt || new Date().toISOString(),
     };
     console.log('[client-metrics]', metrics.client.payload);
@@ -2210,6 +2276,7 @@ async function createDevServer() {
 
   app.use('*', async (req, res) => {
     const url = req.originalUrl;
+    const requestStarted = performance.now();
 
     try {
       let template = await fs.readFile(resolve('index.html'), 'utf-8');
@@ -2226,8 +2293,31 @@ async function createDevServer() {
       const { appHtml } = await render(url, { initialData });
 
       const html = injectTemplate(template, appHtml, initialData, pmtilesManifest);
-
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      const renderDurationMs = performance.now() - requestStarted;
+      recordSsrMetric({
+        durationMs: renderDurationMs,
+        fromCache: appDataMeta?.fromCache ?? null,
+        appDataDurationMs: appDataMeta?.durationMs,
+      });
+      const headers = {
+        'Content-Type': 'text/html',
+        'X-Render-Duration': String(Math.round(renderDurationMs)),
+        'Server-Timing': `render;dur=${renderDurationMs.toFixed(1)}`,
+      };
+      if (Number.isFinite(appDataMeta?.durationMs)) {
+        headers['X-App-Data-Duration'] = String(Math.round(appDataMeta.durationMs));
+      }
+      if (Number.isFinite(appDataMeta?.sizeBytes)) {
+        headers['X-App-Data-Bytes'] = String(appDataMeta.sizeBytes);
+      }
+      res.status(200).set(headers);
+      if (appDataMeta) {
+        res.setHeader('X-App-Data-Source', appDataMeta.fromCache ? 'cache' : 'refreshed');
+        if (appDataMeta.refreshedAt) {
+          res.setHeader('X-App-Data-Refreshed-At', appDataMeta.refreshedAt);
+        }
+      }
+      res.end(html);
     } catch (err) {
       vite.ssrFixStacktrace(err);
       console.error(err);
@@ -2269,6 +2359,7 @@ async function createProdServer() {
 
   app.use('*', async (req, res) => {
     const url = req.originalUrl;
+    const requestStarted = performance.now();
 
     try {
       const template = await fs.readFile(path.join(distPath, 'index.html'), 'utf-8');
@@ -2283,8 +2374,31 @@ async function createProdServer() {
       const { appHtml } = await render(url, { initialData });
 
       const html = injectTemplate(template, appHtml, initialData, pmtilesManifest);
-
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      const renderDurationMs = performance.now() - requestStarted;
+      recordSsrMetric({
+        durationMs: renderDurationMs,
+        fromCache: appDataMeta?.fromCache ?? null,
+        appDataDurationMs: appDataMeta?.durationMs,
+      });
+      const headers = {
+        'Content-Type': 'text/html',
+        'X-Render-Duration': String(Math.round(renderDurationMs)),
+        'Server-Timing': `render;dur=${renderDurationMs.toFixed(1)}`,
+      };
+      if (Number.isFinite(appDataMeta?.durationMs)) {
+        headers['X-App-Data-Duration'] = String(Math.round(appDataMeta.durationMs));
+      }
+      if (Number.isFinite(appDataMeta?.sizeBytes)) {
+        headers['X-App-Data-Bytes'] = String(appDataMeta.sizeBytes);
+      }
+      res.status(200).set(headers);
+      if (appDataMeta) {
+        res.setHeader('X-App-Data-Source', appDataMeta.fromCache ? 'cache' : 'refreshed');
+        if (appDataMeta.refreshedAt) {
+          res.setHeader('X-App-Data-Refreshed-At', appDataMeta.refreshedAt);
+        }
+      }
+      res.end(html);
     } catch (err) {
       console.error(err);
       res.status(500).set({ 'Content-Type': 'text/plain' }).end('Internal Server Error');
