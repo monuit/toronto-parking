@@ -186,77 +186,11 @@ if (isProd && !dataDir.includes('dist/client/data')) {
 }
 
 const styleCache = {
-  key: null,
-  mtime: null,
-  raw: null,
-  base: null,
   proxyTemplate: null,
-  directTemplate: null,
 };
 
 function invalidateStyleCache() {
   styleCache.proxyTemplate = null;
-  styleCache.directTemplate = null;
-}
-
-function stripMaptilerKey(url) {
-  if (typeof url !== 'string' || !url.includes('api.maptiler.com')) {
-    return url;
-  }
-  try {
-    const parsed = new URL(url);
-    parsed.searchParams.delete('key');
-    const cleaned = parsed.toString();
-    return cleaned.endsWith('?') ? cleaned.slice(0, -1) : cleaned;
-  } catch {
-    return url
-      .replace(/([?&])key=[^&]*(&|$)/gi, (match, prefix, suffix) => {
-        if (suffix === '&') {
-          return prefix;
-        }
-        return prefix === '?' ? '' : '';
-      })
-      .replace(/\?&/g, '?')
-      .replace(/\?$/g, '');
-  }
-}
-
-function ensureMaptilerKey(url, key) {
-  if (typeof url !== 'string' || !url.includes('api.maptiler.com')) {
-    return url;
-  }
-  const sanitized = stripMaptilerKey(url);
-  if (!key) {
-    return sanitized;
-  }
-  const joiner = sanitized.includes('?') ? '&' : '?';
-  return `${sanitized}${joiner}key=${encodeURIComponent(key)}`;
-}
-
-
-function applyMaptilerKeyToStyle(style, key) {
-  if (!style || typeof style !== 'object') {
-    return;
-  }
-  if (style.sources && typeof style.sources === 'object') {
-    for (const source of Object.values(style.sources)) {
-      if (!source || typeof source !== 'object') {
-        continue;
-      }
-      if (Array.isArray(source.tiles)) {
-        source.tiles = source.tiles.map((tileUrl) => ensureMaptilerKey(tileUrl, key));
-      }
-      if (typeof source.url === 'string') {
-        source.url = ensureMaptilerKey(source.url, key);
-      }
-    }
-  }
-  if (typeof style.sprite === 'string') {
-    style.sprite = ensureMaptilerKey(style.sprite, key);
-  }
-  if (typeof style.glyphs === 'string') {
-    style.glyphs = ensureMaptilerKey(style.glyphs, key);
-  }
 }
 
 let loggedMissingMapKey = false;
@@ -1059,20 +993,6 @@ async function resolveMaptilerResource(descriptor, fetcher) {
   }
 }
 
-function cloneBaseStyle() {
-  if (styleCache.base && typeof styleCache.base === 'object') {
-    return JSON.parse(JSON.stringify(styleCache.base));
-  }
-  if (typeof styleCache.raw === 'string' && styleCache.raw.length > 0) {
-    try {
-      return JSON.parse(styleCache.raw);
-    } catch (error) {
-      console.warn('Failed to parse cached base style JSON:', error.message);
-    }
-  }
-  return null;
-}
-
 async function loadBaseStyle() {
   const key = process.env.MAPLIBRE_API_KEY || process.env.MAPTILER_API_KEY || '';
   if (!key && !loggedMissingMapKey) {
@@ -1080,81 +1000,62 @@ async function loadBaseStyle() {
     loggedMissingMapKey = true;
   }
 
-  let fileStats = null;
-  try {
-    fileStats = await fs.stat(stylePath);
-  } catch (error) {
-    throw new Error(`Base style file not found at ${stylePath}: ${error.message}`);
-  }
-
-  const mtimeMs = fileStats ? fileStats.mtimeMs : null;
-  const needsReload = styleCache.mtime !== mtimeMs;
-  if (needsReload) {
-    const raw = await fs.readFile(stylePath, 'utf-8');
-    let parsed = null;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (error) {
-      console.warn('Failed to parse base style JSON, retaining raw fallback:', error.message);
-    }
-    styleCache.raw = raw;
-    styleCache.base = parsed && typeof parsed === 'object' ? parsed : null;
-    styleCache.mtime = mtimeMs;
-    styleCache.proxyTemplate = null;
-    styleCache.directTemplate = null;
-  }
-
-  if (styleCache.key !== key) {
-    styleCache.key = key;
-    styleCache.proxyTemplate = null;
-    styleCache.directTemplate = null;
-  }
-
   if (shouldUseMaptilerProxy()) {
     if (!styleCache.proxyTemplate) {
-      const baseStyle = cloneBaseStyle();
-      if (baseStyle) {
-        if (!baseStyle.sources || typeof baseStyle.sources !== 'object') {
-          baseStyle.sources = {};
+      let raw;
+      try {
+        raw = await fs.readFile(stylePath, 'utf-8');
+      } catch (error) {
+        throw new Error(`Base style file not found at ${stylePath}: ${error.message}`);
+      }
+      let parsed = null;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        console.warn('Failed to parse base style JSON for proxy template:', error.message);
+      }
+      if (parsed && typeof parsed === 'object') {
+        if (!parsed.sources || typeof parsed.sources !== 'object') {
+          parsed.sources = {};
         }
-        baseStyle.sources.openmaptiles = {
+        parsed.sources.openmaptiles = {
           type: 'vector',
           tiles: ['/proxy/maptiler/tiles/v3/{z}/{x}/{y}.pbf'],
           minzoom: 0,
           maxzoom: 14,
-          attribution: baseStyle.sources?.openmaptiles?.attribution
+          attribution: parsed.sources?.openmaptiles?.attribution
             || '© OpenMapTiles © OpenStreetMap contributors',
         };
-        baseStyle.glyphs = '/proxy/maptiler/fonts/{fontstack}/{range}.pbf';
-        if (typeof baseStyle.sprite === 'string' && baseStyle.sprite.includes('get_your_own_OpIi9ZULNHzrESv6T2vL')) {
-          baseStyle.sprite = baseStyle.sprite.replace('get_your_own_OpIi9ZULNHzrESv6T2vL', '');
+        parsed.glyphs = '/proxy/maptiler/fonts/{fontstack}/{range}.pbf';
+        if (typeof parsed.sprite === 'string' && parsed.sprite.includes('get_your_own_OpIi9ZULNHzrESv6T2vL')) {
+          parsed.sprite = parsed.sprite.replace('get_your_own_OpIi9ZULNHzrESv6T2vL', '');
         }
-        styleCache.proxyTemplate = JSON.stringify(baseStyle);
-      } else if (typeof styleCache.raw === 'string') {
-        styleCache.proxyTemplate = styleCache.raw.replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, '');
+        styleCache.proxyTemplate = JSON.stringify(parsed);
       } else {
-        styleCache.proxyTemplate = '';
+        styleCache.proxyTemplate = (raw || '').replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, '');
       }
     }
     return sanitizeMaptilerText(styleCache.proxyTemplate, '');
   }
 
-  if (!styleCache.directTemplate) {
-    const directStyle = cloneBaseStyle();
-    if (directStyle) {
-      applyMaptilerKeyToStyle(directStyle, key);
-      styleCache.directTemplate = JSON.stringify(directStyle);
-      console.log('[maptiler] base style cached in direct mode', { keyPresent: Boolean(key) });
-    } else if (typeof styleCache.raw === 'string') {
-      const rewritten = styleCache.raw.replace(/https?:\/\/api\.maptiler\.com[^"'\s)]+/gi, (match) => ensureMaptilerKey(match, key));
-      styleCache.directTemplate = rewritten;
-      console.log('[maptiler] base style (raw) cached in direct mode', { keyPresent: Boolean(key) });
-    } else {
-      styleCache.directTemplate = '';
-    }
+  let raw;
+  try {
+    raw = await fs.readFile(stylePath, 'utf-8');
+  } catch (error) {
+    throw new Error(`Base style file not found at ${stylePath}: ${error.message}`);
   }
 
-  return styleCache.directTemplate;
+  if (!raw) {
+    return '';
+  }
+
+  if (!key) {
+    return raw;
+  }
+
+  return raw
+    .replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, key)
+    .replace(/\{\{MAPLIBRE_API_KEY\}\}/g, key);
 }
 
 function encodeTileBuffer(buffer, acceptEncoding = '') {
