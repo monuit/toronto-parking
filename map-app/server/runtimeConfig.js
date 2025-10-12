@@ -140,9 +140,9 @@ function normalizePrefix(raw, defaultValue = 'pmtiles') {
 
 export function getPmtilesRuntimeConfig() {
   const basePublic = process.env.PMTILES_PUBLIC_BASE_URL
-    || (process.env.MINIO_PUBLIC_ENDPOINT ? `${process.env.MINIO_PUBLIC_ENDPOINT.replace(/\/?$/, '')}/pmtiles` : null);
+    || (process.env.MINIO_PUBLIC_ENDPOINT ? process.env.MINIO_PUBLIC_ENDPOINT.replace(/\/?$/, '') : null);
   const basePrivate = process.env.PMTILES_PRIVATE_BASE_URL
-    || (process.env.MINIO_PRIVATE_ENDPOINT ? `${process.env.MINIO_PRIVATE_ENDPOINT.replace(/\/?$/, '')}/pmtiles` : null);
+    || (process.env.MINIO_PRIVATE_ENDPOINT ? process.env.MINIO_PRIVATE_ENDPOINT.replace(/\/?$/, '') : null);
   const bucket = process.env.PMTILES_BUCKET || 'pmtiles';
   const region = process.env.MINIO_REGION || 'us-east-1';
   const objectPrefix = normalizePrefix(process.env.PMTILES_PREFIX);
