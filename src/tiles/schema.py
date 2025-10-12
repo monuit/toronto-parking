@@ -48,8 +48,8 @@ class TileSchemaManager:
     """Applies schema upgrades required for optimized tile generation."""
 
     pg: PostgresClient
-    quadkey_zoom: int = 12
-    quadkey_prefix_length: int = 6
+    quadkey_zoom: int = 16
+    quadkey_prefix_length: int = 16
     logger: Callable[[str], None] | None = None
 
     def ensure(self, *, include_tile_tables: bool = True) -> None:
@@ -83,6 +83,8 @@ class TileSchemaManager:
         self.pg.ensure_extensions()
         self._log("Ensuring helper functions")
         self._ensure_helper_functions()
+        self._log("Ensuring tile batch functions")
+        self._ensure_tile_fetch_functions()
 
     def _quote_ident(self, value: str) -> str:
         return f'"{str(value).replace("\"", "\"\"")}"'
@@ -172,6 +174,7 @@ class TileSchemaManager:
 
         self._log(f"    Creating temporary replacement table '{tmp_table}'")
         self.pg.execute(f"DROP TABLE IF EXISTS {self._quote_ident(tmp_table)} CASCADE")
+        self.pg.execute(f"DROP TYPE IF EXISTS {self._quote_ident(tmp_table)} CASCADE")
 
         create_sql = f"""
             CREATE TABLE {self._quote_ident(tmp_table)} AS
@@ -241,48 +244,44 @@ class TileSchemaManager:
                 prefix_length integer
             ) RETURNS text AS $$
             DECLARE
-                lon float8;
-                lat float8;
-                tile_x bigint;
-                tile_y bigint;
-                i integer;
-                digit integer;
-                quadkey text := '';
-                point_4326 geometry;
                 max_zoom integer := GREATEST(1, zoom);
                 effective_prefix integer := LEAST(GREATEST(prefix_length, 1), max_zoom);
+                quadkey text;
+                srid integer;
             BEGIN
                 IF input IS NULL THEN
                     RETURN NULL;
                 END IF;
-                point_4326 := ST_Transform(
-                    ST_SetSRID(ST_Centroid(input), COALESCE(ST_SRID(input), 4326)),
-                    4326
-                );
-                lon := ST_X(point_4326);
-                lat := ST_Y(point_4326);
-                lon := GREATEST(LEAST(lon, 180.0), -180.0);
-                lat := GREATEST(LEAST(lat, 85.0511287798), -85.0511287798);
 
-                tile_x := floor(((lon + 180.0) / 360.0) * power(2, max_zoom));
-                tile_y := floor(
-                    (
-                        1.0 - ln(tan(radians(lat)) + (1.0 / cos(radians(lat)))) / pi()
-                    ) / 2.0 * power(2, max_zoom)
-                );
+                srid := COALESCE(NULLIF(ST_SRID(input), 0), 3857);
 
-                FOR i IN REVERSE 1..max_zoom LOOP
-                    digit := 0;
-                    IF ((tile_x >> (i - 1)) & 1) = 1 THEN
-                        digit := digit + 1;
-                    END IF;
-                    IF ((tile_y >> (i - 1)) & 1) = 1 THEN
-                        digit := digit + 2;
-                    END IF;
-                    quadkey := quadkey || digit::text;
-                END LOOP;
+                WITH point AS (
+                    SELECT ST_Transform(
+                        ST_SetSRID(ST_Centroid(input), srid),
+                        4326
+                    ) AS geom
+                ), coords AS (
+                    SELECT
+                        GREATEST(LEAST(ST_X(geom), 180.0), -180.0) AS lon,
+                        GREATEST(LEAST(ST_Y(geom), 85.0511287798), -85.0511287798) AS lat
+                    FROM point
+                ), tiles AS (
+                    SELECT
+                        floor(((lon + 180.0) / 360.0) * power(2, max_zoom))::bigint AS tile_x,
+                        floor(((1.0 - ln(tan(radians(lat)) + (1.0 / cos(radians(lat)))) / pi()) / 2.0 * power(2, max_zoom)))::bigint AS tile_y
+                    FROM coords
+                ), digits AS (
+                    SELECT
+                        ((tile_x >> (i - 1)) & 1) + 2 * ((tile_y >> (i - 1)) & 1) AS digit,
+                        i
+                    FROM tiles,
+                    LATERAL generate_series(max_zoom, 1, -1) AS gs(i)
+                )
+                SELECT string_agg(digit::text, '' ORDER BY i DESC)
+                INTO quadkey
+                FROM digits;
 
-                RETURN SUBSTRING(quadkey FROM 1 FOR effective_prefix);
+                RETURN SUBSTRING(COALESCE(quadkey, '') FROM 1 FOR effective_prefix);
             END;
             $$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
             """
@@ -298,6 +297,245 @@ class TileSchemaManager:
                 RETURN ST_SetSRID(ST_TileEnvelope(z, x, y), 3857);
             END;
             $$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
+            """
+        )
+
+    def _ensure_tile_fetch_functions(self) -> None:
+        prefix_len = self.quadkey_prefix_length
+        quadkey_zoom = self.quadkey_zoom
+
+        self._log("  Ensuring tile_blob_cache table")
+        self.pg.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.tile_blob_cache (
+                dataset text NOT NULL,
+                z integer NOT NULL,
+                x integer NOT NULL,
+                y integer NOT NULL,
+                mvt bytea NOT NULL,
+                PRIMARY KEY (dataset, z, x, y)
+            )
+            """
+        )
+        self.pg.execute(
+            """
+            CREATE INDEX IF NOT EXISTS tile_blob_cache_dataset_z_idx
+            ON public.tile_blob_cache (dataset, z)
+            """
+        )
+
+        self._log("  Creating get_parking_tiles function")
+        self.pg.execute(
+            f"""
+            CREATE OR REPLACE FUNCTION public.get_parking_tiles(
+                zs integer[],
+                xs integer[],
+                ys integer[]
+            ) RETURNS TABLE (z integer, x integer, y integer, mvt bytea)
+            LANGUAGE sql
+            STABLE
+            PARALLEL SAFE
+            AS
+            $$
+            WITH req AS (
+                SELECT ord, z, x, y
+                FROM unnest(zs, xs, ys) WITH ORDINALITY AS t(z, x, y, ord)
+            ), bounds AS (
+                SELECT ord, z, x, y, ST_SetSRID(ST_TileEnvelope(z, x, y), 3857) AS geom
+                FROM req
+            ), pref AS (
+                SELECT
+                    r.ord,
+                    r.z,
+                    r.x,
+                    r.y,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix,
+                    SUBSTRING(mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) FROM 1 FOR 1) AS grp
+                FROM req r
+                JOIN bounds b USING (ord, z, x, y)
+            )
+            SELECT
+                p.z,
+                p.x,
+                p.y,
+                CASE
+                    WHEN cache.mvt IS NOT NULL THEN cache.mvt
+                    ELSE (
+                        SELECT ST_AsMVT(mvt_rows, 'parking_tickets', 4096, 'geom')
+                        FROM (
+                            SELECT
+                                ST_AsMVTGeom(t.geom, b.geom, 4096, 64, true) AS geom,
+                                t.feature_id,
+                                t.ticket_count,
+                                t.total_fine_amount,
+                                t.street_normalized,
+                                t.centreline_id
+                            FROM parking_ticket_tiles t
+                            WHERE t.dataset = 'parking_tickets'
+                              AND t.min_zoom <= p.z
+                              AND t.max_zoom >= p.z
+                              AND t.tile_qk_group = p.grp
+                          AND t.tile_qk_prefix LIKE p.prefix || '%%'
+                              AND t.geom && b.geom
+                        ) AS mvt_rows
+                    )
+                END AS mvt
+            FROM pref p
+            JOIN bounds b USING (ord, z, x, y)
+            LEFT JOIN LATERAL (
+                SELECT mvt
+                FROM public.tile_blob_cache cache
+                WHERE cache.dataset = 'parking_tickets'
+                  AND cache.z = p.z
+                  AND cache.x = p.x
+                  AND cache.y = p.y
+            ) AS cache ON p.z <= 10
+            WHERE p.prefix IS NOT NULL
+            $$;
+            """
+        )
+
+        self._log("  Creating get_red_light_tiles function")
+        self.pg.execute(
+            f"""
+            CREATE OR REPLACE FUNCTION public.get_red_light_tiles(
+                zs integer[],
+                xs integer[],
+                ys integer[]
+            ) RETURNS TABLE (z integer, x integer, y integer, mvt bytea)
+            LANGUAGE sql
+            STABLE
+            PARALLEL SAFE
+            AS
+            $$
+            WITH req AS (
+                SELECT ord, z, x, y
+                FROM unnest(zs, xs, ys) WITH ORDINALITY AS t(z, x, y, ord)
+            ), bounds AS (
+                SELECT ord, z, x, y, ST_SetSRID(ST_TileEnvelope(z, x, y), 3857) AS geom
+                FROM req
+            ), pref AS (
+                SELECT
+                    r.ord,
+                    r.z,
+                    r.x,
+                    r.y,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix,
+                    SUBSTRING(mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) FROM 1 FOR 1) AS grp
+                FROM req r
+                JOIN bounds b USING (ord, z, x, y)
+            )
+            SELECT
+                p.z,
+                p.x,
+                p.y,
+                CASE
+                    WHEN cache.mvt IS NOT NULL THEN cache.mvt
+                    ELSE (
+                        SELECT ST_AsMVT(mvt_rows, 'red_light_locations', 4096, 'geom')
+                        FROM (
+                            SELECT
+                                ST_AsMVTGeom(t.geom, b.geom, 4096, 64, true) AS geom,
+                                t.feature_id,
+                                t.ticket_count,
+                                t.total_fine_amount,
+                                t.location_name,
+                                t.location,
+                                t.ward
+                            FROM red_light_camera_tiles t
+                            WHERE t.dataset = 'red_light_locations'
+                              AND t.min_zoom <= p.z
+                              AND t.max_zoom >= p.z
+                              AND t.tile_qk_group = p.grp
+                          AND t.tile_qk_prefix LIKE p.prefix || '%%'
+                              AND t.geom && b.geom
+                        ) AS mvt_rows
+                    )
+                END AS mvt
+            FROM pref p
+            JOIN bounds b USING (ord, z, x, y)
+            LEFT JOIN LATERAL (
+                SELECT mvt
+                FROM public.tile_blob_cache cache
+                WHERE cache.dataset = 'red_light_locations'
+                  AND cache.z = p.z
+                  AND cache.x = p.x
+                  AND cache.y = p.y
+            ) AS cache ON p.z <= 10
+            WHERE p.prefix IS NOT NULL
+            $$;
+            """
+        )
+
+        self._log("  Creating get_ase_tiles function")
+        self.pg.execute(
+            f"""
+            CREATE OR REPLACE FUNCTION public.get_ase_tiles(
+                zs integer[],
+                xs integer[],
+                ys integer[]
+            ) RETURNS TABLE (z integer, x integer, y integer, mvt bytea)
+            LANGUAGE sql
+            STABLE
+            PARALLEL SAFE
+            AS
+            $$
+            WITH req AS (
+                SELECT ord, z, x, y
+                FROM unnest(zs, xs, ys) WITH ORDINALITY AS t(z, x, y, ord)
+            ), bounds AS (
+                SELECT ord, z, x, y, ST_SetSRID(ST_TileEnvelope(z, x, y), 3857) AS geom
+                FROM req
+            ), pref AS (
+                SELECT
+                    r.ord,
+                    r.z,
+                    r.x,
+                    r.y,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix,
+                    SUBSTRING(mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) FROM 1 FOR 1) AS grp
+                FROM req r
+                JOIN bounds b USING (ord, z, x, y)
+            )
+            SELECT
+                p.z,
+                p.x,
+                p.y,
+                CASE
+                    WHEN cache.mvt IS NOT NULL THEN cache.mvt
+                    ELSE (
+                        SELECT ST_AsMVT(mvt_rows, 'ase_locations', 4096, 'geom')
+                        FROM (
+                            SELECT
+                                ST_AsMVTGeom(t.geom, b.geom, 4096, 64, true) AS geom,
+                                t.feature_id,
+                                t.ticket_count,
+                                t.total_fine_amount,
+                                t.location,
+                                t.status,
+                                t.ward
+                            FROM ase_camera_tiles t
+                            WHERE t.dataset = 'ase_locations'
+                              AND t.min_zoom <= p.z
+                              AND t.max_zoom >= p.z
+                              AND t.tile_qk_group = p.grp
+                          AND t.tile_qk_prefix LIKE p.prefix || '%%'
+                              AND t.geom && b.geom
+                        ) AS mvt_rows
+                    )
+                END AS mvt
+            FROM pref p
+            JOIN bounds b USING (ord, z, x, y)
+            LEFT JOIN LATERAL (
+                SELECT mvt
+                FROM public.tile_blob_cache cache
+                WHERE cache.dataset = 'ase_locations'
+                  AND cache.z = p.z
+                  AND cache.x = p.x
+                  AND cache.y = p.y
+            ) AS cache ON p.z <= 10
+            WHERE p.prefix IS NOT NULL
+            $$;
             """
         )
 
@@ -330,9 +568,10 @@ class TileSchemaManager:
     def _ensure_tile_tables(self) -> None:
         """Create partitioned tile tables populated from the base tables."""
 
-        builders: Iterable[tuple[str, str, str]] = (
+        builders: Iterable[tuple[str, str, str, str]] = (
             (
                 "parking_ticket_tiles",
+                "parking_tickets",
                 "parking_tickets",
                 f"""
                     WITH ranked AS (
@@ -376,10 +615,16 @@ class TileSchemaManager:
                     FROM aggregated AS agg
                     CROSS JOIN LATERAL (
                         SELECT 0 AS min_zoom, 10 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(ST_SimplifyPreserveTopology(agg.geom_3857, 25), 32) AS subdivided(geom)
+                        FROM ST_Subdivide(
+                            ST_SnapToGrid(ST_SimplifyPreserveTopology(agg.geom_3857, 25), 1.0),
+                            32
+                        ) AS subdivided(geom)
                         UNION ALL
                         SELECT 11 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(agg.geom_3857, 4) AS subdivided(geom)
+                        FROM ST_Subdivide(
+                            ST_SnapToGrid(agg.geom_3857, 0.25),
+                            32
+                        ) AS subdivided(geom)
                     ) AS variants(min_zoom, max_zoom, geom_variant)
                     CROSS JOIN LATERAL (
                         SELECT (ST_Dump(geom_variant)).geom
@@ -389,6 +634,7 @@ class TileSchemaManager:
             (
                 "red_light_camera_tiles",
                 "red_light_camera_locations",
+                "red_light_locations",
                 f"""
                     SELECT
                         'red_light_locations' AS dataset,
@@ -419,10 +665,16 @@ class TileSchemaManager:
                     ) AS base
                     CROSS JOIN LATERAL (
                         SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(ST_SimplifyPreserveTopology(base.geom_3857, 30), 32) AS subdivided(geom)
+                        FROM ST_Subdivide(
+                            ST_SnapToGrid(ST_SimplifyPreserveTopology(base.geom_3857, 30), 1.0),
+                            32
+                        ) AS subdivided(geom)
                         UNION ALL
                         SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(base.geom_3857, 4) AS subdivided(geom)
+                        FROM ST_Subdivide(
+                            ST_SnapToGrid(base.geom_3857, 0.25),
+                            32
+                        ) AS subdivided(geom)
                     ) AS variants(min_zoom, max_zoom, geom_variant)
                     CROSS JOIN LATERAL (
                         SELECT (ST_Dump(geom_variant)).geom
@@ -432,6 +684,7 @@ class TileSchemaManager:
             (
                 "ase_camera_tiles",
                 "ase_camera_locations",
+                "ase_locations",
                 f"""
                     SELECT
                         'ase_locations' AS dataset,
@@ -463,10 +716,16 @@ class TileSchemaManager:
                     ) AS base
                     CROSS JOIN LATERAL (
                         SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(ST_SimplifyPreserveTopology(base.geom_3857, 30), 32) AS subdivided(geom)
+                        FROM ST_Subdivide(
+                            ST_SnapToGrid(ST_SimplifyPreserveTopology(base.geom_3857, 30), 1.0),
+                            32
+                        ) AS subdivided(geom)
                         UNION ALL
                         SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(base.geom_3857, 4) AS subdivided(geom)
+                        FROM ST_Subdivide(
+                            ST_SnapToGrid(base.geom_3857, 0.25),
+                            32
+                        ) AS subdivided(geom)
                     ) AS variants(min_zoom, max_zoom, geom_variant)
                     CROSS JOIN LATERAL (
                         SELECT (ST_Dump(geom_variant)).geom
@@ -475,7 +734,7 @@ class TileSchemaManager:
             ),
         )
 
-        for table_name, base_table, populate_sql in builders:
+        for table_name, base_table, dataset_name, populate_sql in builders:
             self._log(f"  Ensuring tile table '{table_name}' (source: {base_table})")
             parent_definition = f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
@@ -574,11 +833,15 @@ class TileSchemaManager:
                 f"CREATE INDEX IF NOT EXISTS {table_name}_geom_idx ON {table_name} USING GIST (geom);"
             )
             self.pg.execute(
-                f"CREATE INDEX IF NOT EXISTS {table_name}_zoom_idx ON {table_name} (min_zoom, max_zoom);"
+                f"CREATE INDEX IF NOT EXISTS {table_name}_dataset_prefix_idx ON {table_name} (dataset, tile_qk_group, tile_qk_prefix);"
+            )
+            self.pg.execute(
+                f"CREATE INDEX IF NOT EXISTS {table_name}_zoom_idx ON {table_name} (min_zoom, max_zoom) WHERE dataset = '{dataset_name}';"
             )
             self.pg.execute(
                 f"CREATE INDEX IF NOT EXISTS {table_name}_prefix_idx ON {table_name} (tile_qk_prefix);"
             )
+            self.pg.execute(f"ANALYZE {table_name};")
 
     def _ensure_quadkey_partitions(self, parent: str) -> None:
         """Ensure four list partitions (0-3) exist for the given parent table."""
