@@ -198,6 +198,67 @@ function invalidateStyleCache() {
   styleCache.proxyTemplate = null;
   styleCache.directTemplate = null;
 }
+
+function stripMaptilerKey(url) {
+  if (typeof url !== 'string' || !url.includes('api.maptiler.com')) {
+    return url;
+  }
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.delete('key');
+    const cleaned = parsed.toString();
+    return cleaned.endsWith('?') ? cleaned.slice(0, -1) : cleaned;
+  } catch {
+    return url
+      .replace(/([?&])key=[^&]*(&|$)/gi, (match, prefix, suffix) => {
+        if (suffix === '&') {
+          return prefix;
+        }
+        return prefix === '?' ? '' : '';
+      })
+      .replace(/\?&/g, '?')
+      .replace(/\?$/g, '');
+  }
+}
+
+function ensureMaptilerKey(url, key) {
+  if (typeof url !== 'string' || !url.includes('api.maptiler.com')) {
+    return url;
+  }
+  const sanitized = stripMaptilerKey(url);
+  if (!key) {
+    return sanitized;
+  }
+  const joiner = sanitized.includes('?') ? '&' : '?';
+  return `${sanitized}${joiner}key=${encodeURIComponent(key)}`;
+}
+
+
+function applyMaptilerKeyToStyle(style, key) {
+  if (!style || typeof style !== 'object') {
+    return;
+  }
+  if (style.sources && typeof style.sources === 'object') {
+    for (const source of Object.values(style.sources)) {
+      if (!source || typeof source !== 'object') {
+        continue;
+      }
+      if (Array.isArray(source.tiles)) {
+        source.tiles = source.tiles.map((tileUrl) => ensureMaptilerKey(tileUrl, key));
+      }
+      if (typeof source.url === 'string') {
+        source.url = ensureMaptilerKey(source.url, key);
+      }
+    }
+  }
+  if (typeof style.sprite === 'string') {
+    style.sprite = ensureMaptilerKey(style.sprite, key);
+  }
+  if (typeof style.glyphs === 'string') {
+    style.glyphs = ensureMaptilerKey(style.glyphs, key);
+  }
+}
+
 let loggedMissingMapKey = false;
 const WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
 const REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
@@ -212,10 +273,10 @@ const VACUUM_TABLE_LIST = (process.env.STARTUP_VACUUM_TABLES || DEFAULT_VACUUM_T
 
 const redisSettings = getRedisConfig();
 const MAPTILER_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
-const MAPTILER_PROXY_MODE = (process.env.MAPTILER_PROXY_MODE || 'auto').trim().toLowerCase();
+const MAPTILER_PROXY_MODE = (process.env.MAPTILER_PROXY_MODE || 'direct').trim().toLowerCase();
 const MAPTILER_PROXY_RECHECK_MS = Number.parseInt(process.env.MAPTILER_PROXY_RECHECK_MS || '', 10) || 5 * 60 * 1000;
 const ALLOWED_PROXY_MODES = new Set(['auto', 'proxy', 'direct']);
-const resolvedProxyMode = ALLOWED_PROXY_MODES.has(MAPTILER_PROXY_MODE) ? MAPTILER_PROXY_MODE : 'auto';
+const resolvedProxyMode = ALLOWED_PROXY_MODES.has(MAPTILER_PROXY_MODE) ? MAPTILER_PROXY_MODE : 'direct';
 const maptilerProxyState = {
   mode: resolvedProxyMode,
   proxyEnabled: resolvedProxyMode === 'proxy',
@@ -797,6 +858,7 @@ async function probeMaptilerProxy() {
       }
       maptilerProxyState.proxyEnabled = true;
       maptilerProxyState.lastProbeAt = Date.now();
+      invalidateStyleCache();
       return true;
     } catch (error) {
       maptilerProxyState.lastProbeAt = Date.now();
@@ -1078,12 +1140,15 @@ async function loadBaseStyle() {
   }
 
   if (!styleCache.directTemplate) {
-    const replacementKey = key || '';
-    if (styleCache.base) {
-      const directStyle = cloneBaseStyle();
-      styleCache.directTemplate = JSON.stringify(directStyle).replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, replacementKey);
+    const directStyle = cloneBaseStyle();
+    if (directStyle) {
+      applyMaptilerKeyToStyle(directStyle, key);
+      styleCache.directTemplate = JSON.stringify(directStyle);
+      console.log('[maptiler] base style cached in direct mode', { keyPresent: Boolean(key) });
     } else if (typeof styleCache.raw === 'string') {
-      styleCache.directTemplate = styleCache.raw.replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, replacementKey);
+      const rewritten = styleCache.raw.replace(/https?:\/\/api\.maptiler\.com[^"'\s)]+/gi, (match) => ensureMaptilerKey(match, key));
+      styleCache.directTemplate = rewritten;
+      console.log('[maptiler] base style (raw) cached in direct mode', { keyPresent: Boolean(key) });
     } else {
       styleCache.directTemplate = '';
     }
