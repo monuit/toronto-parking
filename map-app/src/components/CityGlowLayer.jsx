@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources.js';
 import { loadGlowDataset } from '../lib/glowDatasetLoader.js';
@@ -58,8 +58,18 @@ export function CityGlowLayer({
   dataset = 'parking_tickets',
 }) {
   const [glowData, setGlowData] = useState(EMPTY_FEATURE_COLLECTION);
+  const loadedDatasetRef = useRef(null);
+
   useEffect(() => {
+    if (!visible) {
+      return undefined;
+    }
+    if (loadedDatasetRef.current === dataset) {
+      return undefined;
+    }
     let cancelled = false;
+    loadedDatasetRef.current = dataset;
+    setGlowData(EMPTY_FEATURE_COLLECTION);
 
     loadGlowDataset(dataset)
       .then((payload) => {
@@ -70,13 +80,14 @@ export function CityGlowLayer({
       .catch((error) => {
         if (!cancelled) {
           console.error(`Failed to load ${dataset} glow data`, error);
+          loadedDatasetRef.current = null;
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [dataset]);
+  }, [dataset, visible]);
 
   const filterExpression = useMemo(() => buildFilterExpression(filter), [filter]);
 

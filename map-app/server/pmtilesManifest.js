@@ -7,6 +7,13 @@ const FALLBACK_DATASET_CONFIG = {
     vectorLayer: 'parking_tickets',
     shards: [
       {
+        id: 'overview',
+        filename: 'parking_tickets-overview.pmtiles',
+        bounds: [-170.0, 35.0, -50.0, 75.0],
+        minZoom: 0,
+        maxZoom: 7,
+      },
+      {
         id: 'ontario',
         filename: 'parking_tickets-ontario.pmtiles',
         bounds: [-81.0, 42.0, -78.0, 44.4],
@@ -27,6 +34,13 @@ const FALLBACK_DATASET_CONFIG = {
     vectorLayer: 'red_light_locations',
     shards: [
       {
+        id: 'overview',
+        filename: 'red-light-overview.pmtiles',
+        bounds: [-170.0, 35.0, -50.0, 75.0],
+        minZoom: 0,
+        maxZoom: 7,
+      },
+      {
         id: 'ontario',
         filename: 'red-light-ontario.pmtiles',
         bounds: [-81.0, 42.0, -78.0, 44.4],
@@ -46,6 +60,13 @@ const FALLBACK_DATASET_CONFIG = {
     label: 'Automated speed enforcement cameras',
     vectorLayer: 'ase_locations',
     shards: [
+      {
+        id: 'overview',
+        filename: 'ase-overview.pmtiles',
+        bounds: [-170.0, 35.0, -50.0, 75.0],
+        minZoom: 0,
+        maxZoom: 7,
+      },
       {
         id: 'ontario',
         filename: 'ase-ontario.pmtiles',
@@ -110,6 +131,12 @@ function resolveShardConfig(base, originBase, shard, prefix) {
   const bounds = Array.isArray(shard.bounds) && shard.bounds.length === 4
     ? shard.bounds.map((value) => Number(value))
     : [-180, -90, 180, 90];
+  const normalizedBounds = [
+    Math.min(bounds[0], bounds[2]),
+    Math.min(bounds[1], bounds[3]),
+    Math.max(bounds[0], bounds[2]),
+    Math.max(bounds[1], bounds[3]),
+  ];
   const minZoom = Number.isFinite(shard.minZoom) ? shard.minZoom : 0;
   const maxZoom = Number.isFinite(shard.maxZoom) ? shard.maxZoom : Math.max(minZoom, 16);
   const filename = normalizeFilename(shard.filename);
@@ -124,7 +151,7 @@ function resolveShardConfig(base, originBase, shard, prefix) {
     url,
     originUrl,
     filename,
-    bounds,
+    bounds: normalizedBounds,
     minZoom,
     maxZoom,
   };
@@ -183,6 +210,25 @@ function resolveWardDataset(base, originBase, datasetKey, config, prefix) {
   };
 }
 
+function validateDatasetShards(datasetKey, shards) {
+  if (!Array.isArray(shards) || shards.length === 0) {
+    return;
+  }
+  const hasOverview = shards.some((shard) => Number(shard.minZoom) <= 1);
+  if (!hasOverview) {
+    console.warn(`[pmtilesManifest] Dataset ${datasetKey} is missing an overview shard (minZoom <= 1).`);
+  }
+  for (const shard of shards) {
+    const [west, south, east, north] = shard.bounds;
+    if (!Number.isFinite(west) || !Number.isFinite(south) || !Number.isFinite(east) || !Number.isFinite(north)) {
+      console.warn(`[pmtilesManifest] Dataset ${datasetKey} shard ${shard.id} has invalid bounds`, shard.bounds);
+    }
+    if (west < -180 || east > 180 || south < -90 || north > 90) {
+      console.warn(`[pmtilesManifest] Dataset ${datasetKey} shard ${shard.id} bounds exceed Web Mercator limits`, shard.bounds);
+    }
+  }
+}
+
 export function buildPmtilesManifest(runtimeConfig) {
   const runtime = runtimeConfig || getPmtilesRuntimeConfig();
   if (!runtime.enabled || !runtime.publicBaseUrl) {
@@ -210,10 +256,14 @@ export function buildPmtilesManifest(runtimeConfig) {
     if (!config || !Array.isArray(config.shards) || config.shards.length === 0) {
       continue;
     }
+    const resolvedShards = config.shards
+      .map((shard) => resolveShardConfig(baseUrl, originBaseUrl, shard, objectPrefix))
+      .sort((a, b) => (a.minZoom - b.minZoom) || (a.maxZoom - b.maxZoom));
+    validateDatasetShards(dataset, resolvedShards);
     manifestDatasets[dataset] = {
       label: config.label || dataset,
       vectorLayer: config.vectorLayer || dataset,
-      shards: config.shards.map((shard) => resolveShardConfig(baseUrl, originBaseUrl, shard, objectPrefix)),
+      shards: resolvedShards,
     };
   }
 

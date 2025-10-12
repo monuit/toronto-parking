@@ -1,15 +1,38 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { registerPmtilesSources } from '../lib/pmtilesProtocol.js';
 
 const PmtilesContext = createContext({ manifest: null, ready: false, error: null, refresh: () => {} });
 
 export function PmtilesProvider({ children }) {
-  const [manifest, setManifest] = useState(null);
+  const getInlineManifest = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    const payload = window.__PMTILES_MANIFEST__;
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+    return payload;
+  }, []);
+
+  const [manifest, setManifest] = useState(() => getInlineManifest());
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const seededInlineManifest = useRef(Boolean(manifest));
 
   const loadManifest = useCallback(async () => {
     if (loading) {
+      return;
+    }
+    if (manifest?.enabled) {
       return;
     }
     setLoading(true);
@@ -33,15 +56,30 @@ export function PmtilesProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [loading]);
+  }, [loading, manifest]);
 
   useEffect(() => {
+    if (manifest?.enabled || loading) {
+      return;
+    }
+    if (!seededInlineManifest.current) {
+      const inline = getInlineManifest();
+      if (inline) {
+        seededInlineManifest.current = true;
+        setManifest(inline);
+        setError(null);
+        return;
+      }
+    }
     loadManifest();
-  }, [loadManifest]);
+  }, [getInlineManifest, loadManifest, loading, manifest]);
 
   useEffect(() => {
     if (manifest?.enabled) {
       registerPmtilesSources(manifest);
+      if (typeof window !== 'undefined') {
+        window.__PMTILES_MANIFEST__ = manifest;
+      }
     }
   }, [manifest]);
 

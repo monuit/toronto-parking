@@ -6,17 +6,46 @@ import { useEffect, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources';
 
+const neighbourhoodCache = {
+  data: null,
+  promise: null,
+};
+
 export function NeighbourhoodLayer({ map, visible = true, onHover, onClick }) {
   const [neighbourhoods, setNeighbourhoods] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   
   useEffect(() => {
-    // Load neighbourhood data
-    fetch(MAP_CONFIG.DATA_PATHS.NEIGHBOURHOODS)
-      .then(res => res.json())
-      .then(data => setNeighbourhoods(data))
-      .catch(err => console.error('Failed to load neighbourhoods:', err));
-  }, []);
+    if (!visible) {
+      return undefined;
+    }
+    if (neighbourhoodCache.data) {
+      setNeighbourhoods(neighbourhoodCache.data);
+      return undefined;
+    }
+    if (!neighbourhoodCache.promise) {
+      neighbourhoodCache.promise = fetch(MAP_CONFIG.DATA_PATHS.NEIGHBOURHOODS)
+        .then((res) => res.json())
+        .then((data) => {
+          neighbourhoodCache.data = data;
+          return data;
+        })
+        .catch((err) => {
+          console.error('Failed to load neighbourhoods:', err);
+          neighbourhoodCache.promise = null;
+          return null;
+        });
+    }
+    let cancelled = false;
+    neighbourhoodCache.promise.then((data) => {
+      if (!cancelled && data) {
+        setNeighbourhoods(data);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
   
   useEffect(() => {
     if (!map || !neighbourhoods) return;

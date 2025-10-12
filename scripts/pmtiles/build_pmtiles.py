@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import gzip
+import hashlib
 import heapq
 import json
 import os
@@ -42,6 +43,7 @@ from pmtiles.tile import Compression, TileType, zxy_to_tileid
 from pmtiles.writer import write as pmtiles_write
 import boto3
 from boto3.s3.transfer import TransferConfig
+from botocore.exceptions import ClientError
 from multiprocessing import cpu_count, get_context
 
 try:
@@ -137,6 +139,27 @@ TILE_BATCH_FUNCTIONS: Dict[str, str] = {
     "ase_locations": "public.get_ase_tiles",
 }
 
+SIMPLIFICATION_FUNCTION_SNIPPETS: Dict[str, Tuple[str, ...]] = {
+    "public.get_parking_tiles(integer[],integer[],integer[])": (
+        "ST_SnapToGrid",
+        "parking_ticket_tiles",
+    ),
+    "public.get_red_light_tiles(integer[],integer[],integer[])": (
+        "ST_SnapToGrid",
+        "red_light_camera_tiles",
+    ),
+    "public.get_ase_tiles(integer[],integer[],integer[])": (
+        "ST_SnapToGrid",
+        "ase_camera_tiles",
+    ),
+}
+
+SIMPLIFICATION_TABLE_EXPECTATIONS: Tuple[Tuple[str, str, int, int], ...] = (
+    ("parking_ticket_tiles", "parking_tickets", 0, 16),
+    ("red_light_camera_tiles", "red_light_locations", 0, 16),
+    ("ase_camera_tiles", "ase_locations", 0, 16),
+)
+
 if DEFAULT_COMPRESSION not in {"gzip", "zstd"}:
     DEFAULT_COMPRESSION = "gzip"
 
@@ -198,6 +221,16 @@ class UploadManager:
         self.executor.shutdown(wait=True)
 
 
+def _compute_sha256(file_path: Path) -> str:
+    hasher = hashlib.sha256()
+    with file_path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def _upload_file(
     file_path: Path,
     bucket: str,
@@ -216,11 +249,104 @@ def _upload_file(
         region_name=region,
     )
     config = TransferConfig(**transfer_kwargs)
+    checksum = _compute_sha256(file_path)
+    try:
+        head = client.head_object(Bucket=bucket, Key=key)
+        existing_hash = head.get("Metadata", {}).get("sha256")
+        if existing_hash and existing_hash == checksum:
+            print(f"[upload] Skipping {key}; checksum unchanged")
+            return
+    except ClientError as error:  # pragma: no cover - network path
+        status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if status not in (404, 400):
+            print(f"[upload] HeadObject failed for {key}: {error}")
     extra_args = {
         "ContentType": "application/octet-stream",
         "CacheControl": "public, immutable, max-age=31536000",
+        "Metadata": {"sha256": checksum},
     }
     client.upload_file(str(file_path), bucket, key, ExtraArgs=extra_args, Config=config)
+
+
+def _validate_tile_tables(pg_client: PostgresClient) -> List[str]:
+    issues: List[str] = []
+    for table_name, dataset_name, expected_min, expected_max in SIMPLIFICATION_TABLE_EXPECTATIONS:
+        exists_row = pg_client.fetch_one(
+            """
+            SELECT EXISTS (
+              SELECT 1
+              FROM information_schema.tables
+              WHERE table_schema = 'public'
+                AND table_name = %s
+            )
+            """,
+            (table_name,),
+        )
+        exists = bool(exists_row[0]) if exists_row else False
+        if not exists:
+            issues.append(f"tile table '{table_name}' is missing (expected for dataset '{dataset_name}')")
+            continue
+
+        row_present = pg_client.fetch_one(
+            f"SELECT 1 FROM {table_name} WHERE dataset = %s LIMIT 1",
+            (dataset_name,),
+        )
+        if not row_present:
+            issues.append(f"tile table '{table_name}' has no rows for dataset '{dataset_name}'")
+            continue
+
+        min_max = pg_client.fetch_one(
+            f"SELECT MIN(min_zoom), MAX(max_zoom) FROM {table_name} WHERE dataset = %s",
+            (dataset_name,),
+        )
+        if not min_max or min_max[0] is None or min_max[1] is None:
+            issues.append(f"tile table '{table_name}' has incomplete zoom metadata for dataset '{dataset_name}'")
+        else:
+            min_zoom, max_zoom = min_max
+            if min_zoom > expected_min:
+                issues.append(
+                    f"tile table '{table_name}' minimum zoom {min_zoom} exceeds expected {expected_min}"
+                )
+            if max_zoom < expected_max:
+                issues.append(
+                    f"tile table '{table_name}' maximum zoom {max_zoom} below expected {expected_max}"
+                )
+
+        groups = pg_client.fetch_one(
+            f"SELECT COUNT(DISTINCT tile_qk_group) FROM {table_name} WHERE dataset = %s",
+            (dataset_name,),
+        )
+        if not groups or int(groups[0] or 0) < 4:
+            issues.append(f"tile table '{table_name}' is missing quadkey partitions for dataset '{dataset_name}'")
+
+    return issues
+
+
+def _validate_function_simplification(pg_client: PostgresClient) -> List[str]:
+    issues: List[str] = []
+    for signature, snippets in SIMPLIFICATION_FUNCTION_SNIPPETS.items():
+        definition_row = pg_client.fetch_one(
+            "SELECT pg_get_functiondef($1::regprocedure)",
+            (signature,),
+        )
+        if not definition_row or definition_row[0] is None:
+            issues.append(f"function {signature} is missing")
+            continue
+        definition_text = definition_row[0]
+        missing = [fragment for fragment in snippets if fragment not in definition_text]
+        if missing:
+            issues.append(
+                f"function {signature} is missing required simplification fragments: {', '.join(missing)}"
+            )
+    return issues
+
+
+def validate_tile_simplification(pg_client: PostgresClient) -> None:
+    issues = _validate_tile_tables(pg_client)
+    issues.extend(_validate_function_simplification(pg_client))
+    if issues:
+        bullet_points = "\n  - ".join(issues)
+        raise RuntimeError(f"PMTiles simplification validation failed:\n  - {bullet_points}")
 
 
 def _load_shard_definitions() -> Tuple[ShardDefinition, ...]:
@@ -735,6 +861,15 @@ def run(
         print(f"[schema] Refresh completed in {time.monotonic() - started:.1f}s", flush=True)
     else:
         schema_manager.ensure(include_tile_tables=False)
+
+    try:
+        validate_tile_simplification(schema_client)
+    except RuntimeError as validation_error:
+        if force_schema_refresh or refresh_tile_tables:
+            raise
+        print("[schema] Simplification validation failed; rebuilding tile tables", flush=True)
+        schema_manager.ensure(include_tile_tables=True)
+        validate_tile_simplification(schema_client)
 
     filtered_shards = []
     for shard in SHARDS:

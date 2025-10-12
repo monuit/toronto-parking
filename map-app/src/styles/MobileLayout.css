@@ -3,12 +3,13 @@
   flex-direction: column;
   height: 100svh;
   background: #f5f5f7;
+  --map-header-offset: 112px;
 }
 
 .App--mobile .map-container {
   margin: 0;
   width: 100%;
-  height: calc(100svh - 112px);
+  height: calc(100svh - var(--map-header-offset, 112px));
 }
 
 .mobile-header {

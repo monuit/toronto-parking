@@ -19,8 +19,6 @@ import { MobileHeader } from './components/MobileHeader.jsx';
 import { MobileDrawer } from './components/MobileDrawer.jsx';
 import { MobileAccordion } from './components/MobileAccordion.jsx';
 import { MAP_CONFIG } from './lib/mapSources.js';
-import { prefetchCameraDatasets } from './lib/cameraDatasetLoader.js';
-import { prefetchGlowDatasets } from './lib/glowDatasetLoader.js';
 import { useBreakpoint, useTouchDevice } from './hooks/useBreakpoint.js';
 import { PmtilesProvider } from './context/PmtilesContext.jsx';
 import './App.css';
@@ -341,6 +339,36 @@ function AppContent({
     () => (datasetSnapshots && datasetSnapshots[dataset]) || {},
     [datasetSnapshots, dataset],
   );
+  const cameraDetailCacheRef = useRef(new Map());
+  const fetchCameraDetail = useCallback(async (datasetKey, locationId, year) => {
+    if (!datasetKey || !locationId) {
+      return null;
+    }
+    const cacheKey = `${datasetKey}:${locationId}:${year ?? 'all'}`;
+    if (cameraDetailCacheRef.current.has(cacheKey)) {
+      return cameraDetailCacheRef.current.get(cacheKey);
+    }
+    const params = new URLSearchParams({ dataset: datasetKey, location: String(locationId) });
+    if (Number.isFinite(year)) {
+      params.set('year', String(year));
+    }
+    try {
+      const response = await fetch(`${MAP_CONFIG.API_PATHS.YEARLY_LOCATION}?${params.toString()}`, {
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        throw new Error(`status ${response.status}`);
+      }
+      const payload = await response.json();
+      const detail = payload?.detail || null;
+      cameraDetailCacheRef.current.set(cacheKey, detail);
+      return detail;
+    } catch (error) {
+      console.warn('Failed to fetch camera location detail', error);
+      cameraDetailCacheRef.current.set(cacheKey, null);
+      return null;
+    }
+  }, []);
   const aseWardWards = datasetSnapshots?.ase_locations?.wardSummary?.wards;
   const redWardWards = datasetSnapshots?.red_light_locations?.wardSummary?.wards;
   const aseWardLookup = useMemo(() => {
@@ -832,16 +860,6 @@ function AppContent({
   }, []);
 
   useEffect(() => {
-    if (!isClient) {
-      return undefined;
-    }
-    Promise.all([prefetchCameraDatasets(), prefetchGlowDatasets()]).catch(() => {
-      /* prefetch failures are non-fatal */
-    });
-    return undefined;
-  }, [isClient]);
-
-  useEffect(() => {
     if (typeof window === 'undefined') {
       return undefined;
     }
@@ -965,7 +983,7 @@ function AppContent({
     setPopupPosition(computePopupPosition(event));
   }, [computePopupPosition]);
 
-  const handlePointClick = useCallback((properties, event) => {
+  const handlePointClick = useCallback(async (properties, event) => {
     if (!properties) {
       return;
     }
@@ -978,9 +996,15 @@ function AppContent({
         ?? properties.intersectionId
         ?? properties.location;
       const locationId = rawId !== undefined && rawId !== null ? String(rawId) : null;
-      const lookup = locationId && datasetEntry?.locationsById
+      let lookup = locationId && datasetEntry?.locationsById
         ? datasetEntry.locationsById[locationId]
         : null;
+      if (!lookup && locationId) {
+        const detail = await fetchCameraDetail(dataset, locationId, activeYear);
+        if (detail) {
+          lookup = detail;
+        }
+      }
 
       const yearlyCounts = properties.yearlyCounts
         ?? properties.yearly_counts
@@ -1060,7 +1084,7 @@ function AppContent({
     setActiveCentrelineIds([]);
     setPopupData(activeYear !== null ? { ...properties, yearFilter: activeYear } : properties);
     setPopupPosition(computePopupPosition(event));
-  }, [dataset, datasetEntry, focusOnPoint, computePopupPosition, activeYear]);
+  }, [dataset, datasetEntry, focusOnPoint, computePopupPosition, activeYear, fetchCameraDetail]);
 
   const handleNeighbourhoodFocus = useCallback((name) => {
     if (!map || !name) return;
@@ -1137,15 +1161,18 @@ function AppContent({
     }
   }, [activeViewMode]);
 
-  const handleStreetSelect = useCallback((streetEntry) => {
+  const handleStreetSelect = useCallback(async (streetEntry) => {
     if (!streetEntry) {
       return;
     }
     if (dataset !== 'parking_tickets') {
       const locationId = streetEntry.id ?? streetEntry.locationCode ?? streetEntry.intersectionId;
-      const lookup = locationId !== undefined && locationId !== null
+      let lookup = locationId !== undefined && locationId !== null
         ? datasetEntry?.locationsById?.[String(locationId)]
         : null;
+      if (!lookup && locationId !== undefined && locationId !== null) {
+        lookup = await fetchCameraDetail(dataset, String(locationId), activeYear);
+      }
       const longitude = Number(streetEntry.longitude ?? lookup?.longitude);
       const latitude = Number(streetEntry.latitude ?? lookup?.latitude);
       if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
@@ -1210,7 +1237,7 @@ function AppContent({
 
     setPopupData(payload);
     setPopupPosition(computePopupPosition());
-  }, [dataset, datasetEntry, getStreetSummary, computePopupPosition, focusOnBounds, focusOnPoint, activeYear]);
+  }, [dataset, datasetEntry, getStreetSummary, computePopupPosition, focusOnBounds, focusOnPoint, activeYear, fetchCameraDetail]);
 
   const handleStreetSegmentClick = useCallback((centrelineId, feature, event) => {
     const detail = getCentrelineDetail?.(centrelineId) || null;

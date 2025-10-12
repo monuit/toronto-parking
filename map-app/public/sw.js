@@ -1,8 +1,8 @@
 /* eslint-env serviceworker */
 
-const TILE_CACHE_NAME = 'tile-cache-v1';
+const TILE_CACHE_NAME = 'tile-cache-v2';
 const ASSET_CACHE_NAME = 'map-assets-v1';
-const MAX_TILE_ENTRIES = 180;
+const MAX_TILE_ENTRIES = 360;
 const PRECACHE_ASSETS = ['/styles/basic-style.json'];
 
 self.addEventListener('install', (event) => {
@@ -67,6 +67,12 @@ function isAssetRequest(request) {
   return false;
 }
 
+function canonicalTileKey(request) {
+  const url = new URL(request.url);
+  url.hash = '';
+  return url.toString();
+}
+
 async function trimCache(cacheName, maxEntries) {
   if (!Number.isFinite(maxEntries) || maxEntries <= 0) {
     return;
@@ -84,13 +90,28 @@ async function trimCache(cacheName, maxEntries) {
 
 async function staleWhileRevalidate(request, cacheName) {
   const cache = await caches.open(cacheName);
-  const cachedResponse = await cache.match(request);
-  const fetchPromise = fetch(request)
+  const isTileCache = cacheName === TILE_CACHE_NAME;
+  const canonicalKey = isTileCache ? canonicalTileKey(request) : null;
+  let cachedResponse = null;
+  if (isTileCache && canonicalKey) {
+    cachedResponse = await cache.match(canonicalKey);
+  }
+  if (!cachedResponse) {
+    cachedResponse = await cache.match(request);
+  }
+  const networkRequest = request.clone();
+  const fetchPromise = fetch(networkRequest)
     .then(async (response) => {
-      if (response && response.ok && response.type === 'basic') {
-        await cache.put(request, response.clone());
-        if (cacheName === TILE_CACHE_NAME) {
+      if (response && response.ok && (response.type === 'basic' || response.type === 'cors')) {
+        if (isTileCache) {
+          if (response.status === 200 && canonicalKey) {
+            await cache.put(canonicalKey, response.clone());
+          } else {
+            await cache.put(request, response.clone());
+          }
           await trimCache(cacheName, MAX_TILE_ENTRIES);
+        } else {
+          await cache.put(request, response.clone());
         }
       }
       return response;
@@ -104,19 +125,6 @@ async function staleWhileRevalidate(request, cacheName) {
   return cachedResponse || fetchPromise;
 }
 
-async function cacheFirst(request, cacheName) {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-  if (cached) {
-    return cached;
-  }
-  const response = await fetch(request);
-  if (response && response.ok) {
-    await cache.put(request, response.clone());
-  }
-  return response;
-}
-
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') {
@@ -127,6 +135,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (isAssetRequest(request)) {
-    event.respondWith(cacheFirst(request, ASSET_CACHE_NAME));
+    event.respondWith(staleWhileRevalidate(request, ASSET_CACHE_NAME));
   }
 });
