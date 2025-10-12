@@ -106,7 +106,7 @@ function normalizeFilename(filename) {
   return filename.startsWith('/') ? filename.slice(1) : filename;
 }
 
-function resolveShardConfig(base, shard, prefix) {
+function resolveShardConfig(base, originBase, shard, prefix) {
   const bounds = Array.isArray(shard.bounds) && shard.bounds.length === 4
     ? shard.bounds.map((value) => Number(value))
     : [-180, -90, 180, 90];
@@ -114,12 +114,15 @@ function resolveShardConfig(base, shard, prefix) {
   const maxZoom = Number.isFinite(shard.maxZoom) ? shard.maxZoom : Math.max(minZoom, 16);
   const filename = normalizeFilename(shard.filename);
   const normalizedPrefix = prefix ? prefix.replace(/^\/+/, '').replace(/\/+$/, '') : '';
-  const urlBase = normalizedPrefix ? `${base}/${normalizedPrefix}` : base;
-  const url = `${urlBase}/${filename}`;
+  const baseUrl = base ? (normalizedPrefix ? `${base}/${normalizedPrefix}` : base) : null;
+  const originUrlBase = originBase ? (normalizedPrefix ? `${originBase}/${normalizedPrefix}` : originBase) : baseUrl;
+  const originUrl = originUrlBase ? `${originUrlBase}/${filename}` : `${filename}`;
+  const url = baseUrl ? `${baseUrl}/${filename}` : originUrl;
 
   return {
     id: shard.id,
     url,
+    originUrl,
     filename,
     bounds,
     minZoom,
@@ -158,17 +161,22 @@ function mergeWardDatasetConfig(baseConfig, overrides) {
   };
 }
 
-function resolveWardDataset(base, datasetKey, config, prefix) {
+function resolveWardDataset(base, originBase, datasetKey, config, prefix) {
   if (!config?.filename) {
     throw new Error(`Ward dataset ${datasetKey} missing PMTiles filename`);
   }
   const filename = normalizeFilename(config.filename);
   const normalizedPrefix = prefix ? prefix.replace(/^\/+/, '').replace(/\/+$/, '') : '';
-  const urlBase = normalizedPrefix ? `${base}/${normalizedPrefix}` : base;
+  const baseUrl = base ? (normalizedPrefix ? `${base}/${normalizedPrefix}` : base) : null;
+  const originUrlBase = originBase
+    ? (normalizedPrefix ? `${originBase}/${normalizedPrefix}` : originBase)
+    : baseUrl;
+  const originUrl = originUrlBase ? `${originUrlBase}/${filename}` : `${filename}`;
   return {
     label: config.label || datasetKey,
     vectorLayer: config.vectorLayer || 'ward_polygons',
-    url: `${urlBase}/${filename}`,
+    url: baseUrl ? `${baseUrl}/${filename}` : originUrl,
+    originUrl,
     filename,
     minZoom: Number.isFinite(config.minZoom) ? config.minZoom : 8,
     maxZoom: Number.isFinite(config.maxZoom) ? config.maxZoom : 12,
@@ -185,7 +193,9 @@ export function buildPmtilesManifest(runtimeConfig) {
     };
   }
 
-  const baseUrl = runtime.publicBaseUrl.replace(/\/$/, '');
+  const originBaseUrl = runtime.publicBaseUrl.replace(/\/$/, '');
+  const cdnBaseUrl = runtime.cdnBaseUrl ? runtime.cdnBaseUrl.replace(/\/$/, '') : null;
+  const baseUrl = cdnBaseUrl || originBaseUrl;
   const objectPrefix = runtime.objectPrefix ? String(runtime.objectPrefix).replace(/^\/+/, '').replace(/\/+$/, '') : '';
   const datasetConfig = mergeDatasetConfig(DEFAULT_DATASET_CONFIG, runtime.datasetOverrides);
   const wardDatasetConfig = mergeWardDatasetConfig(DEFAULT_WARD_DATASET_CONFIG, runtime.wardDatasetOverrides);
@@ -203,7 +213,7 @@ export function buildPmtilesManifest(runtimeConfig) {
     manifestDatasets[dataset] = {
       label: config.label || dataset,
       vectorLayer: config.vectorLayer || dataset,
-      shards: config.shards.map((shard) => resolveShardConfig(baseUrl, shard, objectPrefix)),
+      shards: config.shards.map((shard) => resolveShardConfig(baseUrl, originBaseUrl, shard, objectPrefix)),
     };
   }
 
@@ -211,12 +221,14 @@ export function buildPmtilesManifest(runtimeConfig) {
     if (!config) {
       continue;
     }
-    wardDatasets[dataset] = resolveWardDataset(baseUrl, dataset, config, objectPrefix);
+    wardDatasets[dataset] = resolveWardDataset(baseUrl, originBaseUrl, dataset, config, objectPrefix);
   }
 
   return {
     enabled: true,
     baseUrl,
+    originBaseUrl,
+    cdnBaseUrl,
     objectPrefix,
     bucket: runtime.bucket,
     region: runtime.region,
