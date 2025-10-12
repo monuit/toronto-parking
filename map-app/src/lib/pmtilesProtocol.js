@@ -19,6 +19,18 @@ function ensureProtocol() {
   return protocolInstance;
 }
 
+function resolveAbsoluteUrl(url) {
+  if (typeof url !== 'string' || url.length === 0) {
+    return null;
+  }
+  const base = typeof window !== 'undefined' ? window.location?.origin : undefined;
+  try {
+    return new URL(url, base).toString();
+  } catch {
+    return null;
+  }
+}
+
 export function registerPmtilesSources(manifest) {
   if (!manifest?.enabled || !isClient()) {
     return;
@@ -35,11 +47,17 @@ export function registerPmtilesSources(manifest) {
       }
       const shardList = Array.isArray(dataset.shards) ? dataset.shards : [dataset];
       for (const shard of shardList) {
-        if (!shard?.url || registeredUrls.has(shard.url)) {
+        const absolute = resolveAbsoluteUrl(shard?.originUrl) || resolveAbsoluteUrl(shard?.url);
+        if (!absolute || registeredUrls.has(absolute)) {
           continue;
         }
-        protocol.add(new PMTiles(shard.url));
-        registeredUrls.add(shard.url);
+        registeredUrls.add(absolute);
+        try {
+          protocol.add(new PMTiles(absolute));
+        } catch {
+          // Remove the URL if protocol registration fails so we can retry later
+          registeredUrls.delete(absolute);
+        }
       }
     }
   }
