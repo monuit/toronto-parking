@@ -7,6 +7,10 @@ import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources';
 import { usePmtiles } from '../context/PmtilesContext.jsx';
 import { loadCameraDataset } from '../lib/cameraDatasetLoader.js';
+import { recordTicketsPaint } from '../lib/clientMetrics.js';
+
+const prefetchedShardKeys = new Set();
+const inFlightSummaries = new Map();
 
 function buildFilterExpression(isCluster, filter) {
   const expression = ['all'];
@@ -80,16 +84,51 @@ function isCoordinateWithinBounds(longitude, latitude, bounds) {
   return longitude >= west && longitude <= east && latitude >= south && latitude <= north;
 }
 
-function getShardUrlForCoordinate(datasetManifest, longitude, latitude) {
-  if (!datasetManifest || !Array.isArray(datasetManifest.shards)) {
+function matchesZoom(shard, zoom) {
+  if (!Number.isFinite(zoom)) {
+    return true;
+  }
+  const min = Number.isFinite(shard?.minZoom) ? shard.minZoom : Number.NEGATIVE_INFINITY;
+  const max = Number.isFinite(shard?.maxZoom) ? shard.maxZoom : Number.POSITIVE_INFINITY;
+  return zoom >= min && zoom <= max + 0.0001;
+}
+
+function selectShardForView(datasetManifest, longitude, latitude, zoom) {
+  if (!datasetManifest || !Array.isArray(datasetManifest.shards) || datasetManifest.shards.length === 0) {
     return null;
   }
-  for (const shard of datasetManifest.shards) {
-    if (isCoordinateWithinBounds(longitude, latitude, shard.bounds)) {
-      return shard;
-    }
+  const ordered = [...datasetManifest.shards].sort((a, b) => (Number(a.minZoom || 0) - Number(b.minZoom || 0)));
+  const zoomMatches = Number.isFinite(zoom)
+    ? ordered.filter((entry) => matchesZoom(entry, zoom))
+    : ordered;
+  const candidates = zoomMatches.length > 0 ? zoomMatches : ordered;
+  const locationMatch = candidates.find((shard) => isCoordinateWithinBounds(longitude, latitude, shard.bounds));
+  if (locationMatch) {
+    return locationMatch;
   }
-  return datasetManifest.shards[0] || null;
+  if (zoomMatches.length > 0) {
+    return zoomMatches[0];
+  }
+  return ordered[0];
+}
+
+function fetchViewportSummary(key, url) {
+  const cacheKey = key;
+  if (inFlightSummaries.has(cacheKey)) {
+    return inFlightSummaries.get(cacheKey);
+  }
+  const promise = fetch(url)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`Summary request failed with status ${response.status}`);
+      }
+      return response.json();
+    })
+    .finally(() => {
+      inFlightSummaries.delete(cacheKey);
+    });
+  inFlightSummaries.set(cacheKey, promise);
+  return promise;
 }
 
 function resolvePmtilesUrl(shard) {
@@ -128,18 +167,84 @@ export function PointsLayer({
   const [geojsonData, setGeojsonData] = useState(null);
   const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
   const [pmtilesSource, setPmtilesSource] = useState(null);
+  const datasetManifest = useMemo(
+    () => (pmtilesReady ? pmtilesManifest?.datasets?.[dataset] : null),
+    [dataset, pmtilesManifest, pmtilesReady],
+  );
+  const paintRecordedRef = useRef(false);
 
   useEffect(() => {
     inFlightSummaryKeyRef.current = null;
     lastSummaryKeyRef.current = null;
+    paintRecordedRef.current = false;
   }, [dataset, filter?.year, filter?.month]);
+
   useEffect(() => {
-    if (!map || !pmtilesReady || !pmtilesManifest?.datasets?.[dataset]) {
+    if (!map || !pmtilesReady || !datasetManifest || !pmtilesSource?.rawUrl) {
+      return undefined;
+    }
+    if (!Array.isArray(datasetManifest.shards) || datasetManifest.shards.length <= 1) {
+      return undefined;
+    }
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let idleId = null;
+
+    const runPrefetch = async () => {
+      for (const shard of datasetManifest.shards) {
+        const resolved = resolvePmtilesUrl(shard);
+        if (!resolved || resolved === pmtilesSource.rawUrl) {
+          continue;
+        }
+        const key = `${dataset}:${resolved}`;
+        if (prefetchedShardKeys.has(key)) {
+          continue;
+        }
+        prefetchedShardKeys.add(key);
+        try {
+          await fetch(resolved, {
+            method: 'GET',
+            headers: { Range: 'bytes=0-511' },
+            cache: 'force-cache',
+            signal: controller?.signal,
+            mode: 'cors',
+          });
+        } catch (error) {
+          if (error?.name === 'AbortError') {
+            return;
+          }
+          prefetchedShardKeys.delete(key);
+        }
+      }
+    };
+
+    const schedule = () => {
+      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        idleId = window.requestIdleCallback(runPrefetch, { timeout: 2000 });
+      } else {
+        idleId = setTimeout(runPrefetch, 600);
+      }
+    };
+
+    schedule();
+
+    return () => {
+      if (controller) {
+        controller.abort();
+      }
+      if (typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function' && idleId !== null) {
+        window.cancelIdleCallback(idleId);
+      } else if (idleId !== null) {
+        clearTimeout(idleId);
+      }
+    };
+  }, [dataset, datasetManifest, map, pmtilesReady, pmtilesSource]);
+  useEffect(() => {
+    if (!map || !pmtilesReady || !datasetManifest) {
       setPmtilesSource(null);
       return undefined;
     }
-    const datasetManifest = pmtilesManifest.datasets[dataset];
-    if (!datasetManifest || !Array.isArray(datasetManifest.shards) || datasetManifest.shards.length === 0) {
+    if (!Array.isArray(datasetManifest.shards) || datasetManifest.shards.length === 0) {
       setPmtilesSource(null);
       return undefined;
     }
@@ -149,7 +254,8 @@ export function PointsLayer({
       if (!center) {
         return;
       }
-      const shard = getShardUrlForCoordinate(datasetManifest, center.lng, center.lat);
+      const zoom = map.getZoom();
+      const shard = selectShardForView(datasetManifest, center.lng, center.lat, zoom);
       if (!shard) {
         setPmtilesSource(null);
         return;
@@ -167,19 +273,43 @@ export function PointsLayer({
         return {
           url: nextUrl,
           shardId: shard.id || shard.filename || nextUrl,
+          minZoom: Number.isFinite(shard.minZoom) ? shard.minZoom : undefined,
+          maxZoom: Number.isFinite(shard.maxZoom) ? shard.maxZoom : undefined,
+          rawUrl: resolvedUrl,
         };
       });
     };
 
+    let rafToken = null;
+    const scheduleUpdate = () => {
+      if (rafToken !== null) {
+        return;
+      }
+      rafToken = typeof window !== 'undefined'
+        ? window.requestAnimationFrame(() => {
+          rafToken = null;
+          updateShard();
+        })
+        : null;
+      if (rafToken === null) {
+        updateShard();
+      }
+    };
+
     updateShard();
-    map.on('moveend', updateShard);
-    map.on('zoomend', updateShard);
+    const handleMove = () => scheduleUpdate();
+    map.on('moveend', handleMove);
+    map.on('zoomend', handleMove);
 
     return () => {
-      map.off('moveend', updateShard);
-      map.off('zoomend', updateShard);
+      if (rafToken !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(rafToken);
+        rafToken = null;
+      }
+      map.off('moveend', handleMove);
+      map.off('zoomend', handleMove);
     };
-  }, [map, dataset, pmtilesManifest, pmtilesReady]);
+  }, [map, datasetManifest, pmtilesReady]);
 
   const pointFilter = useMemo(() => buildFilterExpression(false, filter), [filter]);
 
@@ -242,13 +372,9 @@ export function PointsLayer({
     summaryRequestIdRef.current = requestId;
     inFlightSummaryKeyRef.current = key;
 
-    fetch(`${MAP_CONFIG.API_PATHS.SUMMARY}?${params.toString()}`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Summary request failed with status ${response.status}`);
-        }
-        return response.json();
-      })
+    const url = `${MAP_CONFIG.API_PATHS.SUMMARY}?${params.toString()}`;
+
+    fetchViewportSummary(key, url)
       .then((payload) => {
         if (summaryRequestIdRef.current !== requestId) {
           return;
@@ -531,6 +657,9 @@ export function PointsLayer({
 
   const isParkingDataset = dataset === 'parking_tickets';
   useEffect(() => {
+    if (!visible) {
+      return undefined;
+    }
     if (isParkingDataset) {
       setGeojsonData(null);
       return undefined;
@@ -554,7 +683,7 @@ export function PointsLayer({
     return () => {
       cancelled = true;
     };
-  }, [dataset, isParkingDataset]);
+  }, [dataset, isParkingDataset, visible]);
 
   const datasetStyle = useMemo(() => {
     if (dataset === 'red_light_locations') {
@@ -708,6 +837,23 @@ export function PointsLayer({
   const vectorSourceProps = pmtilesSource?.url
     ? { url: pmtilesSource.url }
     : { tiles: [tileUrl] };
+  const vectorMinZoom = pmtilesSource?.minZoom ?? datasetStyle.minZoom;
+  const vectorMaxZoom = pmtilesSource?.maxZoom ?? 18;
+
+  useEffect(() => {
+    if (!visible || paintRecordedRef.current) {
+      return;
+    }
+    if (isParkingDataset && pmtilesSource?.url) {
+      paintRecordedRef.current = true;
+      recordTicketsPaint();
+      return;
+    }
+    if (!isParkingDataset && geojsonData) {
+      paintRecordedRef.current = true;
+      recordTicketsPaint();
+    }
+  }, [visible, isParkingDataset, pmtilesSource, geojsonData]);
 
   useEffect(() => {
     if (typeof document === 'undefined' || typeof window === 'undefined') {
@@ -787,8 +933,8 @@ export function PointsLayer({
       id={MAP_CONFIG.SOURCE_IDS.TICKETS}
       type="vector"
       {...vectorSourceProps}
-      minzoom={datasetStyle.minZoom}
-      maxzoom={18}
+      minzoom={vectorMinZoom}
+      maxzoom={vectorMaxZoom}
     >
       {clusterLayer ? <Layer {...clusterLayer} /> : null}
       {clusterCountLayer ? <Layer {...clusterCountLayer} /> : null}

@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { createClient } from 'redis';
 import { Pool } from 'pg';
-import { createAppData } from './createAppData.js';
+import { createAppData, getLatestAppDataMeta } from './createAppData.js';
 import {
   createTileService,
   getWardTile,
@@ -199,6 +199,7 @@ function invalidateStyleCache() {
 let loggedMissingMapKey = false;
 const WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
 const REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
+const ENABLE_LEGACY_TILE_RENDERER = process.env.ENABLE_LEGACY_TILE_RENDERER === '1';
 const RESET_CACHE_ON_BOOT = process.env.RESET_CACHE_ON_BOOT !== '0';
 const VACUUM_ON_BOOT = process.env.VACUUM_ON_BOOT !== '0';
 const VACUUM_START_DELAY_MS = Number.parseInt(process.env.VACUUM_START_DELAY_MS || '60000', 10);
@@ -259,6 +260,10 @@ const metrics = {
       lastRunOriginTiles: 0,
       lastRunCdnTiles: 0,
     },
+  },
+  client: {
+    lastSubmission: null,
+    payload: null,
   },
 };
 
@@ -1091,7 +1096,7 @@ async function bootstrapStartup() {
 
     const backgroundRefresh = startBackgroundAppDataRefresh({
       intervalSeconds: refreshIntervalSeconds,
-      createSnapshot: () => createAppData(),
+      createSnapshot: () => createAppData({ bypassCache: true }),
       onAfterRefresh: async () => {
         try {
           await tileService.ensureLoaded();
@@ -1122,6 +1127,7 @@ async function bootstrapStartup() {
 bootstrapStartup();
 
 function registerTileRoutes(app) {
+  const clientMetricsParser = express.json({ limit: '32kb' });
   app.get('/healthz', async (req, res) => {
     const [redisStatus, postgresStatus] = await Promise.all([
       checkRedisHealth().catch((error) => ({ status: 'error', error: error.message })),
@@ -1353,6 +1359,8 @@ function registerTileRoutes(app) {
     let headersApplied = false;
     let slowLogged = false;
 
+    const legacyRendererActive = ENABLE_LEGACY_TILE_RENDERER || !pmtilesManifest.enabled;
+
     const applyHeadersIfNeeded = () => {
       const totalMs = performance.now() - startTime;
       if (!headersApplied && !res.headersSent) {
@@ -1381,6 +1389,13 @@ function registerTileRoutes(app) {
       tileSource = 'invalid-coords';
       applyHeadersIfNeeded();
       res.status(400).json({ error: 'Invalid tile coordinates' });
+      return;
+    }
+
+    if (!legacyRendererActive) {
+      tileSource = 'disabled';
+      applyHeadersIfNeeded();
+      res.status(410).json({ error: 'Legacy tile renderer disabled' });
       return;
     }
 
@@ -1506,6 +1521,13 @@ function registerTileRoutes(app) {
   app.get('/api/app-data', async (req, res) => {
     try {
       const snapshot = await createAppData();
+      const meta = getLatestAppDataMeta();
+      if (meta) {
+        res.setHeader('X-App-Data-Source', meta.fromCache ? 'cache' : 'refreshed');
+        if (meta.refreshedAt) {
+          res.setHeader('X-App-Data-Refreshed-At', meta.refreshedAt);
+        }
+      }
       res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=60');
       res.json(snapshot);
     } catch (error) {
@@ -1921,6 +1943,26 @@ function registerTileRoutes(app) {
       res.status(500).json({ error: 'Failed to compute heatmap data' });
     }
   });
+
+  app.post('/api/client-metrics', clientMetricsParser, (req, res) => {
+    const payload = req.body;
+    if (!payload || typeof payload !== 'object') {
+      res.status(400).json({ error: 'Invalid metrics payload' });
+      return;
+    }
+    metrics.client.lastSubmission = Date.now();
+    metrics.client.payload = {
+      navigationStart: Number(payload.navigationStart) || null,
+      mapReadyAt: Number(payload.mapReadyAt) || null,
+      ticketsPaintAt: Number(payload.ticketsPaintAt) || null,
+      fpsSamples: Array.isArray(payload.fpsSamples) ? payload.fpsSamples.slice(0, 8) : [],
+      panFps: Array.isArray(payload.panFps) ? payload.panFps.slice(0, 8) : [],
+      tileRequests: Number.parseInt(payload.tileRequests, 10) || 0,
+      generatedAt: payload.generatedAt || new Date().toISOString(),
+    };
+    console.log('[client-metrics]', metrics.client.payload);
+    res.status(204).end();
+  });
 }
 
 function registerDataRoutes(app, dataDirectory) {
@@ -2125,11 +2167,18 @@ function registerDataRoutes(app, dataDirectory) {
   app.use('/data', express.static(dataDirectory));
 }
 
-function injectTemplate(template, appHtml, initialData) {
+function injectTemplate(template, appHtml, initialData, manifestPayload) {
   const safeData = JSON.stringify(initialData).replace(/</g, '\\u003c');
+  const safeManifest = manifestPayload
+    ? JSON.stringify(manifestPayload).replace(/</g, '\\u003c')
+    : 'null';
+  const manifestScript = `<script>window.__PMTILES_MANIFEST__ = ${safeManifest};</script>`;
   return template
     .replace('<!--app-html-->', appHtml)
-    .replace('<!--initial-data-->', `<script>window.__INITIAL_DATA__ = ${safeData};</script>`);
+    .replace(
+      '<!--initial-data-->',
+      `<script>window.__INITIAL_DATA__ = ${safeData};</script>${manifestScript}`,
+    );
 }
 
 async function createDevServer() {
@@ -2145,7 +2194,7 @@ async function createDevServer() {
 
   try {
     console.time('app-data:warmup');
-    await createAppData();
+    await createAppData({ bypassCache: true });
     console.timeEnd('app-data:warmup');
   } catch (error) {
     console.warn('Unable to warm app data cache:', error.message);
@@ -2167,10 +2216,16 @@ async function createDevServer() {
       template = await vite.transformIndexHtml(url, template);
 
       const initialData = await createAppData();
+      const appDataMeta = getLatestAppDataMeta();
+      console.log('[ssr] dev render', {
+        url,
+        appDataSource: appDataMeta?.fromCache ? 'cache' : 'refreshed',
+        refreshedAt: appDataMeta?.refreshedAt || null,
+      });
       const { render } = await vite.ssrLoadModule('/src/entry-server.jsx');
       const { appHtml } = await render(url, { initialData });
 
-      const html = injectTemplate(template, appHtml, initialData);
+      const html = injectTemplate(template, appHtml, initialData, pmtilesManifest);
 
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (err) {
@@ -2198,7 +2253,7 @@ async function createProdServer() {
 
   try {
     console.time('app-data:warmup');
-    await createAppData();
+    await createAppData({ bypassCache: true });
     console.timeEnd('app-data:warmup');
   } catch (error) {
     console.warn('Unable to warm app data cache:', error.message);
@@ -2219,9 +2274,15 @@ async function createProdServer() {
       const template = await fs.readFile(path.join(distPath, 'index.html'), 'utf-8');
       const { render } = await import(pathToFileURL(ssrEntry));
       const initialData = await createAppData();
+      const appDataMeta = getLatestAppDataMeta();
+      console.log('[ssr] prod render', {
+        url,
+        appDataSource: appDataMeta?.fromCache ? 'cache' : 'refreshed',
+        refreshedAt: appDataMeta?.refreshedAt || null,
+      });
       const { appHtml } = await render(url, { initialData });
 
-      const html = injectTemplate(template, appHtml, initialData);
+      const html = injectTemplate(template, appHtml, initialData, pmtilesManifest);
 
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (err) {
