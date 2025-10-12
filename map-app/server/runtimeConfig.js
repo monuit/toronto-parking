@@ -143,6 +143,9 @@ export function getPmtilesRuntimeConfig() {
     || (process.env.MINIO_PUBLIC_ENDPOINT ? process.env.MINIO_PUBLIC_ENDPOINT.replace(/\/?$/, '') : null);
   const basePrivate = process.env.PMTILES_PRIVATE_BASE_URL
     || (process.env.MINIO_PRIVATE_ENDPOINT ? process.env.MINIO_PRIVATE_ENDPOINT.replace(/\/?$/, '') : null);
+  const cdnBase = process.env.PMTILES_CDN_BASE_URL
+    ? process.env.PMTILES_CDN_BASE_URL.replace(/\/?$/, '')
+    : null;
   const bucket = process.env.PMTILES_BUCKET || 'pmtiles';
   const region = process.env.MINIO_REGION || 'us-east-1';
   const objectPrefix = normalizePrefix(process.env.PMTILES_PREFIX);
@@ -162,6 +165,7 @@ export function getPmtilesRuntimeConfig() {
     enabled,
     publicBaseUrl: basePublic,
     privateBaseUrl: basePrivate,
+    cdnBaseUrl: cdnBase,
     bucket,
     region,
     objectPrefix,

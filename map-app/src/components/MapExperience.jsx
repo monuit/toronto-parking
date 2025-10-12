@@ -45,6 +45,7 @@ function MapExperience({
   const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
   const [mapInstance, setMapInstance] = useState(null);
   const [pointsVisible, setPointsVisible] = useState(true);
+  const [basemapReady, setBasemapReady] = useState(false);
   const wardDatasetId = useMemo(() => {
     if (wardDataset && SUPPORTED_WARD_DATASETS.has(wardDataset)) {
       return wardDataset;
@@ -77,6 +78,40 @@ function MapExperience({
       onMapLoad(instance);
     }
   }, [onMapLoad]);
+
+  useEffect(() => {
+    if (!mapInstance) {
+      setBasemapReady(false);
+      return undefined;
+    }
+
+    if (typeof mapInstance.isStyleLoaded === 'function' && mapInstance.isStyleLoaded()) {
+      setBasemapReady(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const markReady = () => {
+      if (!cancelled) {
+        setBasemapReady(true);
+      }
+    };
+
+    mapInstance.once('idle', markReady);
+    mapInstance.once('styledata', markReady);
+    const timeoutId = setTimeout(() => {
+      if (typeof mapInstance.isStyleLoaded === 'function' && mapInstance.isStyleLoaded()) {
+        markReady();
+      }
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      mapInstance.off('idle', markReady);
+      mapInstance.off('styledata', markReady);
+      clearTimeout(timeoutId);
+    };
+  }, [mapInstance]);
 
   useEffect(() => {
     if (!mapInstance) {
@@ -178,6 +213,12 @@ function MapExperience({
 
   return (
     <MapContainer onMapLoad={handleLoad}>
+      <div
+        className={`map-loading-overlay ${basemapReady ? 'map-loading-overlay--hidden' : ''}`}
+        aria-hidden="true"
+      >
+        <div className="map-loading-overlay__gradient" />
+      </div>
       {mapInstance && (
         <>
           <CityGlowLayer

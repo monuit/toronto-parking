@@ -193,6 +193,11 @@ const styleCache = {
   proxyTemplate: null,
   directTemplate: null,
 };
+
+function invalidateStyleCache() {
+  styleCache.proxyTemplate = null;
+  styleCache.directTemplate = null;
+}
 let loggedMissingMapKey = false;
 const WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
 const REDIS_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
@@ -229,11 +234,106 @@ const MAPTILER_FALLBACK_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_
 
 const TILE_SLOW_LOG_THRESHOLD_MS = Number.parseInt(process.env.TILE_SLOW_LOG_MS || '', 10) || 800;
 
+const metrics = {
+  maptiler: {
+    requests: 0,
+    errors: 0,
+    totalDurationMs: 0,
+    maxDurationMs: 0,
+    slowCount: 0,
+    modes: { proxy: 0, direct: 0 },
+    fallbacks: 0,
+    lastStatus: null,
+    lastDurationMs: 0,
+    lastErrorMessage: null,
+  },
+  pmtiles: {
+    warmup: {
+      tilesFetched: 0,
+      tilesFailed: 0,
+      originTiles: 0,
+      cdnTiles: 0,
+      lastRunStartedAt: null,
+      lastRunDurationMs: 0,
+      lastErrorMessage: null,
+      lastRunTilesFetched: 0,
+      lastRunTilesFailed: 0,
+      lastRunOriginTiles: 0,
+      lastRunCdnTiles: 0,
+    },
+  },
+};
+
+function recordMaptilerMetric({ durationMs, success, statusCode, mode, usedFallback = false, errorMessage = null }) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return;
+  }
+  metrics.maptiler.requests += 1;
+  metrics.maptiler.totalDurationMs += durationMs;
+  metrics.maptiler.maxDurationMs = Math.max(metrics.maptiler.maxDurationMs, durationMs);
+  metrics.maptiler.lastDurationMs = durationMs;
+  metrics.maptiler.lastStatus = statusCode;
+  if (durationMs >= TILE_SLOW_LOG_THRESHOLD_MS) {
+    metrics.maptiler.slowCount += 1;
+  }
+  if (!success) {
+    metrics.maptiler.errors += 1;
+    if (errorMessage) {
+      metrics.maptiler.lastErrorMessage = errorMessage;
+    }
+  } else if (!errorMessage) {
+    metrics.maptiler.lastErrorMessage = null;
+  }
+  if (mode && metrics.maptiler.modes[mode] !== undefined) {
+    metrics.maptiler.modes[mode] += 1;
+  }
+  if (usedFallback) {
+    metrics.maptiler.fallbacks += 1;
+  }
+}
+
+function recordPmtilesTileMetric({ success, source }) {
+  metrics.pmtiles.warmup.tilesFetched += 1;
+  if (!success) {
+    metrics.pmtiles.warmup.tilesFailed += 1;
+  }
+  if (source === 'cdn') {
+    metrics.pmtiles.warmup.cdnTiles += 1;
+  } else {
+    metrics.pmtiles.warmup.originTiles += 1;
+  }
+}
+
+function recordPmtilesRunMetric({
+  startedAt,
+  durationMs,
+  tileCount,
+  failureCount,
+  originTiles,
+  cdnTiles,
+  errorMessage,
+}) {
+  metrics.pmtiles.warmup.lastRunStartedAt = startedAt;
+  metrics.pmtiles.warmup.lastRunDurationMs = durationMs;
+  metrics.pmtiles.warmup.lastRunTilesFetched = tileCount;
+  metrics.pmtiles.warmup.lastRunTilesFailed = failureCount;
+  metrics.pmtiles.warmup.lastRunOriginTiles = originTiles;
+  metrics.pmtiles.warmup.lastRunCdnTiles = cdnTiles;
+  if (failureCount > 0) {
+    metrics.pmtiles.warmup.lastErrorMessage = errorMessage || metrics.pmtiles.warmup.lastErrorMessage;
+  } else if (errorMessage) {
+    metrics.pmtiles.warmup.lastErrorMessage = errorMessage;
+  } else {
+    metrics.pmtiles.warmup.lastErrorMessage = null;
+  }
+}
+
 const pmtilesRuntimeConfig = getPmtilesRuntimeConfig();
 console.log('[pmtiles] runtime config', {
   enabled: pmtilesRuntimeConfig.enabled,
   publicBaseUrl: pmtilesRuntimeConfig.publicBaseUrl,
   privateBaseUrl: pmtilesRuntimeConfig.privateBaseUrl,
+  cdnBaseUrl: pmtilesRuntimeConfig.cdnBaseUrl,
   bucket: pmtilesRuntimeConfig.bucket,
   region: pmtilesRuntimeConfig.region,
   objectPrefix: pmtilesRuntimeConfig.objectPrefix,
@@ -242,6 +342,8 @@ const pmtilesManifest = buildPmtilesManifest(pmtilesRuntimeConfig);
 console.log('[pmtiles] manifest status', {
   enabled: pmtilesManifest.enabled,
   baseUrl: pmtilesManifest.baseUrl,
+  originBaseUrl: pmtilesManifest.originBaseUrl,
+  cdnBaseUrl: pmtilesManifest.cdnBaseUrl,
   objectPrefix: pmtilesManifest.objectPrefix,
   datasetCount: Object.keys(pmtilesManifest.datasets || {}).length,
   wardDatasetCount: Object.keys(pmtilesManifest.wardDatasets || {}).length,
@@ -251,7 +353,10 @@ console.log('[maptiler] basemap mode', {
   proxyEnabled: shouldUseMaptilerProxy(),
 });
 if (pmtilesManifest.enabled) {
-  schedulePmtilesWarmup(pmtilesManifest, pmtilesRuntimeConfig);
+  schedulePmtilesWarmup(pmtilesManifest, pmtilesRuntimeConfig, {
+    onTileFetched: recordPmtilesTileMetric,
+    onRunComplete: recordPmtilesRunMetric,
+  });
 }
 
 scheduleMaptilerProxyProbe();
@@ -695,14 +800,11 @@ async function probeMaptilerProxy() {
       return true;
     } catch (error) {
       maptilerProxyState.lastProbeAt = Date.now();
-      if (maptilerProxyState.mode === 'proxy') {
-        console.warn(`[maptiler] proxy probe failed (proxy mode locked): ${error.message}`);
-        return false;
-      }
       if (maptilerProxyState.proxyEnabled) {
-        console.warn(`[maptiler] proxy probe failed; falling back to direct tiles: ${error.message}`);
+        console.warn(`[maptiler] proxy probe failed; forcing direct tiles: ${error.message}`);
       }
       maptilerProxyState.proxyEnabled = false;
+      invalidateStyleCache();
       return false;
     }
   })();
@@ -1094,14 +1196,61 @@ function registerTileRoutes(app) {
     if (!healthy) {
       console.warn('[healthz] failing readiness check:', checks);
     }
+    const averageDurationMs = metrics.maptiler.requests > 0
+      ? Math.round((metrics.maptiler.totalDurationMs / metrics.maptiler.requests) * 100) / 100
+      : 0;
+    const metricsSummary = {
+      maptiler: {
+        requests: metrics.maptiler.requests,
+        errors: metrics.maptiler.errors,
+        averageDurationMs,
+        maxDurationMs: metrics.maptiler.maxDurationMs,
+        slowCount: metrics.maptiler.slowCount,
+        modes: metrics.maptiler.modes,
+        fallbacks: metrics.maptiler.fallbacks,
+        lastStatus: metrics.maptiler.lastStatus,
+        lastDurationMs: metrics.maptiler.lastDurationMs,
+        lastErrorMessage: metrics.maptiler.lastErrorMessage,
+      },
+      pmtilesWarmup: {
+        tilesFetched: metrics.pmtiles.warmup.tilesFetched,
+        tilesFailed: metrics.pmtiles.warmup.tilesFailed,
+        originTiles: metrics.pmtiles.warmup.originTiles,
+        cdnTiles: metrics.pmtiles.warmup.cdnTiles,
+        lastRunStartedAt: metrics.pmtiles.warmup.lastRunStartedAt,
+        lastRunDurationMs: metrics.pmtiles.warmup.lastRunDurationMs,
+        lastRunTilesFetched: metrics.pmtiles.warmup.lastRunTilesFetched,
+        lastRunTilesFailed: metrics.pmtiles.warmup.lastRunTilesFailed,
+        lastRunOriginTiles: metrics.pmtiles.warmup.lastRunOriginTiles,
+        lastRunCdnTiles: metrics.pmtiles.warmup.lastRunCdnTiles,
+        lastErrorMessage: metrics.pmtiles.warmup.lastErrorMessage,
+      },
+    };
     res.status(healthy ? 200 : 503).json({
       status: healthy ? 'ok' : 'degraded',
       uptimeSeconds: Math.round(process.uptime()),
       checks,
+      metrics: metricsSummary,
     });
   });
 
   app.get('/proxy/maptiler/:path(*)', async (req, res) => {
+    const requestStart = performance.now();
+    const proxyModeForMetric = shouldUseMaptilerProxy() ? 'proxy' : 'direct';
+    let fallbackAttempted = false;
+    let recordedErrorMessage = null;
+
+    res.once('finish', () => {
+      recordMaptilerMetric({
+        durationMs: performance.now() - requestStart,
+        success: res.statusCode < 500,
+        statusCode: res.statusCode,
+        mode: proxyModeForMetric,
+        usedFallback: fallbackAttempted,
+        errorMessage: recordedErrorMessage,
+      });
+    });
+
     const key = process.env.MAPLIBRE_API_KEY || process.env.MAPTILER_API_KEY || '';
     if (!key) {
       res.status(503).json({ error: 'Map base unavailable' });
@@ -1158,12 +1307,14 @@ function registerTileRoutes(app) {
           return formatMaptilerResponse(response, originHint);
         });
       } catch (error) {
+        recordedErrorMessage = error?.message || String(error);
         if (error instanceof MaptilerHttpError && error.status >= 400 && error.status < 500 && error.status !== 429) {
           res.status(error.status).send(error.body || '');
           return;
         }
 
         console.warn(`MapTiler proxy primary fetch failed for ${resourcePath}:`, error.message);
+        fallbackAttempted = true;
         let fallbackPayload = null;
         try {
           const fallbackResponse = await fetchMaptilerDirect(
@@ -1177,13 +1328,24 @@ function registerTileRoutes(app) {
             cacheControl: descriptor.downstreamCacheControl,
             fromCache: false,
           };
+          if (maptilerProxyState.proxyEnabled) {
+            console.warn(`[maptiler] proxy fallback succeeded for ${resourcePath}; disabling proxy mode.`);
+            maptilerProxyState.proxyEnabled = false;
+            invalidateStyleCache();
+          }
+          recordedErrorMessage = null;
         } catch (fallbackError) {
+          recordedErrorMessage = fallbackError?.message || fallbackError?.toString() || recordedErrorMessage;
           const status = fallbackError instanceof MaptilerHttpError && Number.isInteger(fallbackError.status)
             ? fallbackError.status
             : 502;
           const body = fallbackError instanceof MaptilerHttpError ? fallbackError.body : '';
           const reason = isAbortError(error) ? 'aborted' : fallbackError.message;
           console.error(`MapTiler fallback fetch failed for ${resourcePath}:`, reason);
+          if (maptilerProxyState.proxyEnabled) {
+            maptilerProxyState.proxyEnabled = false;
+            invalidateStyleCache();
+          }
           if (body) {
             res.status(status).send(body);
           } else {
@@ -1229,7 +1391,7 @@ function registerTileRoutes(app) {
     try {
       const style = await loadBaseStyle();
       res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('Cache-Control', 'no-store');
       res.send(style);
     } catch (error) {
       console.error('Failed to load base style', error);
