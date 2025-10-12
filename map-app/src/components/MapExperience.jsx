@@ -6,6 +6,7 @@ import { PointsLayer } from './PointsLayer.jsx';
 import { WardChoroplethLayer } from './WardChoroplethLayer.jsx';
 import { MAP_CONFIG } from '../lib/mapSources.js';
 import { usePmtiles } from '../context/PmtilesContext.jsx';
+import { registerMapMetrics } from '../lib/clientMetrics.js';
 
 const SUPPORTED_WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
 
@@ -46,6 +47,7 @@ function MapExperience({
   const [mapInstance, setMapInstance] = useState(null);
   const [pointsVisible, setPointsVisible] = useState(true);
   const [basemapReady, setBasemapReady] = useState(false);
+  const [heavyLayersReady, setHeavyLayersReady] = useState(false);
   const wardDatasetId = useMemo(() => {
     if (wardDataset && SUPPORTED_WARD_DATASETS.has(wardDataset)) {
       return wardDataset;
@@ -57,7 +59,7 @@ function MapExperience({
   }, [wardDataset, dataset]);
   const pointsMinZoom = useMemo(
     () => (dataset === 'parking_tickets'
-      ? MAP_CONFIG.TILE_MIN_ZOOM
+      ? MAP_CONFIG.ZOOM_THRESHOLDS.SHOW_INDIVIDUAL_TICKETS
       : 7.5),
     [dataset],
   );
@@ -68,12 +70,13 @@ function MapExperience({
     }
     if (instance?.setSourceTileCacheSize) {
       try {
-        instance.setSourceTileCacheSize(MAP_CONFIG.SOURCE_IDS.TICKETS, 256);
+        instance.setSourceTileCacheSize(MAP_CONFIG.SOURCE_IDS.TICKETS, 512);
       } catch {
         // Older MapLibre versions may not support this API.
       }
     }
     setMapInstance(instance);
+    registerMapMetrics(instance);
     if (onMapLoad) {
       onMapLoad(instance);
     }
@@ -112,6 +115,25 @@ function MapExperience({
       clearTimeout(timeoutId);
     };
   }, [mapInstance]);
+
+  useEffect(() => {
+    if (!basemapReady) {
+      setHeavyLayersReady(false);
+      return undefined;
+    }
+    if (typeof window === 'undefined') {
+      setHeavyLayersReady(true);
+      return undefined;
+    }
+    let rafId = window.requestAnimationFrame(() => {
+      setHeavyLayersReady(true);
+    });
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [basemapReady]);
 
   useEffect(() => {
     if (!mapInstance) {
@@ -221,28 +243,34 @@ function MapExperience({
       </div>
       {mapInstance && (
         <>
-          <CityGlowLayer
-            map={mapInstance}
-            visible={viewMode !== 'ward'}
-            onStreetClick={dataset === 'parking_tickets' ? onStreetSegmentClick : undefined}
-            highlightCentrelineIds={dataset === 'parking_tickets' ? highlightCentrelineIds : []}
-            dataset={dataset}
-          />
-          <NeighbourhoodLayer
-            map={mapInstance}
-            visible={false}
-            onClick={onNeighbourhoodClick}
-          />
-          <PointsLayer
-            map={mapInstance}
-            visible={pointsVisible}
-            onPointClick={onPointClick}
-            onViewportSummaryChange={onViewportSummaryChange}
-            dataset={dataset}
-            filter={filter}
-            isTouchDevice={isTouchDevice}
-          />
-          {wardDatasetId ? (
+          {heavyLayersReady ? (
+            <CityGlowLayer
+              map={mapInstance}
+              visible={viewMode !== 'ward'}
+              onStreetClick={dataset === 'parking_tickets' ? onStreetSegmentClick : undefined}
+              highlightCentrelineIds={dataset === 'parking_tickets' ? highlightCentrelineIds : []}
+              dataset={dataset}
+            />
+          ) : null}
+          {heavyLayersReady ? (
+            <NeighbourhoodLayer
+              map={mapInstance}
+              visible={false}
+              onClick={onNeighbourhoodClick}
+            />
+          ) : null}
+          {heavyLayersReady ? (
+            <PointsLayer
+              map={mapInstance}
+              visible={pointsVisible}
+              onPointClick={onPointClick}
+              onViewportSummaryChange={onViewportSummaryChange}
+              dataset={dataset}
+              filter={filter}
+              isTouchDevice={isTouchDevice}
+            />
+          ) : null}
+          {heavyLayersReady && wardDatasetId ? (
             <WardChoroplethLayer
               map={mapInstance}
               visible={viewMode === 'ward'}

@@ -1,3 +1,5 @@
+import process from 'node:process';
+
 import {
   loadTicketsSummary,
   loadStreetStats,
@@ -8,7 +10,15 @@ import {
 import { getDatasetYears } from './yearlyMetricsService.js';
 import { getDatasetTotals } from './datasetTotalsService.js';
 
+const CACHE_TTL_MS = Number.isFinite(Number.parseInt(process.env.APP_DATA_CACHE_MS || '', 10))
+  ? Number.parseInt(process.env.APP_DATA_CACHE_MS, 10)
+  : 600_000;
+
 let cachedSnapshot = null;
+let lastSnapshotMeta = {
+  fromCache: false,
+  refreshedAt: null,
+};
 
 function mapToSerializableList(map, transform, sortKey = 'totalRevenue') {
   return Array.from(map.values())
@@ -16,7 +26,18 @@ function mapToSerializableList(map, transform, sortKey = 'totalRevenue') {
     .sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0));
 }
 
-export async function createAppData() {
+export async function createAppData(options = {}) {
+  const { bypassCache = false } = options;
+  const now = Date.now();
+
+  if (!bypassCache && cachedSnapshot && cachedSnapshot.expiresAt > now && cachedSnapshot.payload) {
+    lastSnapshotMeta = {
+      fromCache: true,
+      refreshedAt: new Date().toISOString(),
+    };
+    return cachedSnapshot.payload;
+  }
+
   const [
     summaryResult,
     streetStatsResult,
@@ -38,9 +59,9 @@ export async function createAppData() {
   ]);
 
   const [parkingLiveTotals, redLiveTotals, aseLiveTotals] = await Promise.all([
-    getDatasetTotals('parking_tickets', { forceRefresh: true }).catch(() => null),
-    getDatasetTotals('red_light_locations', { forceRefresh: true }).catch(() => null),
-    getDatasetTotals('ase_locations', { forceRefresh: true }).catch(() => null),
+    getDatasetTotals('parking_tickets').catch(() => null),
+    getDatasetTotals('red_light_locations').catch(() => null),
+    getDatasetTotals('ase_locations').catch(() => null),
   ]);
 
   const versionComponents = [
@@ -277,7 +298,12 @@ export async function createAppData() {
     ? versionComponents.map((value) => (value === null ? 'null' : String(value))).join('|')
     : null;
 
-  if (cachedSnapshot && version !== null && cachedSnapshot.version === version) {
+  if (!bypassCache && cachedSnapshot && version !== null && cachedSnapshot.version === version && cachedSnapshot.payload) {
+    cachedSnapshot.expiresAt = now + CACHE_TTL_MS;
+    lastSnapshotMeta = {
+      fromCache: true,
+      refreshedAt: new Date().toISOString(),
+    };
     return cachedSnapshot.payload;
   }
 
@@ -298,14 +324,37 @@ export async function createAppData() {
     },
   };
 
+  if (payload.datasets?.red_light_locations?.locationsById) {
+    payload.datasets.red_light_locations.hasLocationIndex = true;
+    payload.datasets.red_light_locations.locationsById = null;
+  }
+  if (payload.datasets?.ase_locations?.locationsById) {
+    payload.datasets.ase_locations.hasLocationIndex = true;
+    payload.datasets.ase_locations.locationsById = null;
+  }
+
   if (version !== null) {
     cachedSnapshot = {
       version,
       payload,
+      expiresAt: now + CACHE_TTL_MS,
     };
   } else {
-    cachedSnapshot = null;
+    cachedSnapshot = {
+      version: null,
+      payload,
+      expiresAt: now + CACHE_TTL_MS,
+    };
   }
 
+  lastSnapshotMeta = {
+    fromCache: false,
+    refreshedAt: new Date().toISOString(),
+  };
+
   return payload;
+}
+
+export function getLatestAppDataMeta() {
+  return { ...lastSnapshotMeta };
 }
