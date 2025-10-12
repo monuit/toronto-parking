@@ -106,14 +106,16 @@ function normalizeFilename(filename) {
   return filename.startsWith('/') ? filename.slice(1) : filename;
 }
 
-function resolveShardConfig(base, shard) {
+function resolveShardConfig(base, shard, prefix) {
   const bounds = Array.isArray(shard.bounds) && shard.bounds.length === 4
     ? shard.bounds.map((value) => Number(value))
     : [-180, -90, 180, 90];
   const minZoom = Number.isFinite(shard.minZoom) ? shard.minZoom : 0;
   const maxZoom = Number.isFinite(shard.maxZoom) ? shard.maxZoom : Math.max(minZoom, 16);
   const filename = normalizeFilename(shard.filename);
-  const url = `${base}/${filename}`;
+  const normalizedPrefix = prefix ? prefix.replace(/^\/+/, '').replace(/\/+$/, '') : '';
+  const urlBase = normalizedPrefix ? `${base}/${normalizedPrefix}` : base;
+  const url = `${urlBase}/${filename}`;
 
   return {
     id: shard.id,
@@ -156,15 +158,17 @@ function mergeWardDatasetConfig(baseConfig, overrides) {
   };
 }
 
-function resolveWardDataset(base, datasetKey, config) {
+function resolveWardDataset(base, datasetKey, config, prefix) {
   if (!config?.filename) {
     throw new Error(`Ward dataset ${datasetKey} missing PMTiles filename`);
   }
   const filename = normalizeFilename(config.filename);
+  const normalizedPrefix = prefix ? prefix.replace(/^\/+/, '').replace(/\/+$/, '') : '';
+  const urlBase = normalizedPrefix ? `${base}/${normalizedPrefix}` : base;
   return {
     label: config.label || datasetKey,
     vectorLayer: config.vectorLayer || 'ward_polygons',
-    url: `${base}/${filename}`,
+    url: `${urlBase}/${filename}`,
     filename,
     minZoom: Number.isFinite(config.minZoom) ? config.minZoom : 8,
     maxZoom: Number.isFinite(config.maxZoom) ? config.maxZoom : 12,
@@ -182,6 +186,7 @@ export function buildPmtilesManifest(runtimeConfig) {
   }
 
   const baseUrl = runtime.publicBaseUrl.replace(/\/$/, '');
+  const objectPrefix = runtime.objectPrefix ? String(runtime.objectPrefix).replace(/^\/+/, '').replace(/\/+$/, '') : '';
   const datasetConfig = mergeDatasetConfig(DEFAULT_DATASET_CONFIG, runtime.datasetOverrides);
   const wardDatasetConfig = mergeWardDatasetConfig(DEFAULT_WARD_DATASET_CONFIG, runtime.wardDatasetOverrides);
   const manifestDatasets = {};
@@ -198,7 +203,7 @@ export function buildPmtilesManifest(runtimeConfig) {
     manifestDatasets[dataset] = {
       label: config.label || dataset,
       vectorLayer: config.vectorLayer || dataset,
-      shards: config.shards.map((shard) => resolveShardConfig(baseUrl, shard)),
+      shards: config.shards.map((shard) => resolveShardConfig(baseUrl, shard, objectPrefix)),
     };
   }
 
@@ -206,12 +211,13 @@ export function buildPmtilesManifest(runtimeConfig) {
     if (!config) {
       continue;
     }
-    wardDatasets[dataset] = resolveWardDataset(baseUrl, dataset, config);
+    wardDatasets[dataset] = resolveWardDataset(baseUrl, dataset, config, objectPrefix);
   }
 
   return {
     enabled: true,
     baseUrl,
+    objectPrefix,
     bucket: runtime.bucket,
     region: runtime.region,
     updatedAt: new Date().toISOString(),

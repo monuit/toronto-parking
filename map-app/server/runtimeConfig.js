@@ -127,13 +127,25 @@ function parseZoomList(raw) {
     .filter((value) => Number.isFinite(value));
 }
 
+function normalizePrefix(raw, defaultValue = 'pmtiles') {
+  if (raw === undefined || raw === null) {
+    return defaultValue;
+  }
+  const trimmed = String(raw).trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
 export function getPmtilesRuntimeConfig() {
   const basePublic = process.env.PMTILES_PUBLIC_BASE_URL
-    || (process.env.MINIO_PUBLIC_ENDPOINT ? `${process.env.MINIO_PUBLIC_ENDPOINT.replace(/\/?$/, '')}/pmtiles` : null);
+    || (process.env.MINIO_PUBLIC_ENDPOINT ? process.env.MINIO_PUBLIC_ENDPOINT.replace(/\/?$/, '') : null);
   const basePrivate = process.env.PMTILES_PRIVATE_BASE_URL
-    || (process.env.MINIO_PRIVATE_ENDPOINT ? `${process.env.MINIO_PRIVATE_ENDPOINT.replace(/\/?$/, '')}/pmtiles` : null);
+    || (process.env.MINIO_PRIVATE_ENDPOINT ? process.env.MINIO_PRIVATE_ENDPOINT.replace(/\/?$/, '') : null);
   const bucket = process.env.PMTILES_BUCKET || 'pmtiles';
   const region = process.env.MINIO_REGION || 'us-east-1';
+  const objectPrefix = normalizePrefix(process.env.PMTILES_PREFIX);
   const warmupMinutes = Number.parseInt(process.env.PMTILES_WARMUP_MINUTES || '60', 10);
   const warmupIntervalMs = Number.isFinite(warmupMinutes) && warmupMinutes > 0
     ? warmupMinutes * 60 * 1000
@@ -152,6 +164,7 @@ export function getPmtilesRuntimeConfig() {
     privateBaseUrl: basePrivate,
     bucket,
     region,
+    objectPrefix,
     warmupIntervalMs,
     warmupZooms: warmupZooms.length > 0 ? warmupZooms : [10, 11, 12, 13],
     warmupCenter: [warmupLongitude, warmupLatitude],
