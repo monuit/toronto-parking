@@ -21,6 +21,7 @@ import {
   TILE_HARD_TIMEOUT_MS,
   getTileMetrics,
 } from './tileService.js';
+import { createPostgisTileService, DATASET_CONFIG as POSTGIS_DATASET_CONFIG } from './postgisTileService.js';
 import { mergeGeoJSONChunks } from './mergeGeoJSONChunks.js';
 import { getDatasetTotals } from './datasetTotalsService.js';
 import { wakeRemoteServices } from './wakeRemoteServices.js';
@@ -1111,6 +1112,7 @@ function extractTimestamp(value) {
 }
 
 const tileService = createTileService();
+const postgisTileService = createPostgisTileService();
 
 async function bootstrapStartup() {
   try {
@@ -1405,6 +1407,7 @@ function registerTileRoutes(app) {
     const dataset = typeof req.query.dataset === 'string' && req.query.dataset.trim().length > 0
       ? req.query.dataset.trim()
       : 'parking_tickets';
+    const datasetConfig = POSTGIS_DATASET_CONFIG[dataset] || null;
 
     const startTime = performance.now();
     let tileDurationMs = 0;
@@ -1412,8 +1415,8 @@ function registerTileRoutes(app) {
     let tileSource = 'none';
     let headersApplied = false;
     let slowLogged = false;
-
-    const legacyRendererActive = ENABLE_LEGACY_TILE_RENDERER || !pmtilesManifest.enabled;
+    const preferPostgis = postgisTileService.isDatasetEnabled(dataset);
+    const legacyRendererAllowed = ENABLE_LEGACY_TILE_RENDERER || !preferPostgis;
 
     const applyHeadersIfNeeded = () => {
       const totalMs = performance.now() - startTime;
@@ -1446,21 +1449,22 @@ function registerTileRoutes(app) {
       return;
     }
 
-    if (!legacyRendererActive) {
-      tileSource = 'disabled';
-      applyHeadersIfNeeded();
-      res.status(410).json({ error: 'Legacy tile renderer disabled' });
-      return;
-    }
-
-    if (dataset === 'parking_tickets' && z < TICKET_TILE_MIN_ZOOM) {
+    const minZoom = datasetConfig?.minZoom ?? (dataset === 'parking_tickets' ? TICKET_TILE_MIN_ZOOM : null);
+    if (Number.isFinite(minZoom) && z < minZoom) {
       tileSource = 'zoom-restricted';
       applyHeadersIfNeeded();
       res.status(204).end();
       return;
     }
 
-    if (dataset !== 'parking_tickets') {
+    if (!preferPostgis && !legacyRendererAllowed) {
+      tileSource = 'disabled';
+      applyHeadersIfNeeded();
+      res.status(503).json({ error: 'Tile renderer unavailable' });
+      return;
+    }
+
+    if (!preferPostgis && dataset !== 'parking_tickets') {
       tileSource = 'dataset-disabled';
       res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
       applyHeadersIfNeeded();
@@ -1500,18 +1504,46 @@ function registerTileRoutes(app) {
 
     try {
       let tile = null;
-      const fetchStart = performance.now();
-      try {
-        tile = await tileService.getTile(z, x, y, {
-          signal: controller.signal,
-          allowStale: true,
-          revalidate: true,
-        });
-      } finally {
-        tileDurationMs = performance.now() - fetchStart;
+      let fetchError = null;
+
+      if (preferPostgis) {
+        const pgStart = performance.now();
+        try {
+          tile = await postgisTileService.getTile(dataset, z, x, y, {
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (error?.name === 'AbortError') {
+            throw error;
+          }
+          fetchError = error;
+        } finally {
+          tileDurationMs += performance.now() - pgStart;
+        }
+        tileSource = tile?.source || 'postgis';
       }
 
-      tileSource = tile?.source || 'empty';
+      if (!tile && legacyRendererAllowed && dataset === 'parking_tickets') {
+        const legacyStart = performance.now();
+        try {
+          tile = await tileService.getTile(z, x, y, {
+            signal: controller.signal,
+            allowStale: true,
+            revalidate: true,
+          });
+          if (tile && !tileSource) {
+            tileSource = 'legacy';
+          }
+        } finally {
+          tileDurationMs += performance.now() - legacyStart;
+        }
+      } else if (!tile && legacyRendererAllowed) {
+        tileSource = 'dataset-disabled';
+      } else if (!tile && fetchError) {
+        console.error('PostGIS tile fetch failed, no legacy fallback available:', fetchError);
+      }
+
+      tileSource = tile?.source || tileSource || (preferPostgis ? 'postgis' : 'legacy');
 
       if (!tile || !tile.buffer) {
         res.status(204);
@@ -1520,9 +1552,9 @@ function registerTileRoutes(app) {
         return;
       }
 
-      const etag = tile.version !== null && tile.version !== undefined
+      const etag = tile.etag || (tile.version !== null && tile.version !== undefined
         ? `W/"tickets:${tile.version}"`
-        : null;
+        : null);
       if (etag && req.headers['if-none-match'] === etag) {
         tileSource = 'not-modified';
         applyHeadersIfNeeded();
@@ -1535,8 +1567,15 @@ function registerTileRoutes(app) {
       const { buffer: encoded, encoding } = encodeTileBuffer(tile.buffer, acceptEncoding);
       encodeDurationMs += performance.now() - encodeStart;
 
+      const cacheSeconds = Number.isFinite(tile.cacheSeconds)
+        ? Math.max(30, tile.cacheSeconds)
+        : 600;
+      const sharedSeconds = Math.max(cacheSeconds, cacheSeconds * 2);
+      const staleSeconds = Math.min(sharedSeconds, Math.max(60, Math.round(cacheSeconds * 0.5)));
+
       res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
-      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600');
+      res.setHeader('Cache-Control', `public, max-age=${cacheSeconds}, s-maxage=${sharedSeconds}, stale-while-revalidate=${staleSeconds}`);
+      res.setHeader('X-Tile-Cache-Seconds', String(cacheSeconds));
       res.setHeader('Vary', 'Accept-Encoding');
       if (encoding) {
         res.setHeader('Content-Encoding', encoding);
@@ -1544,9 +1583,16 @@ function registerTileRoutes(app) {
       if (etag) {
         res.setHeader('ETag', etag);
       }
-      const tileTimestamp = extractTimestamp(tile.version);
-      if (tileTimestamp) {
-        res.setHeader('Last-Modified', new Date(tileTimestamp).toUTCString());
+      if (Number.isFinite(tile.queryDurationMs)) {
+        res.setHeader('X-Tile-Query-Ms', tile.queryDurationMs.toFixed(2));
+      }
+      if (tile.lastModified) {
+        res.setHeader('Last-Modified', new Date(tile.lastModified).toUTCString());
+      } else {
+        const tileTimestamp = extractTimestamp(tile.version);
+        if (tileTimestamp) {
+          res.setHeader('Last-Modified', new Date(tileTimestamp).toUTCString());
+        }
       }
       applyHeadersIfNeeded();
       res.end(encoded);
