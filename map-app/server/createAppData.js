@@ -1,4 +1,6 @@
 import process from 'node:process';
+import { Buffer } from 'node:buffer';
+import { performance } from 'node:perf_hooks';
 
 import {
   loadTicketsSummary,
@@ -18,6 +20,8 @@ let cachedSnapshot = null;
 let lastSnapshotMeta = {
   fromCache: false,
   refreshedAt: null,
+  durationMs: 0,
+  sizeBytes: null,
 };
 
 function mapToSerializableList(map, transform, sortKey = 'totalRevenue') {
@@ -29,11 +33,14 @@ function mapToSerializableList(map, transform, sortKey = 'totalRevenue') {
 export async function createAppData(options = {}) {
   const { bypassCache = false } = options;
   const now = Date.now();
+  const startedHr = performance.now();
 
   if (!bypassCache && cachedSnapshot && cachedSnapshot.expiresAt > now && cachedSnapshot.payload) {
     lastSnapshotMeta = {
       fromCache: true,
       refreshedAt: new Date().toISOString(),
+      durationMs: performance.now() - startedHr,
+      sizeBytes: cachedSnapshot.sizeBytes ?? null,
     };
     return cachedSnapshot.payload;
   }
@@ -303,6 +310,8 @@ export async function createAppData(options = {}) {
     lastSnapshotMeta = {
       fromCache: true,
       refreshedAt: new Date().toISOString(),
+      durationMs: performance.now() - startedHr,
+      sizeBytes: cachedSnapshot.sizeBytes ?? null,
     };
     return cachedSnapshot.payload;
   }
@@ -333,23 +342,34 @@ export async function createAppData(options = {}) {
     payload.datasets.ase_locations.locationsById = null;
   }
 
+  let sizeBytes = null;
+  try {
+    sizeBytes = Buffer.byteLength(JSON.stringify(payload));
+  } catch {
+    sizeBytes = null;
+  }
+
   if (version !== null) {
     cachedSnapshot = {
       version,
       payload,
       expiresAt: now + CACHE_TTL_MS,
+      sizeBytes,
     };
   } else {
     cachedSnapshot = {
       version: null,
       payload,
       expiresAt: now + CACHE_TTL_MS,
+      sizeBytes,
     };
   }
 
   lastSnapshotMeta = {
     fromCache: false,
     refreshedAt: new Date().toISOString(),
+    durationMs: performance.now() - startedHr,
+    sizeBytes,
   };
 
   return payload;

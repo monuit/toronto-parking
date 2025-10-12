@@ -138,6 +138,34 @@ function normalizePrefix(raw, defaultValue = 'pmtiles') {
   return trimmed.replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
+function ensureBucketPath(url, bucket) {
+  if (!url || !bucket) {
+    return url;
+  }
+  try {
+    const parsed = new URL(url);
+    const hostLower = parsed.hostname.toLowerCase();
+    const bucketLower = bucket.toLowerCase();
+    const hostHasBucket = hostLower === bucketLower || hostLower.startsWith(`${bucketLower}.`);
+    if (!hostHasBucket) {
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const pathHasBucket = segments.some((segment) => segment.toLowerCase() === bucketLower);
+      if (!pathHasBucket) {
+        segments.push(bucket);
+        parsed.pathname = `/${segments.join('/')}`;
+      }
+    }
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    const normalized = url.replace(/\/+$/, '');
+    const suffix = `/${bucket}`;
+    if (normalized.endsWith(suffix) || normalized.toLowerCase().endsWith(suffix.toLowerCase())) {
+      return normalized;
+    }
+    return `${normalized}/${bucket}`.replace(/\/+/, '/');
+  }
+}
+
 export function getPmtilesRuntimeConfig() {
   const basePublic = process.env.PMTILES_PUBLIC_BASE_URL
     || (process.env.MINIO_PUBLIC_ENDPOINT ? process.env.MINIO_PUBLIC_ENDPOINT.replace(/\/?$/, '') : null);
@@ -161,11 +189,19 @@ export function getPmtilesRuntimeConfig() {
 
   const enabled = Boolean(basePublic);
 
+  const publicBaseUrl = !process.env.PMTILES_PUBLIC_BASE_URL && basePublic
+    ? ensureBucketPath(basePublic, bucket)
+    : (basePublic ? basePublic.replace(/\/+$/, '') : null);
+  const privateBaseUrl = !process.env.PMTILES_PRIVATE_BASE_URL && basePrivate
+    ? ensureBucketPath(basePrivate, bucket)
+    : (basePrivate ? basePrivate.replace(/\/+$/, '') : null);
+  const cdnBaseUrl = cdnBase ? ensureBucketPath(cdnBase, bucket) : null;
+
   return {
     enabled,
-    publicBaseUrl: basePublic,
-    privateBaseUrl: basePrivate,
-    cdnBaseUrl: cdnBase,
+    publicBaseUrl,
+    privateBaseUrl,
+    cdnBaseUrl,
     bucket,
     region,
     objectPrefix,
