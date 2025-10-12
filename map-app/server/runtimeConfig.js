@@ -176,7 +176,7 @@ export function getPmtilesRuntimeConfig() {
     : null;
   const bucket = process.env.PMTILES_BUCKET || 'pmtiles';
   const region = process.env.MINIO_REGION || 'us-east-1';
-  const objectPrefix = normalizePrefix(process.env.PMTILES_PREFIX);
+  let objectPrefix = normalizePrefix(process.env.PMTILES_PREFIX);
   const warmupMinutes = Number.parseInt(process.env.PMTILES_WARMUP_MINUTES || '60', 10);
   const warmupIntervalMs = Number.isFinite(warmupMinutes) && warmupMinutes > 0
     ? warmupMinutes * 60 * 1000
@@ -187,7 +187,9 @@ export function getPmtilesRuntimeConfig() {
   const datasetOverrides = parseJsonConfig(process.env.PMTILES_DATASETS, null);
   const wardDatasetOverrides = parseJsonConfig(process.env.PMTILES_WARD_DATASETS, null);
 
-  const enabled = Boolean(basePublic);
+  const enabledSetting = typeof process.env.PMTILES_ENABLED === 'string'
+    ? process.env.PMTILES_ENABLED.trim().toLowerCase()
+    : null;
 
   const publicBaseUrl = !process.env.PMTILES_PUBLIC_BASE_URL && basePublic
     ? ensureBucketPath(basePublic, bucket)
@@ -196,6 +198,18 @@ export function getPmtilesRuntimeConfig() {
     ? ensureBucketPath(basePrivate, bucket)
     : (basePrivate ? basePrivate.replace(/\/+$/, '') : null);
   const cdnBaseUrl = cdnBase ? ensureBucketPath(cdnBase, bucket) : null;
+
+  if (objectPrefix
+    && publicBaseUrl
+    && publicBaseUrl.toLowerCase().endsWith(`/${objectPrefix.toLowerCase()}`)) {
+    objectPrefix = '';
+  }
+
+  const enableFlag = enabledSetting === null
+    ? false
+    : ['1', 'true', 'on', 'enabled', 'yes'].includes(enabledSetting);
+
+  const enabled = enableFlag && Boolean(publicBaseUrl);
 
   return {
     enabled,
