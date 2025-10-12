@@ -10,6 +10,8 @@ import { loadCameraDataset } from '../lib/cameraDatasetLoader.js';
 import { recordTicketsPaint } from '../lib/clientMetrics.js';
 
 const prefetchedShardKeys = new Set();
+const failedShardUrls = new Set();
+const loggedShardFailures = new Set();
 const inFlightSummaries = new Map();
 
 function buildFilterExpression(isCluster, filter) {
@@ -189,6 +191,7 @@ export function PointsLayer({
 
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     let idleId = null;
+    let cancelled = false;
 
     const runPrefetch = async () => {
       for (const shard of datasetManifest.shards) {
@@ -202,18 +205,50 @@ export function PointsLayer({
         }
         prefetchedShardKeys.add(key);
         try {
-          await fetch(resolved, {
+          const response = await fetch(resolved, {
             method: 'GET',
             headers: { Range: 'bytes=0-511' },
             cache: 'force-cache',
             signal: controller?.signal,
             mode: 'cors',
           });
+          if (!response.ok) {
+            failedShardUrls.add(resolved);
+            prefetchedShardKeys.delete(key);
+            if (!cancelled) {
+              setPmtilesSource((previous) => {
+                if (previous?.rawUrl === resolved) {
+                  return null;
+                }
+                return previous;
+              });
+              if (!loggedShardFailures.has(resolved)) {
+                console.warn(`PMTiles shard prefetch failed (${response.status}) for ${resolved}; falling back to legacy tiles.`);
+                loggedShardFailures.add(resolved);
+              }
+            }
+            continue;
+          }
+          failedShardUrls.delete(resolved);
+          loggedShardFailures.delete(resolved);
         } catch (error) {
           if (error?.name === 'AbortError') {
             return;
           }
           prefetchedShardKeys.delete(key);
+          failedShardUrls.add(resolved);
+          if (!cancelled) {
+            setPmtilesSource((previous) => {
+              if (previous?.rawUrl === resolved) {
+                return null;
+              }
+              return previous;
+            });
+            if (!loggedShardFailures.has(resolved)) {
+              console.warn(`PMTiles shard prefetch encountered error for ${resolved}:`, error);
+              loggedShardFailures.add(resolved);
+            }
+          }
         }
       }
     };
@@ -229,6 +264,7 @@ export function PointsLayer({
     schedule();
 
     return () => {
+      cancelled = true;
       if (controller) {
         controller.abort();
       }
@@ -263,6 +299,14 @@ export function PointsLayer({
       const resolvedUrl = resolvePmtilesUrl(shard);
       if (!resolvedUrl) {
         setPmtilesSource(null);
+        return;
+      }
+      if (failedShardUrls.has(resolvedUrl)) {
+        if (!loggedShardFailures.has(resolvedUrl)) {
+          console.warn(`PMTiles shard ${resolvedUrl} marked unavailable; using legacy tiles.`);
+          loggedShardFailures.add(resolvedUrl);
+        }
+        setPmtilesSource((previous) => (previous?.rawUrl === resolvedUrl ? null : previous));
         return;
       }
       const nextUrl = `pmtiles://${resolvedUrl}`;
