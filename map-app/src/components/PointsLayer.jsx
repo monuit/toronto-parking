@@ -92,6 +92,26 @@ function getShardUrlForCoordinate(datasetManifest, longitude, latitude) {
   return datasetManifest.shards[0] || null;
 }
 
+function resolvePmtilesUrl(shard) {
+  if (!shard) {
+    return null;
+  }
+  const candidates = [shard.originUrl, shard.url];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || candidate.length === 0) {
+      continue;
+    }
+    try {
+      const base = typeof window !== 'undefined' ? window.location?.origin : undefined;
+      const absolute = new URL(candidate, base).toString();
+      return absolute;
+    } catch {
+      // Ignore malformed URLs and continue to next candidate
+    }
+  }
+  return null;
+}
+
 export function PointsLayer({
   map,
   visible = true,
@@ -130,11 +150,16 @@ export function PointsLayer({
         return;
       }
       const shard = getShardUrlForCoordinate(datasetManifest, center.lng, center.lat);
-      if (!shard || !shard.url) {
+      if (!shard) {
         setPmtilesSource(null);
         return;
       }
-      const nextUrl = `pmtiles://${shard.url}`;
+      const resolvedUrl = resolvePmtilesUrl(shard);
+      if (!resolvedUrl) {
+        setPmtilesSource(null);
+        return;
+      }
+      const nextUrl = `pmtiles://${resolvedUrl}`;
       setPmtilesSource((previous) => {
         if (previous && previous.url === nextUrl) {
           return previous;

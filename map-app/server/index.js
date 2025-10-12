@@ -187,10 +187,12 @@ if (isProd && !dataDir.includes('dist/client/data')) {
 
 const styleCache = {
   proxyTemplate: null,
+  proxyMtime: null,
 };
 
 function invalidateStyleCache() {
   styleCache.proxyTemplate = null;
+  styleCache.proxyMtime = null;
 }
 
 let loggedMissingMapKey = false;
@@ -207,10 +209,10 @@ const VACUUM_TABLE_LIST = (process.env.STARTUP_VACUUM_TABLES || DEFAULT_VACUUM_T
 
 const redisSettings = getRedisConfig();
 const MAPTILER_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
-const MAPTILER_PROXY_MODE = (process.env.MAPTILER_PROXY_MODE || 'direct').trim().toLowerCase();
+const MAPTILER_PROXY_MODE = (process.env.MAPTILER_PROXY_MODE || 'proxy').trim().toLowerCase();
 const MAPTILER_PROXY_RECHECK_MS = Number.parseInt(process.env.MAPTILER_PROXY_RECHECK_MS || '', 10) || 5 * 60 * 1000;
 const ALLOWED_PROXY_MODES = new Set(['auto', 'proxy', 'direct']);
-const resolvedProxyMode = ALLOWED_PROXY_MODES.has(MAPTILER_PROXY_MODE) ? MAPTILER_PROXY_MODE : 'direct';
+const resolvedProxyMode = ALLOWED_PROXY_MODES.has(MAPTILER_PROXY_MODE) ? MAPTILER_PROXY_MODE : 'proxy';
 const maptilerProxyState = {
   mode: resolvedProxyMode,
   proxyEnabled: resolvedProxyMode === 'proxy',
@@ -1000,59 +1002,29 @@ async function loadBaseStyle() {
     loggedMissingMapKey = true;
   }
 
-  if (shouldUseMaptilerProxy()) {
-    if (!styleCache.proxyTemplate) {
-      let raw;
-      try {
-        raw = await fs.readFile(stylePath, 'utf-8');
-      } catch (error) {
-        throw new Error(`Base style file not found at ${stylePath}: ${error.message}`);
-      }
-      let parsed = null;
-      try {
-        parsed = JSON.parse(raw);
-      } catch (error) {
-        console.warn('Failed to parse base style JSON for proxy template:', error.message);
-      }
-      if (parsed && typeof parsed === 'object') {
-        if (!parsed.sources || typeof parsed.sources !== 'object') {
-          parsed.sources = {};
-        }
-        parsed.sources.openmaptiles = {
-          type: 'vector',
-          tiles: ['/proxy/maptiler/tiles/v3/{z}/{x}/{y}.pbf'],
-          minzoom: 0,
-          maxzoom: 14,
-          attribution: parsed.sources?.openmaptiles?.attribution
-            || '© OpenMapTiles © OpenStreetMap contributors',
-        };
-        parsed.glyphs = '/proxy/maptiler/fonts/{fontstack}/{range}.pbf';
-        if (typeof parsed.sprite === 'string' && parsed.sprite.includes('get_your_own_OpIi9ZULNHzrESv6T2vL')) {
-          parsed.sprite = parsed.sprite.replace('get_your_own_OpIi9ZULNHzrESv6T2vL', '');
-        }
-        styleCache.proxyTemplate = JSON.stringify(parsed);
-      } else {
-        styleCache.proxyTemplate = (raw || '').replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, '');
-      }
-    }
-    return sanitizeMaptilerText(styleCache.proxyTemplate, '');
-  }
-
-  let raw;
+  let stats;
   try {
-    raw = await fs.readFile(stylePath, 'utf-8');
+    stats = await fs.stat(stylePath);
   } catch (error) {
     throw new Error(`Base style file not found at ${stylePath}: ${error.message}`);
   }
 
-  if (!raw) {
-    return '';
+  if (shouldUseMaptilerProxy()) {
+    if (!styleCache.proxyTemplate || styleCache.proxyMtime !== stats.mtimeMs) {
+      const raw = await fs.readFile(stylePath, 'utf-8');
+      const sanitized = sanitizeMaptilerText(raw, '');
+      styleCache.proxyTemplate = typeof sanitized === 'string'
+        ? sanitized.replace(/\{\{MAPLIBRE_API_KEY\}\}/g, '')
+        : sanitized;
+      styleCache.proxyMtime = stats.mtimeMs;
+    }
+    return styleCache.proxyTemplate;
   }
 
+  const raw = await fs.readFile(stylePath, 'utf-8');
   if (!key) {
     return raw;
   }
-
   return raw
     .replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, key)
     .replace(/\{\{MAPLIBRE_API_KEY\}\}/g, key);
