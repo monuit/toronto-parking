@@ -95,8 +95,9 @@ function sanitizeMaptilerUrl(raw, baseUrl = '') {
     }
     url.searchParams.delete('key');
     const pathname = url.pathname.replace(/^\/+/u, '');
+    const decodedPath = decodeURIComponent(pathname);
     const remaining = url.searchParams.toString();
-    return `${prefix}${pathname}${remaining ? `?${remaining}` : ''}`;
+    return `${prefix}${decodedPath}${remaining ? `?${remaining}` : ''}`;
   } catch {
     return raw.replace(/https:\/\/api\.maptiler\.com\//gi, prefix)
       .replace(/([?&])key=[^&"'\s]+/gi, (match, pfx) => (pfx === '?' ? '?' : ''))
