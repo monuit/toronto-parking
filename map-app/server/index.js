@@ -201,7 +201,22 @@ const MAPTILER_FALLBACK_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_
 const TILE_SLOW_LOG_THRESHOLD_MS = Number.parseInt(process.env.TILE_SLOW_LOG_MS || '', 10) || 800;
 
 const pmtilesRuntimeConfig = getPmtilesRuntimeConfig();
+console.log('[pmtiles] runtime config', {
+  enabled: pmtilesRuntimeConfig.enabled,
+  publicBaseUrl: pmtilesRuntimeConfig.publicBaseUrl,
+  privateBaseUrl: pmtilesRuntimeConfig.privateBaseUrl,
+  bucket: pmtilesRuntimeConfig.bucket,
+  region: pmtilesRuntimeConfig.region,
+  objectPrefix: pmtilesRuntimeConfig.objectPrefix,
+});
 const pmtilesManifest = buildPmtilesManifest(pmtilesRuntimeConfig);
+console.log('[pmtiles] manifest status', {
+  enabled: pmtilesManifest.enabled,
+  baseUrl: pmtilesManifest.baseUrl,
+  objectPrefix: pmtilesManifest.objectPrefix,
+  datasetCount: Object.keys(pmtilesManifest.datasets || {}).length,
+  wardDatasetCount: Object.keys(pmtilesManifest.wardDatasets || {}).length,
+});
 if (pmtilesManifest.enabled) {
   schedulePmtilesWarmup(pmtilesManifest, pmtilesRuntimeConfig);
 }
