@@ -31,6 +31,21 @@ function resolveAbsoluteUrl(url) {
   }
 }
 
+function registerShardUrl(protocol, url) {
+  const absolute = resolveAbsoluteUrl(url);
+  if (!absolute || registeredUrls.has(absolute)) {
+    return false;
+  }
+  try {
+    protocol.add(new PMTiles(absolute));
+    registeredUrls.add(absolute);
+    return true;
+  } catch {
+    registeredUrls.delete(absolute);
+    return false;
+  }
+}
+
 export function registerPmtilesSources(manifest) {
   if (!manifest?.enabled || !isClient()) {
     return;
@@ -47,17 +62,10 @@ export function registerPmtilesSources(manifest) {
       }
       const shardList = Array.isArray(dataset.shards) ? dataset.shards : [dataset];
       for (const shard of shardList) {
-        const absolute = resolveAbsoluteUrl(shard?.originUrl) || resolveAbsoluteUrl(shard?.url);
-        if (!absolute || registeredUrls.has(absolute)) {
+        if (registerShardUrl(protocol, shard?.originUrl)) {
           continue;
         }
-        registeredUrls.add(absolute);
-        try {
-          protocol.add(new PMTiles(absolute));
-        } catch {
-          // Remove the URL if protocol registration fails so we can retry later
-          registeredUrls.delete(absolute);
-        }
+        registerShardUrl(protocol, shard?.url);
       }
     }
   }

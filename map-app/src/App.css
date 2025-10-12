@@ -12,6 +12,10 @@ body, html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root {
+  --map-header-offset: 0px;
+}
+
 /* Hide MapLibre default attribution control */
 .maplibregl-ctrl-attrib,
 .mapboxgl-ctrl-attrib,
@@ -276,8 +280,10 @@ body, html {
 .map-container {
   margin-left: 320px;
   width: calc(100vw - 320px);
-  height: 100vh;
+  height: calc(100vh - var(--map-header-offset, 0px));
+  min-height: 520px;
   position: relative;
+  display: block;
 }
 
 .map-loading-overlay {

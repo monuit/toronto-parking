@@ -4,6 +4,7 @@ import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
+import { createHash } from 'node:crypto';
 
 import { config as loadEnv } from 'dotenv';
 import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -68,9 +69,35 @@ async function fileSize(filePath) {
   return stats.size;
 }
 
-async function uploadFile(client, bucket, key, filePath) {
+async function computeSha256(filePath) {
+  const hash = createHash('sha256');
   const stream = createReadStream(filePath);
+  await new Promise((resolve, reject) => {
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+  return hash.digest('hex');
+}
+
+async function uploadFile(client, bucket, key, filePath) {
   const size = await fileSize(filePath);
+  const checksum = await computeSha256(filePath);
+  try {
+    const headResult = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    const existing = headResult.Metadata?.sha256;
+    if (existing && existing === checksum) {
+      console.log(`Skipping upload for ${key}; checksum unchanged`);
+      return;
+    }
+  } catch (error) {
+    if (!error?.$metadata || ![404, 400].includes(error.$metadata.httpStatusCode)) {
+      if (error?.$metadata?.httpStatusCode !== 404) {
+        console.warn(`HeadObject check failed for ${key}:`, error?.message || error);
+      }
+    }
+  }
+  const stream = createReadStream(filePath);
   await client.send(new PutObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -78,6 +105,8 @@ async function uploadFile(client, bucket, key, filePath) {
     ContentType: 'application/octet-stream',
     ContentLength: size,
     ACL: 'public-read',
+    CacheControl: 'public, max-age=31536000, immutable',
+    Metadata: { sha256: checksum },
   }));
 }
 

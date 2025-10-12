@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources.js';
 import { usePmtiles } from '../context/PmtilesContext.jsx';
 import { getPmtilesDataset, getPmtilesShardUrl } from '../lib/pmtilesProtocol.js';
+import { useWardData } from '../context/WardDataContext.jsx';
 
 const SUPPORTED_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
 
@@ -23,6 +24,7 @@ export function WardChoroplethLayer({
   onWardHover,
 }) {
   const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
+  const { ensureGeojson } = useWardData();
   const pmtilesDataset = useMemo(
     () => (pmtilesReady ? getPmtilesDataset(pmtilesManifest, dataset, 'wardDatasets') : null),
     [pmtilesManifest, pmtilesReady, dataset],
@@ -31,28 +33,37 @@ export function WardChoroplethLayer({
     const shardUrl = getPmtilesShardUrl(pmtilesDataset);
     return shardUrl ? `pmtiles://${shardUrl}` : null;
   }, [pmtilesDataset]);
+  const [geojsonData, setGeojsonData] = useState(null);
   const sourceId = useMemo(() => `${dataset}-ward-source`, [dataset]);
   const fillLayerId = useMemo(() => `${dataset}-ward-fill`, [dataset]);
   const outlineLayerId = useMemo(() => `${dataset}-ward-outline`, [dataset]);
-  const tileUrl = useMemo(
-    () => {
-      if (pmtilesUrl) {
-        return pmtilesUrl;
-      }
-      if (!SUPPORTED_DATASETS.has(dataset)) {
-        return null;
-      }
-      const template = MAP_CONFIG.TILE_SOURCE.WARD.replace('{dataset}', dataset);
-      if (/^https?:\/\//i.test(template)) {
-        return template;
-      }
-      if (typeof window !== 'undefined' && window.location?.origin) {
-        return `${window.location.origin}${template}`;
-      }
-      return template;
-    },
-    [dataset, pmtilesUrl],
-  );
+  const tileUrl = useMemo(() => (pmtilesUrl ? pmtilesUrl : null), [pmtilesUrl]);
+
+  useEffect(() => {
+    if (!map || !SUPPORTED_DATASETS.has(dataset)) {
+      return undefined;
+    }
+    if (pmtilesUrl) {
+      setGeojsonData(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setGeojsonData(null);
+    ensureGeojson(dataset)
+      .then((payload) => {
+        if (!cancelled && payload) {
+          setGeojsonData(payload);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('Failed to load ward geojson', error);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataset, ensureGeojson, map, pmtilesUrl]);
 
   const layerSourceProps = useMemo(
     () => ({ 'source-layer': pmtilesDataset?.vectorLayer || STYLE_CONSTANTS.WARD_TILE_SOURCE_LAYER }),
@@ -167,32 +178,61 @@ export function WardChoroplethLayer({
     };
   }, [map, fillLayerId, onWardClick, onWardHover, isSupported]);
 
-  if (!isSupported || !map || !tileUrl) {
+  if (!isSupported || !map) {
+    return null;
+  }
+
+  if (tileUrl) {
+    return (
+      <Source
+        key={sourceId}
+        id={sourceId}
+        type="vector"
+        tiles={[tileUrl]}
+        minzoom={pmtilesDataset?.minZoom ?? 0}
+        maxzoom={pmtilesDataset?.maxZoom ?? 14}
+      >
+        <Layer
+          id={fillLayerId}
+          type="fill"
+          paint={fillPaint}
+          layout={{ visibility: visible ? 'visible' : 'none' }}
+          {...layerSourceProps}
+        />
+        <Layer
+          id={outlineLayerId}
+          type="line"
+          paint={outlinePaint}
+          layout={{ visibility: visible ? 'visible' : 'none' }}
+          {...layerSourceProps}
+        />
+      </Source>
+    );
+  }
+
+  if (!geojsonData) {
     return null;
   }
 
   return (
     <Source
-      key={sourceId}
+      key={`${sourceId}-geojson`}
       id={sourceId}
-      type="vector"
-  tiles={[tileUrl]}
-  minzoom={pmtilesDataset?.minZoom ?? 0}
-  maxzoom={pmtilesDataset?.maxZoom ?? 14}
+      type="geojson"
+      data={geojsonData}
+      generateId
     >
       <Layer
         id={fillLayerId}
         type="fill"
         paint={fillPaint}
         layout={{ visibility: visible ? 'visible' : 'none' }}
-        {...layerSourceProps}
       />
       <Layer
         id={outlineLayerId}
         type="line"
         paint={outlinePaint}
         layout={{ visibility: visible ? 'visible' : 'none' }}
-        {...layerSourceProps}
       />
     </Source>
   );
