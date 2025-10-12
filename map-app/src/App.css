@@ -277,6 +277,42 @@ body, html {
   margin-left: 320px;
   width: calc(100vw - 320px);
   height: 100vh;
+  position: relative;
+}
+
+.map-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(224, 231, 241, 0.9), rgba(233, 238, 246, 0.82));
+  overflow: hidden;
+  transition: opacity 180ms ease, visibility 180ms ease;
+}
+
+.map-loading-overlay__gradient {
+  width: 140%;
+  height: 140%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.45) 50%, rgba(255, 255, 255, 0) 100%);
+  animation: mapLoadingShimmer 2400ms ease-in-out infinite;
+  transform: translateX(-30%);
+}
+
+@keyframes mapLoadingShimmer {
+  0% {
+    transform: translateX(-30%);
+  }
+  50% {
+    transform: translateX(30%);
+  }
+  100% {
+    transform: translateX(-30%);
+  }
+}
+
+.map-loading-overlay--hidden {
+  opacity: 0;
+  visibility: hidden;
 }
 
 /* Glassmorphism Base Classes */
