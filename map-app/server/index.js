@@ -63,7 +63,20 @@ function normaliseBaseUrl(baseUrl) {
   return baseUrl.replace(/\/+$/u, '');
 }
 
+function shouldUseMaptilerProxy() {
+  if (maptilerProxyState.mode === 'proxy') {
+    return true;
+  }
+  if (maptilerProxyState.mode === 'direct') {
+    return false;
+  }
+  return Boolean(maptilerProxyState.proxyEnabled);
+}
+
 function sanitizeMaptilerUrl(raw, baseUrl = '') {
+  if (!shouldUseMaptilerProxy()) {
+    return raw;
+  }
   if (typeof raw !== 'string' || raw.startsWith('/proxy/maptiler/')) {
     return raw;
   }
@@ -98,6 +111,9 @@ function escapeForJsonPath(value) {
 
 function sanitizeMaptilerText(text, baseUrl = '') {
   if (typeof text !== 'string' || !text) {
+    return text;
+  }
+  if (!shouldUseMaptilerProxy()) {
     return text;
   }
   const origin = normaliseBaseUrl(baseUrl);
@@ -172,7 +188,10 @@ if (isProd && !dataDir.includes('dist/client/data')) {
 const styleCache = {
   key: null,
   mtime: null,
-  template: null,
+  raw: null,
+  base: null,
+  proxyTemplate: null,
+  directTemplate: null,
 };
 let loggedMissingMapKey = false;
 const WARD_DATASETS = new Set(['red_light_locations', 'ase_locations', 'cameras_combined']);
@@ -188,6 +207,16 @@ const VACUUM_TABLE_LIST = (process.env.STARTUP_VACUUM_TABLES || DEFAULT_VACUUM_T
 
 const redisSettings = getRedisConfig();
 const MAPTILER_REDIS_ENABLED = Boolean(redisSettings.enabled && redisSettings.url);
+const MAPTILER_PROXY_MODE = (process.env.MAPTILER_PROXY_MODE || 'auto').trim().toLowerCase();
+const MAPTILER_PROXY_RECHECK_MS = Number.parseInt(process.env.MAPTILER_PROXY_RECHECK_MS || '', 10) || 5 * 60 * 1000;
+const ALLOWED_PROXY_MODES = new Set(['auto', 'proxy', 'direct']);
+const resolvedProxyMode = ALLOWED_PROXY_MODES.has(MAPTILER_PROXY_MODE) ? MAPTILER_PROXY_MODE : 'auto';
+const maptilerProxyState = {
+  mode: resolvedProxyMode,
+  proxyEnabled: resolvedProxyMode === 'proxy',
+  lastProbeAt: 0,
+  probing: null,
+};
 const MAPTILER_REDIS_NAMESPACE = REDIS_NAMESPACE;
 const MAPTILER_CACHE_PREFIX = `${MAPTILER_REDIS_NAMESPACE}:maptiler:v1`;
 const MAPTILER_PROXY_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_TIMEOUT_MS || '', 10) || 12_000;
@@ -217,9 +246,15 @@ console.log('[pmtiles] manifest status', {
   datasetCount: Object.keys(pmtilesManifest.datasets || {}).length,
   wardDatasetCount: Object.keys(pmtilesManifest.wardDatasets || {}).length,
 });
+console.log('[maptiler] basemap mode', {
+  mode: maptilerProxyState.mode,
+  proxyEnabled: shouldUseMaptilerProxy(),
+});
 if (pmtilesManifest.enabled) {
   schedulePmtilesWarmup(pmtilesManifest, pmtilesRuntimeConfig);
 }
+
+scheduleMaptilerProxyProbe();
 
 let maptilerRedisPromise = null;
 const maptilerInflight = new Map();
@@ -592,6 +627,117 @@ function resolveDownstreamCacheControl(resourcePath) {
   return MAPTILER_DEFAULT_CACHE_CONTROL;
 }
 
+function normaliseTileResourcePath(resourcePath) {
+  if (typeof resourcePath !== 'string' || !resourcePath.startsWith('tiles/')) {
+    return resourcePath;
+  }
+  const match = resourcePath.match(/^(tiles\/[\w-]+\/)(\d+)\/(-?\d+)\/(-?\d+)(\.[a-z0-9]+)?$/i);
+  if (!match) {
+    return resourcePath;
+  }
+  const [, prefix, zStr, xStr, yStr, suffix = ''] = match;
+  const z = Number.parseInt(zStr, 10);
+  const x = Number.parseInt(xStr, 10);
+  const y = Number.parseInt(yStr, 10);
+  if (!Number.isFinite(z) || z < 0 || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return resourcePath;
+  }
+  const worldSize = 2 ** z;
+  if (!Number.isFinite(worldSize) || worldSize <= 0) {
+    return resourcePath;
+  }
+  const wrappedX = ((x % worldSize) + worldSize) % worldSize;
+  const clampedY = Math.min(Math.max(y, 0), worldSize - 1);
+  if (wrappedX === x && clampedY === y) {
+    return resourcePath;
+  }
+  return `${prefix}${z}/${wrappedX}/${clampedY}${suffix}`;
+}
+
+async function probeMaptilerProxy() {
+  if (maptilerProxyState.mode === 'direct') {
+    maptilerProxyState.proxyEnabled = false;
+    return false;
+  }
+  if (maptilerProxyState.probing) {
+    return maptilerProxyState.probing;
+  }
+  const probe = (async () => {
+    const key = process.env.MAPLIBRE_API_KEY || process.env.MAPTILER_API_KEY || '';
+    if (!key) {
+      if (maptilerProxyState.mode !== 'proxy' && maptilerProxyState.proxyEnabled) {
+        console.warn('MapTiler proxy disabled: API key missing.');
+        maptilerProxyState.proxyEnabled = false;
+      }
+      return false;
+    }
+    const resourcePath = 'tiles/v3/10/300/385.pbf';
+    const upstreamUrl = new URL(`https://api.maptiler.com/${resourcePath}`);
+    upstreamUrl.searchParams.set('key', key);
+    const headers = {
+      Accept: 'application/x-protobuf',
+      'User-Agent': process.env.MAPTILER_USER_AGENT || 'toronto-parking-proxy/1.0',
+    };
+    try {
+      const response = await fetchMaptilerWithRetry(upstreamUrl, headers);
+      if (!response || !response.ok) {
+        throw new Error(`status ${response ? response.status : 'unknown'}`);
+      }
+      const payload = await response.arrayBuffer();
+      if (!payload || payload.byteLength === 0) {
+        throw new Error('empty payload');
+      }
+      if (!maptilerProxyState.proxyEnabled) {
+        console.log('[maptiler] proxy probe succeeded; enabling proxy-backed basemap.');
+      }
+      maptilerProxyState.proxyEnabled = true;
+      maptilerProxyState.lastProbeAt = Date.now();
+      return true;
+    } catch (error) {
+      maptilerProxyState.lastProbeAt = Date.now();
+      if (maptilerProxyState.mode === 'proxy') {
+        console.warn(`[maptiler] proxy probe failed (proxy mode locked): ${error.message}`);
+        return false;
+      }
+      if (maptilerProxyState.proxyEnabled) {
+        console.warn(`[maptiler] proxy probe failed; falling back to direct tiles: ${error.message}`);
+      }
+      maptilerProxyState.proxyEnabled = false;
+      return false;
+    }
+  })();
+  maptilerProxyState.probing = probe.finally(() => {
+    maptilerProxyState.probing = null;
+  });
+  return maptilerProxyState.probing;
+}
+
+function scheduleMaptilerProxyProbe() {
+  if (maptilerProxyState.mode === 'direct') {
+    return;
+  }
+  const initialDelay = maptilerProxyState.mode === 'proxy' ? 0 : 1000;
+  setTimeout(() => {
+    probeMaptilerProxy().catch((error) => {
+      console.warn('[maptiler] initial proxy probe failed:', error.message);
+    });
+  }, initialDelay);
+
+  if (maptilerProxyState.mode === 'auto' && MAPTILER_PROXY_RECHECK_MS > 0) {
+    setInterval(() => {
+      if (maptilerProxyState.mode !== 'auto') {
+        return;
+      }
+      if (maptilerProxyState.proxyEnabled) {
+        return;
+      }
+      probeMaptilerProxy().catch((error) => {
+        console.warn('[maptiler] scheduled proxy probe failed:', error.message);
+      });
+    }, MAPTILER_PROXY_RECHECK_MS);
+  }
+}
+
 function buildMaptilerDescriptor(resourcePath, searchParams) {
   const normalizedPath = resourcePath.replace(/^\/+/, '');
   const canonicalQuery = buildCanonicalQuery(searchParams);
@@ -749,6 +895,20 @@ async function resolveMaptilerResource(descriptor, fetcher) {
   }
 }
 
+function cloneBaseStyle() {
+  if (styleCache.base && typeof styleCache.base === 'object') {
+    return JSON.parse(JSON.stringify(styleCache.base));
+  }
+  if (typeof styleCache.raw === 'string' && styleCache.raw.length > 0) {
+    try {
+      return JSON.parse(styleCache.raw);
+    } catch (error) {
+      console.warn('Failed to parse cached base style JSON:', error.message);
+    }
+  }
+  return null;
+}
+
 async function loadBaseStyle() {
   const key = process.env.MAPLIBRE_API_KEY || process.env.MAPTILER_API_KEY || '';
   if (!key && !loggedMissingMapKey) {
@@ -764,43 +924,70 @@ async function loadBaseStyle() {
   }
 
   const mtimeMs = fileStats ? fileStats.mtimeMs : null;
-  if (!styleCache.template || styleCache.key !== key || styleCache.mtime !== mtimeMs) {
+  const needsReload = styleCache.mtime !== mtimeMs;
+  if (needsReload) {
     const raw = await fs.readFile(stylePath, 'utf-8');
     let parsed = null;
     try {
       parsed = JSON.parse(raw);
     } catch (error) {
-      console.warn('Failed to parse base style JSON, serving raw fallback:', error.message);
+      console.warn('Failed to parse base style JSON, retaining raw fallback:', error.message);
     }
-
-    if (parsed && typeof parsed === 'object') {
-      if (!parsed.sources) {
-        parsed.sources = {};
-      }
-      parsed.sources.openmaptiles = {
-        type: 'vector',
-        tiles: ['/proxy/maptiler/tiles/v3/{z}/{x}/{y}.pbf'],
-        minzoom: 0,
-        maxzoom: 14,
-        attribution: parsed.sources?.openmaptiles?.attribution
-          || '© OpenMapTiles © OpenStreetMap contributors',
-      };
-      parsed.glyphs = '/proxy/maptiler/fonts/{fontstack}/{range}.pbf';
-
-      if (typeof parsed.sprite === 'string' && parsed.sprite.includes('get_your_own_OpIi9ZULNHzrESv6T2vL')) {
-        parsed.sprite = parsed.sprite.replace('get_your_own_OpIi9ZULNHzrESv6T2vL', '');
-      }
-
-      styleCache.template = JSON.stringify(parsed);
-    } else {
-      styleCache.template = raw.replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, '');
-    }
-
-    styleCache.key = key;
+    styleCache.raw = raw;
+    styleCache.base = parsed && typeof parsed === 'object' ? parsed : null;
     styleCache.mtime = mtimeMs;
+    styleCache.proxyTemplate = null;
+    styleCache.directTemplate = null;
   }
 
-  return sanitizeMaptilerText(styleCache.template, '');
+  if (styleCache.key !== key) {
+    styleCache.key = key;
+    styleCache.proxyTemplate = null;
+    styleCache.directTemplate = null;
+  }
+
+  if (shouldUseMaptilerProxy()) {
+    if (!styleCache.proxyTemplate) {
+      const baseStyle = cloneBaseStyle();
+      if (baseStyle) {
+        if (!baseStyle.sources || typeof baseStyle.sources !== 'object') {
+          baseStyle.sources = {};
+        }
+        baseStyle.sources.openmaptiles = {
+          type: 'vector',
+          tiles: ['/proxy/maptiler/tiles/v3/{z}/{x}/{y}.pbf'],
+          minzoom: 0,
+          maxzoom: 14,
+          attribution: baseStyle.sources?.openmaptiles?.attribution
+            || '© OpenMapTiles © OpenStreetMap contributors',
+        };
+        baseStyle.glyphs = '/proxy/maptiler/fonts/{fontstack}/{range}.pbf';
+        if (typeof baseStyle.sprite === 'string' && baseStyle.sprite.includes('get_your_own_OpIi9ZULNHzrESv6T2vL')) {
+          baseStyle.sprite = baseStyle.sprite.replace('get_your_own_OpIi9ZULNHzrESv6T2vL', '');
+        }
+        styleCache.proxyTemplate = JSON.stringify(baseStyle);
+      } else if (typeof styleCache.raw === 'string') {
+        styleCache.proxyTemplate = styleCache.raw.replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, '');
+      } else {
+        styleCache.proxyTemplate = '';
+      }
+    }
+    return sanitizeMaptilerText(styleCache.proxyTemplate, '');
+  }
+
+  if (!styleCache.directTemplate) {
+    const replacementKey = key || '';
+    if (styleCache.base) {
+      const directStyle = cloneBaseStyle();
+      styleCache.directTemplate = JSON.stringify(directStyle).replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, replacementKey);
+    } else if (typeof styleCache.raw === 'string') {
+      styleCache.directTemplate = styleCache.raw.replace(/get_your_own_OpIi9ZULNHzrESv6T2vL/g, replacementKey);
+    } else {
+      styleCache.directTemplate = '';
+    }
+  }
+
+  return styleCache.directTemplate;
 }
 
 function encodeTileBuffer(buffer, acceptEncoding = '') {
@@ -921,7 +1108,8 @@ function registerTileRoutes(app) {
       return;
     }
 
-    const resourcePath = req.params.path || '';
+    const rawResourcePath = req.params.path || '';
+    const resourcePath = normaliseTileResourcePath(rawResourcePath);
     try {
       const upstreamUrl = new URL(`https://api.maptiler.com/${resourcePath}`);
       for (const [name, value] of Object.entries(req.query)) {
