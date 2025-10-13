@@ -28,7 +28,7 @@ QUADKEY_ZOOM = 16
 PREFIX_LEN = 16
 
 
-def build_sql(dataset: str, table: str, function: str, extra_columns: str) -> str:
+def build_sql(dataset: str, table: str, function: str, extra_columns: str = "") -> str:
     return dedent(
         f"""
         CREATE OR REPLACE FUNCTION {function}(
@@ -77,7 +77,14 @@ def build_sql(dataset: str, table: str, function: str, extra_columns: str) -> st
                             t.ticket_count,
                             t.total_fine_amount,
                             t.street_normalized,
-                            t.centreline_id
+                            t.centreline_id,
+                            t.location_name,
+                            t.location,
+                            t.status,
+                            t.ward,
+                            t.kind,
+                            COALESCE(t.cluster_size, 1)::integer AS cluster_size,
+                            t.grid_meters
                             {extra_columns}
                         FROM {table} t
                         WHERE t.dataset = '{dataset}'
@@ -103,27 +110,24 @@ def build_sql(dataset: str, table: str, function: str, extra_columns: str) -> st
         $$;
         """
     )
-
-
 def main() -> None:
     statements = [
         build_sql(
             dataset="parking_tickets",
             table="parking_ticket_tiles",
             function="public.get_parking_tiles",
-            extra_columns=",\n                            t.location_name,\n                            t.location,\n                            t.ward",
         ),
         build_sql(
             dataset="red_light_locations",
             table="red_light_camera_tiles",
             function="public.get_red_light_tiles",
-            extra_columns=",\n                            t.location_name,\n                            t.location,\n                            t.ward",
+            extra_columns="\n                            t.ticket_count AS count,\n                            t.total_fine_amount AS total_revenue",
         ),
         build_sql(
             dataset="ase_locations",
             table="ase_camera_tiles",
             function="public.get_ase_tiles",
-            extra_columns=",\n                            t.location_name,\n                            t.location,\n                            t.ward",
+            extra_columns="\n                            t.ticket_count AS count,\n                            t.total_fine_amount AS total_revenue",
         ),
     ]
 
