@@ -2,14 +2,14 @@ import { Buffer } from 'node:buffer';
 import { gunzipSync } from 'node:zlib';
 import { Pool } from 'pg';
 import { createClient } from 'redis';
-import { getPostgresConfig, getRedisConfig } from '../../server/runtimeConfig.js';
+import { getTileDbConfig, getRedisConfig } from '../../server/runtimeConfig.js';
 
 function formatNumber(value) {
   return value.toLocaleString('en-CA');
 }
 
 async function withPg(callback) {
-  const config = getPostgresConfig();
+  const config = getTileDbConfig();
   if (!config.enabled || !config.connectionString) {
     throw new Error('Postgres connection is not configured/enabled');
   }
