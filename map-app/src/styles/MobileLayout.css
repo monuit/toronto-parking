@@ -135,10 +135,18 @@
 }
 
 .mini-insights__metric strong {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: #ffffff;
   margin-right: 4px;
+}
+
+.mini-insights__cta {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(236, 241, 255, 0.68);
 }
 
 .mini-insights__separator {

@@ -13,6 +13,7 @@ export function MiniInsightsPanel({ dataset, totals, year, onExpand }) {
   const ticketCount = totals ? formatNumber(Number(totals.ticketCount ?? totals.featureCount ?? 0)) : '—';
   const revenueTotal = totals ? formatCurrency(Number(totals.totalRevenue ?? 0)) : '—';
   const locationCount = totals ? formatNumber(Number(totals.locationCount ?? totals.featureCount ?? 0)) : null;
+  const showTapHint = dataset === 'parking_tickets';
 
   return (
     <button
@@ -27,6 +28,9 @@ export function MiniInsightsPanel({ dataset, totals, year, onExpand }) {
           <span className="mini-insights__pill">{year}</span>
         ) : null}
       </div>
+      {showTapHint ? (
+        <div className="mini-insights__cta">Tap to explore →→</div>
+      ) : null}
       <div className="mini-insights__metrics">
         <span className="mini-insights__metric">
           <strong>{ticketCount}</strong>
