@@ -28,7 +28,11 @@ from typing import Iterable, List, Sequence
 from shapely.geometry import LineString, MultiLineString, shape
 
 import psycopg
-from psycopg.extras import execute_values
+
+try:  # Optional dependency; present in app environment
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - fallback when dotenv unavailable
+    load_dotenv = None
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -68,6 +72,21 @@ class GlowFeature:
     months_mask: int
     geometry_wkt: str
 
+def load_environment() -> None:
+    if load_dotenv is None:
+        return
+
+    candidate_paths = [
+        PROJECT_ROOT / ".env",
+        PROJECT_ROOT / ".env.local",
+        PROJECT_ROOT / ".env.production",
+        PROJECT_ROOT / "map-app" / ".env.local",
+        PROJECT_ROOT / "map-app" / ".env",
+    ]
+    for path in candidate_paths:
+        if path.exists():
+            load_dotenv(path, override=False)
+
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Import glow line datasets into PostGIS")
@@ -102,6 +121,10 @@ def resolve_connection_string(override: str | None) -> str:
     raise RuntimeError(
         "Database URL not provided. Set --database-url or configure TILES_DB_URL / DATABASE_PRIVATE_URL / DATABASE_URL"
     )
+
+def chunked(values: Sequence[GlowFeature], size: int) -> Iterable[Sequence[GlowFeature]]:
+    for index in range(0, len(values), size):
+        yield values[index : index + size]
 
 
 def load_dataset(config: DatasetConfig) -> List[GlowFeature]:
@@ -269,32 +292,33 @@ def replace_data(conn: psycopg.Connection, rows: Iterable[GlowFeature]) -> None:
     rows = list(rows)
     with conn.cursor() as cur:
         cur.execute("TRUNCATE public.glow_lines;")
-        execute_values(
-            cur,
-            """
+        insert_sql = """
             INSERT INTO public.glow_lines
                 (dataset, centreline_id, count, years_mask, months_mask, geom)
-            VALUES %s
-            """,
-            [
-                (
-                    feature.dataset,
-                    feature.centreline_id,
-                    feature.count,
-                    feature.years_mask,
-                    feature.months_mask,
-                    feature.geometry_wkt,
-                )
-                for feature in rows
-            ],
-            template="(%s, %s, %s, %s, %s, ST_SetSRID(ST_GeomFromText(%s), 4326))",
-            page_size=2000,
-        )
+            VALUES (%s, %s, %s, %s, %s, ST_SetSRID(ST_GeomFromText(%s), 4326))
+        """
+        for batch in chunked(rows, 1000):
+            cur.executemany(
+                insert_sql,
+                [
+                    (
+                        feature.dataset,
+                        feature.centreline_id,
+                        feature.count,
+                        feature.years_mask,
+                        feature.months_mask,
+                        feature.geometry_wkt,
+                    )
+                    for feature in batch
+                ],
+            )
         cur.execute("ANALYZE public.glow_lines;")
         conn.commit()
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    load_environment()
+
     args = parse_args(argv)
     selected = set(args.datasets) if args.datasets else set(DEFAULT_DATASETS.keys())
     datasets = {key: DEFAULT_DATASETS[key] for key in selected}
@@ -311,7 +335,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     connection_string = resolve_connection_string(args.database_url)
-    print(f"[glow] Connecting to {connection_string}")
+    print("[glow] Connecting to database")
     with psycopg.connect(connection_string) as conn:
         ensure_schema(conn)
         replace_data(conn, features)
