@@ -1438,11 +1438,12 @@ function AppContent({
 
   const sidebarContent = (
     <div className="sidebar-content">
-      <StreetSearch onSelect={handleStreetSearchSelect} variant="sidebar" />
+      {dataset === 'parking_tickets' ? (
+        <StreetSearch onSelect={handleStreetSearchSelect} variant="sidebar" />
+      ) : null}
       <MobileAccordion
         title="Totals"
         isMobile={isMobile}
-        defaultOpen
       >
         <StatsSummary
           viewportSummary={viewportSummary}
@@ -1600,7 +1601,9 @@ function AppContent({
             totals={statsTotalsToUse || primaryDisplayTotals}
             year={activeViewMode === 'ward' ? null : activeYear}
             onInsightsOpen={() => setInsightsSheetOpen(true)}
-            searchSlot={<StreetSearch onSelect={handleStreetSearchSelect} variant="mobile" />}
+            searchSlot={dataset === 'parking_tickets'
+              ? <StreetSearch onSelect={handleStreetSearchSelect} variant="mobile" />
+              : null}
           >
             {(dataset === 'red_light_locations' || dataset === 'ase_locations') ? (
               <Suspense fallback={<div style={{ minHeight: 40 }} />}
