@@ -9,14 +9,22 @@ import { usePmtiles } from '../context/PmtilesContext.jsx';
 import { loadCameraDataset } from '../lib/cameraDatasetLoader.js';
 import { recordTicketsPaint } from '../lib/clientMetrics.js';
 
+const rawTilesBaseUrl = (import.meta.env?.VITE_TILES_BASE_URL || '').trim();
+const tilesBaseUrl = rawTilesBaseUrl.replace(/\/+$/, '');
+
 const prefetchedShardKeys = new Set();
 const failedShardUrls = new Set();
 const loggedShardFailures = new Set();
 const inFlightSummaries = new Map();
 
-function buildFilterExpression(isCluster, filter) {
+function buildFilterExpression(targetKinds, filter, { fallbackToRawPoints = false } = {}) {
   const expression = ['all'];
-  expression.push(isCluster ? ['==', ['get', 'cluster'], true] : ['!=', ['get', 'cluster'], true]);
+  const kinds = Array.isArray(targetKinds) ? targetKinds : [targetKinds];
+  const predicate = ['any', ['in', ['get', 'kind'], ['literal', kinds]]];
+  if (fallbackToRawPoints) {
+    predicate.push(['all', ['!', ['has', 'kind']], ['literal', true]]);
+  }
+  expression.push(predicate);
 
   if (filter?.year) {
     expression.push(['in', filter.year, ['get', 'years']]);
@@ -161,25 +169,34 @@ export function PointsLayer({
   onViewportSummaryChange,
   dataset = 'parking_tickets',
   isTouchDevice = false,
+  onDataStatusChange,
 }) {
   const summaryTimeoutRef = useRef(null);
   const lastSummaryKeyRef = useRef(null);
   const inFlightSummaryKeyRef = useRef(null);
   const summaryRequestIdRef = useRef(0);
+  const summaryRetryRef = useRef(0);
   const [geojsonData, setGeojsonData] = useState(null);
   const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
   const [pmtilesSource, setPmtilesSource] = useState(null);
+  const vectorSourceKey = pmtilesSource?.shardId ? `${dataset}-${pmtilesSource.shardId}` : dataset;
   const datasetManifest = useMemo(
     () => (pmtilesReady ? pmtilesManifest?.datasets?.[dataset] : null),
     [dataset, pmtilesManifest, pmtilesReady],
   );
   const paintRecordedRef = useRef(false);
+  const dataStatusRef = useRef(dataset === 'parking_tickets' ? 'loading' : 'ready');
 
   useEffect(() => {
     inFlightSummaryKeyRef.current = null;
     lastSummaryKeyRef.current = null;
     paintRecordedRef.current = false;
-  }, [dataset, filter?.year, filter?.month]);
+    dataStatusRef.current = dataset === 'parking_tickets' ? 'loading' : 'ready';
+    summaryRetryRef.current = 0;
+    if (typeof onDataStatusChange === 'function') {
+      onDataStatusChange(dataset === 'parking_tickets' ? 'loading' : 'ready');
+    }
+  }, [dataset, filter?.year, filter?.month, onDataStatusChange]);
 
   useEffect(() => {
     if (!map || !pmtilesReady || !datasetManifest || !pmtilesSource?.rawUrl) {
@@ -355,7 +372,10 @@ export function PointsLayer({
     };
   }, [map, datasetManifest, pmtilesReady]);
 
-  const pointFilter = useMemo(() => buildFilterExpression(false, filter), [filter]);
+  const pointFilter = useMemo(
+    () => buildFilterExpression(['sample', 'point'], filter, { fallbackToRawPoints: true }),
+    [filter],
+  );
 
   const scheduleSummaryFetch = useCallback(() => {
     if (!map || !onViewportSummaryChange) {
@@ -414,6 +434,7 @@ export function PointsLayer({
 
     const requestId = summaryRequestIdRef.current + 1;
     summaryRequestIdRef.current = requestId;
+    summaryRetryRef.current = 0;
     inFlightSummaryKeyRef.current = key;
 
     const url = `${MAP_CONFIG.API_PATHS.SUMMARY}?${params.toString()}`;
@@ -427,9 +448,29 @@ export function PointsLayer({
         onViewportSummaryChange?.(payload);
       })
       .catch((error) => {
-        if (summaryRequestIdRef.current === requestId) {
-          console.error('Failed to load viewport summary', error);
+        if (summaryRequestIdRef.current !== requestId) {
+          return;
+        }
+        if (error?.name === 'AbortError') {
           lastSummaryKeyRef.current = null;
+          return;
+        }
+        console.warn('Failed to load viewport summary', error);
+        lastSummaryKeyRef.current = null;
+        const attempt = summaryRetryRef.current + 1;
+        summaryRetryRef.current = attempt;
+        if (attempt <= 3) {
+          const backoff = Math.min(1500, 350 * attempt);
+          if (summaryTimeoutRef.current) {
+            clearTimeout(summaryTimeoutRef.current);
+          }
+          summaryTimeoutRef.current = setTimeout(() => {
+            if (summaryRequestIdRef.current !== requestId) {
+              return;
+            }
+            inFlightSummaryKeyRef.current = null;
+            scheduleSummaryFetch();
+          }, backoff);
         }
       })
       .finally(() => {
@@ -590,6 +631,10 @@ export function PointsLayer({
       }
     }
 
+    if (typeof properties.kind !== 'string' || properties.kind.length === 0) {
+      properties.kind = properties.cluster === 1 ? 'cluster' : 'point';
+    }
+
     if (dataset !== 'parking_tickets') {
       const rawId = properties.location_id
         ?? properties.locationId
@@ -621,29 +666,16 @@ export function PointsLayer({
       }
     }
 
-    if (properties.cluster === 1) {
-      const clusterId = Number(properties.cluster_id);
-      if (!Number.isFinite(clusterId)) {
-        return;
-      }
-
-      const params = new URLSearchParams({ clusterId: String(clusterId) });
-      fetch(`${MAP_CONFIG.API_PATHS.CLUSTER_EXPANSION}?${params.toString()}`)
-        .then((response) => (response.ok ? response.json() : null))
-        .then((payload) => {
-          if (!payload || !Number.isFinite(payload.zoom)) {
-            return;
-          }
-          const target = feature?.geometry?.coordinates || [event.lngLat.lng, event.lngLat.lat];
-          map.easeTo({
-            center: target,
-            zoom: payload.zoom + 1,
-            duration: 400,
-          });
-        })
-        .catch((error) => {
-          console.error('Failed to resolve cluster expansion', error);
-        });
+    if (properties.kind === 'cluster') {
+      const target = feature?.geometry?.coordinates || [event.lngLat.lng, event.lngLat.lat];
+      const currentZoom = Number.isFinite(map?.getZoom?.()) ? map.getZoom() : RAW_POINT_ZOOM;
+      const zoomIncrement = currentZoom < RAW_POINT_ZOOM ? 1 : 0.5;
+      const nextZoom = Math.min(currentZoom + zoomIncrement, RAW_POINT_ZOOM + 0.01);
+      map.easeTo({
+        center: target,
+        zoom: nextZoom,
+        duration: 400,
+      });
       return;
     }
 
@@ -689,17 +721,37 @@ export function PointsLayer({
     if (pmtilesSource?.url) {
       return pmtilesSource.url;
     }
-    const template = MAP_CONFIG.TILE_SOURCE.TICKETS.replace('{dataset}', dataset);
+
+    const normaliseBase = (value) => value.replace(/\/+$/u, '');
+    const template = tilesBaseUrl
+      ? `${normaliseBase(tilesBaseUrl)}/{z}/{x}/{y}.pbf?dataset=${dataset}`
+      : MAP_CONFIG.TILE_SOURCE.TICKETS.replace('{dataset}', dataset);
+
     if (/^https?:\/\//i.test(template)) {
       return template;
     }
+
     if (typeof window !== 'undefined' && window.location?.origin) {
       return `${window.location.origin}${template}`;
     }
+
     return template;
   }, [dataset, pmtilesSource]);
 
   const isParkingDataset = dataset === 'parking_tickets';
+  const vectorLayerName = useMemo(
+    () => pmtilesSource?.vectorLayer || datasetManifest?.vectorLayer || TILE_LAYER_NAME,
+    [datasetManifest, pmtilesSource],
+  );
+
+  const vectorLayerDefinitions = useMemo(
+    () => ([{ id: vectorLayerName }]),
+    [vectorLayerName],
+  );
+
+  const vectorSourceMetadata = useMemo(() => ({
+    'mapbox:vector_layers': vectorLayerDefinitions,
+  }), [vectorLayerDefinitions]);
   useEffect(() => {
     if (!visible) {
       return undefined;
@@ -711,23 +763,32 @@ export function PointsLayer({
 
     let cancelled = false;
     setGeojsonData(null);
+    if (typeof onDataStatusChange === 'function') {
+      onDataStatusChange('loading');
+    }
 
     loadCameraDataset(dataset)
       .then((data) => {
         if (!cancelled && data) {
           setGeojsonData(data);
+          if (typeof onDataStatusChange === 'function') {
+            onDataStatusChange('ready');
+          }
         }
       })
       .catch((error) => {
         if (!cancelled) {
           console.error(`Failed to load ${dataset} camera geojson`, error);
+          if (typeof onDataStatusChange === 'function') {
+            onDataStatusChange('error');
+          }
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [dataset, isParkingDataset, visible]);
+  }, [dataset, isParkingDataset, onDataStatusChange, visible]);
 
   const datasetStyle = useMemo(() => {
     if (dataset === 'red_light_locations') {
@@ -766,16 +827,17 @@ export function PointsLayer({
         ],
       };
     }
+    const baseCountExpression = ['to-number', ['coalesce', ['get', 'count'], ['get', 'ticketCount'], ['get', 'ticket_count'], 0], 0];
     return {
       pointColor: STYLE_CONSTANTS.COLORS.TICKET_POINT,
       strokeColor: '#fff',
       strokeWidth: 1,
       opacity: 0.85,
-        minZoom: MAP_CONFIG.TILE_MIN_ZOOM,
+      minZoom: MAP_CONFIG.TILE_MIN_ZOOM,
       radiusExpression: [
         'interpolate',
         ['linear'],
-        ['coalesce', ['get', 'count'], ['get', 'ticketCount'], ['get', 'ticket_count'], 1],
+        baseCountExpression,
         1, 4,
         25, 6,
         75, 9,
@@ -783,7 +845,6 @@ export function PointsLayer({
       ],
     };
   }, [dataset]);
-  const clusterFilter = useMemo(() => buildFilterExpression(true, filter), [filter]);
   const pointLayer = useMemo(() => {
     const layer = {
       id: MAP_CONFIG.LAYER_IDS.TICKETS_POINTS,
@@ -802,87 +863,110 @@ export function PointsLayer({
       },
     };
     if (isParkingDataset) {
-      layer['source-layer'] = TILE_LAYER_NAME;
+      layer['source-layer'] = vectorLayerName;
     }
     return layer;
-  }, [datasetStyle, pointFilter, isParkingDataset]);
+  }, [datasetStyle, pointFilter, isParkingDataset, vectorLayerName]);
 
-  const clusterLayer = useMemo(() => {
-    if (!isParkingDataset) {
-      return null;
-    }
-    return {
-      id: MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER,
-      type: 'circle',
-      'source-layer': TILE_LAYER_NAME,
-      minzoom: datasetStyle.minZoom,
-      maxzoom: RAW_POINT_ZOOM,
-      filter: ['all', clusterFilter, ['>=', ['coalesce', ['get', 'point_count'], ['get', 'count'], 0], 3]],
-      paint: {
-        'circle-color': [
-          'interpolate',
-          ['linear'],
-          ['coalesce', ['get', 'point_count'], ['get', 'count'], 0],
-          0, '#7A89F0',
-          50, '#6C5CCF',
-          150, '#9B6DD7',
-          300, '#CF58AD',
-          600, '#FF5C5C',
-        ],
-        'circle-stroke-color': '#ffffff',
-        'circle-stroke-width': 1.2,
-        'circle-opacity': 0.85,
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['coalesce', ['get', 'point_count'], ['get', 'count'], 1],
-          1, 10,
-          25, 14,
-          100, 18,
-          250, 24,
-          500, 32,
-        ],
-      },
-    };
-  }, [clusterFilter, datasetStyle, isParkingDataset]);
+  const clusterLayer = null;
+  const clusterCountLayer = null;
 
-  const clusterCountLayer = useMemo(() => {
-    if (!isParkingDataset) {
-      return null;
-    }
-    return {
-      id: MAP_CONFIG.LAYER_IDS.TICKETS_CLUSTER_COUNT,
-      type: 'symbol',
-      'source-layer': TILE_LAYER_NAME,
-      minzoom: datasetStyle.minZoom,
-      maxzoom: RAW_POINT_ZOOM + 0.01,
-      filter: clusterFilter,
-      layout: {
-        'text-field': ['get', 'point_count_abbreviated'],
-        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-        'text-size': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          datasetStyle.minZoom, 11,
-          RAW_POINT_ZOOM, 13.5,
-        ],
-        'text-allow-overlap': true,
-      },
-      paint: {
-        'text-color': '#14274e',
-        'text-halo-color': 'rgba(255,255,255,0.9)',
-        'text-halo-width': 1.6,
-      },
-    };
-  }, [clusterFilter, datasetStyle, isParkingDataset]);
-
-  const vectorSourceKey = pmtilesSource?.shardId ? `${dataset}-${pmtilesSource.shardId}` : dataset;
-  const vectorSourceProps = pmtilesSource?.url
-    ? { url: pmtilesSource.url }
-    : { tiles: [tileUrl] };
+  const vectorSourceProps = useMemo(() => (
+    pmtilesSource?.url
+      ? {
+          url: pmtilesSource.url,
+          vector_layers: vectorLayerDefinitions,
+        }
+      : {
+          tiles: [tileUrl],
+          scheme: 'xyz',
+          vector_layers: vectorLayerDefinitions,
+        }
+  ), [pmtilesSource?.url, tileUrl, vectorLayerDefinitions]);
   const vectorMinZoom = pmtilesSource?.minZoom ?? datasetStyle.minZoom;
   const vectorMaxZoom = pmtilesSource?.maxZoom ?? 18;
+
+  const notifyDataStatus = useCallback((status) => {
+    if (dataStatusRef.current === status) {
+      return;
+    }
+    dataStatusRef.current = status;
+    if (typeof onDataStatusChange === 'function') {
+      onDataStatusChange(status);
+    }
+  }, [onDataStatusChange]);
+
+  const scheduleDeferredUpdate = useCallback((fn) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        fn();
+      });
+      return;
+    }
+    setTimeout(fn, 0);
+  }, []);
+
+  useEffect(() => {
+    if (isParkingDataset) {
+      scheduleDeferredUpdate(() => {
+        notifyDataStatus('loading');
+      });
+    }
+  }, [isParkingDataset, notifyDataStatus, scheduleDeferredUpdate, vectorSourceKey, tileUrl]);
+
+  useEffect(() => {
+    if (!map || !isParkingDataset) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const evaluateSourceStatus = () => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        const source = map.getSource(MAP_CONFIG.SOURCE_IDS.TICKETS);
+        if (source && typeof source.loaded === 'function' && source.loaded()) {
+          scheduleDeferredUpdate(() => {
+            notifyDataStatus('ready');
+          });
+        }
+      } catch {
+        /* ignore source lookup failures */
+      }
+    };
+
+    const handleSourceData = (event) => {
+      if (event?.sourceId !== MAP_CONFIG.SOURCE_IDS.TICKETS) {
+        return;
+      }
+      if (event.isSourceLoaded) {
+        scheduleDeferredUpdate(() => {
+          evaluateSourceStatus();
+        });
+      }
+    };
+
+    const handleDataLoading = (event) => {
+      if (event?.sourceId !== MAP_CONFIG.SOURCE_IDS.TICKETS) {
+        return;
+      }
+      scheduleDeferredUpdate(() => {
+        notifyDataStatus('loading');
+      });
+    };
+
+    map.on('sourcedata', handleSourceData);
+    map.on('dataloading', handleDataLoading);
+    evaluateSourceStatus();
+
+    return () => {
+      cancelled = true;
+      map.off('sourcedata', handleSourceData);
+      map.off('dataloading', handleDataLoading);
+    };
+  }, [isParkingDataset, map, notifyDataStatus, scheduleDeferredUpdate]);
 
   useEffect(() => {
     if (!visible || paintRecordedRef.current) {
@@ -971,6 +1055,8 @@ export function PointsLayer({
     return null;
   }
 
+  const shouldRenderParkingLayers = true;
+
   return isParkingDataset ? (
     <Source
       key={vectorSourceKey}
@@ -979,10 +1065,12 @@ export function PointsLayer({
       {...vectorSourceProps}
       minzoom={vectorMinZoom}
       maxzoom={vectorMaxZoom}
+      promoteId="centreline_id"
+      metadata={vectorSourceMetadata}
     >
-      {clusterLayer ? <Layer {...clusterLayer} /> : null}
-      {clusterCountLayer ? <Layer {...clusterCountLayer} /> : null}
-      <Layer {...pointLayer} />
+      {shouldRenderParkingLayers && clusterLayer ? <Layer {...clusterLayer} /> : null}
+      {shouldRenderParkingLayers && clusterCountLayer ? <Layer {...clusterCountLayer} /> : null}
+      {shouldRenderParkingLayers ? <Layer {...pointLayer} /> : null}
     </Source>
   ) : (
     <Source
