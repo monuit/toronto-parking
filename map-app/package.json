@@ -3,9 +3,6 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "engines": {
-    "node": ">=22.12.0"
-  },
   "scripts": {
     "dev": "node scripts/run-with-heap.mjs node_modules/vite/bin/vite.js",
     "dev:ssr": "node scripts/run-with-heap.mjs server/index.js",

@@ -140,7 +140,7 @@ async function runWarmup(manifest, runtimeConfig, options = {}) {
     const fallbackZooms = new Set(zooms.slice(0, Math.min(2, zooms.length)));
     const fallbackTiles = tiles.filter((tile) => fallbackZooms.has(tile.zoom));
 
-    const collections = [manifest.datasets || {}, manifest.wardDatasets || {}, manifest.glowDatasets || {}];
+    const collections = [manifest.datasets || {}, manifest.wardDatasets || {}];
     for (const collection of collections) {
       for (const dataset of Object.values(collection)) {
         if (!dataset) {

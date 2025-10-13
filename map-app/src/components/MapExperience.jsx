@@ -44,12 +44,10 @@ function MapExperience({
   isTouchDevice = false,
 }) {
   const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
-  const isProduction = (import.meta.env?.MODE || import.meta.env?.NODE_ENV || 'development') === 'production';
   const [mapInstance, setMapInstance] = useState(null);
   const [pointsVisible, setPointsVisible] = useState(true);
   const [basemapReady, setBasemapReady] = useState(false);
   const [heavyLayersReady, setHeavyLayersReady] = useState(false);
-  const [pointsStatus, setPointsStatus] = useState(dataset === 'parking_tickets' ? 'loading' : 'ready');
   const wardDatasetId = useMemo(() => {
     if (wardDataset && SUPPORTED_WARD_DATASETS.has(wardDataset)) {
       return wardDataset;
@@ -65,14 +63,6 @@ function MapExperience({
       : 7.5),
     [dataset],
   );
-
-  useEffect(() => {
-    setPointsStatus(dataset === 'parking_tickets' ? 'loading' : 'ready');
-  }, [dataset]);
-
-  const handlePointsStatusChange = useCallback((status) => {
-    setPointsStatus((previous) => (previous === status ? previous : status));
-  }, []);
 
   const handleLoad = useCallback((instance) => {
     if (instance?.setPrefetchZoomDelta) {
@@ -171,29 +161,6 @@ function MapExperience({
     };
   }, [mapInstance, onViewportSummaryChange, pointsMinZoom, viewMode]);
 
-  useEffect(() => {
-    if (!mapInstance) {
-      return undefined;
-    }
-
-    const handleError = (event) => {
-      const rawMessage = event?.error?.message || event?.error?.statusText || event?.message;
-      const normalized = typeof rawMessage === 'string' ? rawMessage.toUpperCase() : '';
-      if (event?.error?.name === 'AbortError' || normalized.includes('NS_BINDING_ABORTED')) {
-        return;
-      }
-      if (!isProduction) {
-        const details = rawMessage || event?.error || event;
-        console.warn('[map] runtime error', details);
-      }
-    };
-
-    mapInstance.on('error', handleError);
-    return () => {
-      mapInstance.off('error', handleError);
-    };
-  }, [mapInstance, isProduction]);
-
   const datasetUsesPmtiles = useMemo(() => {
     if (!pmtilesReady || !pmtilesManifest?.datasets) {
       return false;
@@ -274,13 +241,6 @@ function MapExperience({
       >
         <div className="map-loading-overlay__gradient" />
       </div>
-      {dataset === 'parking_tickets' && basemapReady ? (
-        <div
-          className={`map-dataset-hint ${pointsStatus === 'ready' || !pointsVisible ? 'map-dataset-hint--hidden' : ''}`}
-        >
-          {pointsStatus === 'error' ? 'Ticket data failed to load. Retrying…' : 'Loading parking tickets…'}
-        </div>
-      ) : null}
       {mapInstance && (
         <>
           {heavyLayersReady ? (
@@ -308,7 +268,6 @@ function MapExperience({
               dataset={dataset}
               filter={filter}
               isTouchDevice={isTouchDevice}
-              onDataStatusChange={handlePointsStatusChange}
             />
           ) : null}
           {heavyLayersReady && wardDatasetId ? (

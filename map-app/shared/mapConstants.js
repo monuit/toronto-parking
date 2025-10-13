@@ -4,7 +4,6 @@ export const TICKET_TILE_MIN_ZOOM = 8;
 
 export const TILE_LAYER_NAME = 'parking_tickets';
 export const TILE_URL_TEMPLATE = '/tiles/{z}/{x}/{y}.pbf?dataset={dataset}';
-export const GLOW_TILE_URL_TEMPLATE = '/tiles/glow/{dataset}/{z}/{x}/{y}.mvt';
 
 export const SUMMARY_API_PATH = '/api/map-summary';
 export const CLUSTER_EXPANSION_API_PATH = '/api/cluster-expansion';

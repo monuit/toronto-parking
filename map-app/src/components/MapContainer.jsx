@@ -7,8 +7,6 @@ import Map from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MAP_CONFIG } from '../lib/mapSources';
 
-const MAPTILER_PROXY_PREFIX = '/api/maptiler/';
-
 export function MapContainer({ children, onMapLoad }) {
   const mapRef = useRef(null);
   const [viewState, setViewState] = useState(MAP_CONFIG.DEFAULT_VIEW);
@@ -41,24 +39,8 @@ export function MapContainer({ children, onMapLoad }) {
   }), [isTouchDevice]);
   
   const handleLoad = () => {
-    const mapboxRef = mapRef.current;
-    if (mapboxRef?.resize) {
-      try {
-        mapboxRef.resize();
-      } catch {
-        /* ignore resize errors */
-      }
-    }
-    const instance = mapboxRef?.getMap ? mapboxRef.getMap() : null;
-    if (instance?.resize) {
-      try {
-        instance.resize();
-      } catch {
-        /* ignore map resize errors */
-      }
-    }
-    if (onMapLoad && instance) {
-      onMapLoad(instance);
+    if (onMapLoad && mapRef.current) {
+      onMapLoad(mapRef.current.getMap());
     }
   };
 
@@ -112,41 +94,26 @@ export function MapContainer({ children, onMapLoad }) {
     minHeight: '520px',
   }), []);
 
-
   const transformRequest = useCallback((url) => {
-    if (typeof url !== 'string') {
+    if (typeof url !== 'string' || typeof window === 'undefined') {
       return { url };
     }
-
-    let resolved = url.replace(/\{\{MAPLIBRE_API_KEY\}\}/g, '');
-
-    if (typeof window === 'undefined') {
-      return { url: resolved };
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return { url };
     }
-
-    if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-      return { url: resolved };
-    }
-
-    if (
-      resolved.startsWith(MAPTILER_PROXY_PREFIX)
-      || resolved.startsWith('/tiles/')
-      || resolved.startsWith('/styles/')
-    ) {
+    if (url.startsWith('/proxy/') || url.startsWith('/tiles/') || url.startsWith('/styles/')) {
       const origin = window.location?.origin || '';
       if (origin) {
-        return { url: `${origin}${resolved}` };
+        return { url: `${origin}${url}` };
       }
     }
-
-    if (resolved.startsWith('./')) {
+    if (url.startsWith('./')) {
       const origin = window.location?.origin || '';
       if (origin) {
-        return { url: `${origin}${resolved.slice(1)}` };
+        return { url: `${origin}${url.slice(1)}` };
       }
     }
-
-    return { url: resolved };
+    return { url };
   }, []);
   
   return (
