@@ -1,57 +1,70 @@
 import PropTypes from 'prop-types';
 import { DatasetToggle } from './DatasetToggle.jsx';
+import { MiniInsightsPanel } from './MiniInsightsPanel.jsx';
 
 export function MobileHeader({
   dataset,
+  displayDataset,
   onDatasetChange,
-  onDrawerToggle,
-  isDrawerOpen,
+  totals,
+  year,
+  onInsightsOpen,
   children,
-  onLegendToggle,
-  onInsightsToggle,
+  searchSlot,
 }) {
+  const insightsDataset = displayDataset || dataset;
   return (
-    <header className="mobile-header" role="banner">
-      <div className="mobile-header__row">
-        <button
-          type="button"
-          className="mobile-header__drawer-button"
-          onClick={onDrawerToggle}
-          aria-expanded={isDrawerOpen}
-        >
-          {isDrawerOpen ? 'Close panels' : 'Open panels'}
-        </button>
-        <div className="mobile-header__toggle">
+    <div className="mobile-shell" role="region" aria-label="Map controls">
+      <div className="mobile-shell__insights">
+        <MiniInsightsPanel
+          dataset={insightsDataset}
+          totals={totals}
+          year={year}
+          onExpand={onInsightsOpen}
+        />
+      </div>
+
+      <div className="mobile-shell__controls">
+        <div className="mobile-shell__dataset">
           <DatasetToggle value={dataset} onChange={onDatasetChange} />
         </div>
-        <div className="mobile-header__actions">
-          {children}
+        {children ? (
+          <div className="mobile-shell__secondary">
+            {children}
+          </div>
+        ) : null}
+      </div>
+
+      {searchSlot ? (
+        <div className="mobile-shell__search">
+          {searchSlot}
         </div>
-      </div>
-      <div className="mobile-header__fab-row">
-        <button type="button" className="mobile-fab mobile-fab--small" onClick={onInsightsToggle}>
-          Insights
-        </button>
-        <button type="button" className="mobile-fab mobile-fab--small" onClick={onLegendToggle}>
-          Legend
-        </button>
-      </div>
-    </header>
+      ) : null}
+    </div>
   );
 }
 
 MobileHeader.propTypes = {
   dataset: PropTypes.string.isRequired,
+  displayDataset: PropTypes.string,
   onDatasetChange: PropTypes.func.isRequired,
-  onDrawerToggle: PropTypes.func.isRequired,
-  isDrawerOpen: PropTypes.bool.isRequired,
+  totals: PropTypes.shape({
+    ticketCount: PropTypes.number,
+    totalRevenue: PropTypes.number,
+    locationCount: PropTypes.number,
+    featureCount: PropTypes.number,
+  }),
+  year: PropTypes.number,
+  onInsightsOpen: PropTypes.func,
   children: PropTypes.node,
-  onLegendToggle: PropTypes.func,
-  onInsightsToggle: PropTypes.func,
+  searchSlot: PropTypes.node,
 };
 
 MobileHeader.defaultProps = {
+  displayDataset: null,
+  totals: null,
+  year: null,
+  onInsightsOpen: () => {},
   children: null,
-  onLegendToggle: () => {},
-  onInsightsToggle: () => {},
+  searchSlot: null,
 };
