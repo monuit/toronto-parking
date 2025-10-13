@@ -48,9 +48,16 @@ import {
   getCameraLocationDetail,
   getCameraTopGroups,
 } from './yearlyMetricsService.js';
-import { getRedisConfig, getPmtilesRuntimeConfig, getPostgresConfig } from './runtimeConfig.js';
+import {
+  getRedisConfig,
+  getPmtilesRuntimeConfig,
+  getCoreDbConfig,
+  getTileDbConfig,
+  getTileCacheConfig,
+} from './runtimeConfig.js';
 import { buildPmtilesManifest } from './pmtilesManifest.js';
 import { schedulePmtilesWarmup } from './pmtilesWarmup.js';
+import glowTileService from './glowTileService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +70,17 @@ function normaliseBaseUrl(baseUrl) {
   }
   return baseUrl.replace(/\/+$/u, '');
 }
+const rawMaptilerProxyPath = process.env.MAPTILER_PROXY_PATH || '/api/maptiler';
+const MAPTILER_PROXY_BASE = `/${rawMaptilerProxyPath.replace(/^\/+|\/+$/gu, '')}`;
+const MAPTILER_PROXY_LOCAL_PREFIX = MAPTILER_PROXY_BASE.endsWith('/')
+  ? MAPTILER_PROXY_BASE
+  : `${MAPTILER_PROXY_BASE}/`;
+
+function getMaptilerProxyPrefix(baseUrl = '') {
+  const origin = normaliseBaseUrl(baseUrl);
+  return origin ? `${origin}${MAPTILER_PROXY_LOCAL_PREFIX}` : MAPTILER_PROXY_LOCAL_PREFIX;
+}
+const MAPTILER_PROXY_ROUTE = `${MAPTILER_PROXY_BASE}/:path(*)`;
 
 function shouldUseMaptilerProxy() {
   if (maptilerProxyState.mode === 'proxy') {
@@ -78,11 +96,14 @@ function sanitizeMaptilerUrl(raw, baseUrl = '') {
   if (!shouldUseMaptilerProxy()) {
     return raw;
   }
-  if (typeof raw !== 'string' || raw.startsWith('/proxy/maptiler/')) {
+  if (typeof raw !== 'string') {
     return raw;
   }
   const origin = normaliseBaseUrl(baseUrl);
-  const prefix = origin ? `${origin}/proxy/maptiler/` : '/proxy/maptiler/';
+  const prefix = getMaptilerProxyPrefix(origin);
+  if (raw.startsWith(prefix) || raw.startsWith(MAPTILER_PROXY_LOCAL_PREFIX)) {
+    return raw;
+  }
   if (!raw.includes('api.maptiler.com')) {
     return raw.replace(/([?&])key=[^&"'\s]+/gi, (match, pfx) => (pfx === '?' ? '?' : ''))
       .replace(/\?&/g, '?')
@@ -126,7 +147,7 @@ function sanitizeMaptilerText(text, baseUrl = '') {
     if (typeof transformed !== 'string') {
       return match;
     }
-    return transformed.startsWith('/proxy/maptiler/')
+    return transformed.startsWith(MAPTILER_PROXY_LOCAL_PREFIX)
       ? escapeForJsonPath(transformed)
       : transformed.replace(/\//g, '\\/');
   });
@@ -227,12 +248,17 @@ const MAPTILER_CACHE_PREFIX = `${MAPTILER_REDIS_NAMESPACE}:maptiler:v1`;
 const MAPTILER_PROXY_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_TIMEOUT_MS || '', 10) || 12_000;
 const MAPTILER_PROXY_MAX_RETRIES = Number.parseInt(process.env.MAPTILER_PROXY_MAX_RETRIES || '', 10) || 2;
 const MAPTILER_PROXY_BACKOFF_MS = Number.parseInt(process.env.MAPTILER_PROXY_BACKOFF_MS || '', 10) || 500;
-const MAPTILER_TILE_CACHE_CONTROL = 'public, max-age=21600, stale-while-revalidate=600';
+const MAPTILER_TILE_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=3600';
 const MAPTILER_FONT_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=3600';
 const MAPTILER_DEFAULT_CACHE_CONTROL = 'public, max-age=3600, stale-while-revalidate=600';
 const MAPTILER_FALLBACK_TIMEOUT_MS = Number.parseInt(process.env.MAPTILER_PROXY_FALLBACK_TIMEOUT_MS || '', 10) || 20_000;
 
 const TILE_SLOW_LOG_THRESHOLD_MS = Number.parseInt(process.env.TILE_SLOW_LOG_MS || '', 10) || 800;
+const GLOW_TILE_CACHE_CONTROL = process.env.GLOW_TILE_CACHE_CONTROL || 'public, max-age=86400, stale-while-revalidate=3600';
+const GLOW_TILE_TIMEOUT_MS = Number.parseInt(process.env.GLOW_TILE_TIMEOUT_MS || '', 10) || 2500;
+const GLOW_TILE_SLOW_THRESHOLD_MS = Number.parseInt(process.env.GLOW_TILE_SLOW_MS || '', 10) || 600;
+const GLOW_ALLOWED_DATASETS = new Set(['parking_tickets', 'red_light_locations', 'ase_locations']);
+const TILE_JSON_CACHE_CONTROL = process.env.TILE_JSON_CACHE_CONTROL || 'public, max-age=60, stale-while-revalidate=300';
 
 const metrics = {
   maptiler: {
@@ -261,6 +287,15 @@ const metrics = {
       lastRunOriginTiles: 0,
       lastRunCdnTiles: 0,
     },
+  },
+  glowTiles: {
+    requests: 0,
+    hits: 0,
+    misses: 0,
+    errors: 0,
+    totalDurationMs: 0,
+    maxDurationMs: 0,
+    lastErrorMessage: null,
   },
   client: {
     lastSubmission: null,
@@ -432,7 +467,7 @@ function getHealthPgPool() {
   if (healthPgPool) {
     return healthPgPool;
   }
-  const pgConfig = getPostgresConfig();
+  const pgConfig = getCoreDbConfig();
   const connectionString = pgConfig.readOnlyConnectionString || pgConfig.connectionString;
   if (!pgConfig.enabled || !connectionString) {
     return null;
@@ -527,7 +562,7 @@ async function vacuumPostgresOnBoot() {
   if (!VACUUM_ON_BOOT || VACUUM_TABLE_LIST.length === 0) {
     return;
   }
-  const pgConfig = getPostgresConfig();
+  const pgConfig = getTileDbConfig();
   const connectionString = pgConfig.readOnlyConnectionString || pgConfig.connectionString;
   if (!pgConfig.enabled || !connectionString) {
     return;
@@ -1037,7 +1072,10 @@ async function resolveMaptilerResource(descriptor, fetcher) {
 }
 
 async function loadBaseStyle() {
-  const key = process.env.MAPLIBRE_API_KEY || process.env.MAPTILER_API_KEY || '';
+  const key = process.env.MAPLIBRE_API_KEY
+    || process.env.MAPTILER_API_KEY
+    || process.env.VITE_MAPTILER_KEY
+    || '';
   if (!key && !loggedMissingMapKey) {
     console.warn('MAPLIBRE_API_KEY not set; serving MapTiler style with placeholder key.');
     loggedMissingMapKey = true;
@@ -1120,7 +1158,8 @@ const startupState = {
   readyAt: null,
   dependencies: {
     redis: 'unknown',
-    postgres: 'unknown',
+    coreDb: 'unknown',
+    tileDb: 'unknown',
   },
   merge: {
     status: 'pending',
@@ -1136,6 +1175,9 @@ const startupState = {
     wardPrewarmError: null,
   },
 };
+
+const tileCacheRuntime = getTileCacheConfig();
+const TILE_HTTP_CACHE_CONTROL = `public, max-age=${tileCacheRuntime.baseTtlSeconds}, stale-while-revalidate=${tileCacheRuntime.staleWhileRevalidateSeconds}`;
 
 function markDependencyStatus(name, status) {
   if (startupState.dependencies[name] !== status) {
@@ -1237,15 +1279,20 @@ async function bootstrapStartup() {
     const wakeResults = await wakeRemoteServices();
     console.log(
       `   Redis: ${wakeResults.redis.enabled ? (wakeResults.redis.awake ? 'awake' : 'sleeping') : 'disabled'} | ` +
-        `Postgres: ${wakeResults.postgres.enabled ? (wakeResults.postgres.awake ? 'awake' : 'sleeping') : 'disabled'}`,
+        `Core DB: ${wakeResults.coreDb.enabled ? (wakeResults.coreDb.awake ? 'awake' : 'sleeping') : 'disabled'} | ` +
+        `Tile DB: ${wakeResults.tileDb.enabled ? (wakeResults.tileDb.awake ? 'awake' : 'sleeping') : 'disabled'}`,
     );
     markDependencyStatus(
       'redis',
       wakeResults.redis.enabled ? (wakeResults.redis.awake ? 'ok' : 'error') : 'disabled',
     );
     markDependencyStatus(
-      'postgres',
-      wakeResults.postgres.enabled ? (wakeResults.postgres.awake ? 'ok' : 'error') : 'disabled',
+      'coreDb',
+      wakeResults.coreDb.enabled ? (wakeResults.coreDb.awake ? 'ok' : 'error') : 'disabled',
+    );
+    markDependencyStatus(
+      'tileDb',
+      wakeResults.tileDb.enabled ? (wakeResults.tileDb.awake ? 'ok' : 'error') : 'disabled',
     );
 
     await resetRedisNamespaceOnBoot();
@@ -1323,6 +1370,9 @@ function registerTileRoutes(app) {
       const appDataAverageMs = metrics.ssr.appData.runs > 0
         ? Math.round((metrics.ssr.appData.totalDurationMs / metrics.ssr.appData.runs) * 100) / 100
         : 0;
+      const glowAverageMs = metrics.glowTiles.requests > 0
+        ? Math.round((metrics.glowTiles.totalDurationMs / metrics.glowTiles.requests) * 100) / 100
+        : 0;
       const metricsSummary = {
         maptiler: {
           requests: metrics.maptiler.requests,
@@ -1348,6 +1398,15 @@ function registerTileRoutes(app) {
           lastRunOriginTiles: metrics.pmtiles.warmup.lastRunOriginTiles,
           lastRunCdnTiles: metrics.pmtiles.warmup.lastRunCdnTiles,
           lastErrorMessage: metrics.pmtiles.warmup.lastErrorMessage,
+        },
+        glowTiles: {
+          requests: metrics.glowTiles.requests,
+          hits: metrics.glowTiles.hits,
+          misses: metrics.glowTiles.misses,
+          errors: metrics.glowTiles.errors,
+          averageDurationMs: glowAverageMs,
+          maxDurationMs: metrics.glowTiles.maxDurationMs,
+          lastErrorMessage: metrics.glowTiles.lastErrorMessage,
         },
         ssr: {
           requests: metrics.ssr.requests,
@@ -1386,7 +1445,7 @@ function registerTileRoutes(app) {
     res.json(payload);
   });
 
-  app.get('/proxy/maptiler/:path(*)', async (req, res) => {
+  app.get(MAPTILER_PROXY_ROUTE, async (req, res) => {
     const requestStart = performance.now();
     const proxyModeForMetric = shouldUseMaptilerProxy() ? 'proxy' : 'direct';
     let fallbackAttempted = false;
@@ -1551,7 +1610,140 @@ function registerTileRoutes(app) {
     }
   });
 
+  app.get('/tiles/:dataset.json', (req, res) => {
+    const dataset = (req.params.dataset || '').trim();
+    const datasetConfig = POSTGIS_DATASET_CONFIG[dataset];
+    if (!datasetConfig) {
+      res.status(404).json({ error: 'Unknown dataset' });
+      return;
+    }
+
+    const vectorLayerId = datasetConfig.layer || dataset;
+    const minZoom = Number.isFinite(datasetConfig.minZoom) ? datasetConfig.minZoom : 0;
+    const maxZoom = Number.isFinite(datasetConfig.maxZoom) ? datasetConfig.maxZoom : 16;
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const tilePath = `/tiles/{z}/{x}/{y}.pbf?dataset=${encodeURIComponent(dataset)}`;
+    const tilesUrl = `${baseUrl}${tilePath}`;
+
+    const payload = {
+      tilejson: '2.2.0',
+      name: dataset,
+      version: '1.0.0',
+      scheme: 'xyz',
+      attribution: 'City of Toronto open data',
+      minzoom: minZoom,
+      maxzoom: maxZoom,
+      tiles: [tilesUrl],
+      vector_layers: [
+        {
+          id: vectorLayerId,
+          description: dataset,
+        },
+      ],
+    };
+
+    res.setHeader('Cache-Control', TILE_JSON_CACHE_CONTROL);
+    res.json(payload);
+  });
+
+  app.get('/tiles/glow/:dataset/:z/:x/:y.mvt', async (req, res) => {
+    const datasetParam = typeof req.params.dataset === 'string' ? req.params.dataset.trim() : '';
+    const dataset = datasetParam || 'parking_tickets';
+    const z = Number.parseInt(req.params.z, 10);
+    const x = Number.parseInt(req.params.x, 10);
+    const y = Number.parseInt(req.params.y, 10);
+
+    glowTileService.setup();
+
+    const startedAt = performance.now();
+    const abortController = new AbortController();
+    const timeout = setTimeout(
+      () => abortController.abort(new Error('Glow tile timeout exceeded')),
+      GLOW_TILE_TIMEOUT_MS,
+    );
+
+    const handleClose = () => {
+      abortController.abort(new Error('Request closed by client'));
+    };
+    req.on('close', handleClose);
+
+    metrics.glowTiles.requests += 1;
+
+    if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y)) {
+      res.status(400).json({ error: 'Invalid tile coordinates' });
+      metrics.glowTiles.errors += 1;
+      metrics.glowTiles.lastErrorMessage = 'invalid-coordinates';
+      clearTimeout(timeout);
+      req.off('close', handleClose);
+      return;
+    }
+
+    if (!GLOW_ALLOWED_DATASETS.has(dataset)) {
+      res.status(404).json({ error: 'Unknown glow dataset' });
+      metrics.glowTiles.errors += 1;
+      metrics.glowTiles.lastErrorMessage = 'unknown-dataset';
+      clearTimeout(timeout);
+      req.off('close', handleClose);
+      return;
+    }
+
+    try {
+      const result = await glowTileService.getTile({
+        dataset,
+        z,
+        x,
+        y,
+        signal: abortController.signal,
+      });
+
+      const durationMs = performance.now() - startedAt;
+      metrics.glowTiles.totalDurationMs += durationMs;
+      metrics.glowTiles.maxDurationMs = Math.max(metrics.glowTiles.maxDurationMs, durationMs);
+      if (result.cacheStatus === 'hit') {
+        metrics.glowTiles.hits += 1;
+      } else {
+        metrics.glowTiles.misses += 1;
+      }
+
+      if (durationMs > GLOW_TILE_SLOW_THRESHOLD_MS) {
+        console.warn(
+          `[glow-tiles] slow response dataset=${dataset} z=${z} x=${x} y=${y} cache=${result.cacheStatus} duration=${durationMs.toFixed(1)}ms size=${result.size}`,
+        );
+      }
+
+      res.setHeader('Content-Type', 'application/x-protobuf');
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Cache-Control', GLOW_TILE_CACHE_CONTROL);
+      res.setHeader('Vary', 'Accept-Encoding');
+      res.setHeader('X-GlowTile-Cache', result.cacheStatus.toUpperCase());
+      res.setHeader('X-GlowTile-Duration', durationMs.toFixed(1));
+      res.setHeader('Content-Length', String(result.buffer.length));
+      res.status(200).end(result.buffer);
+    } catch (error) {
+      const durationMs = performance.now() - startedAt;
+      metrics.glowTiles.errors += 1;
+      metrics.glowTiles.lastErrorMessage = error?.message || String(error);
+      console.warn(
+        `[glow-tiles] failed dataset=${dataset} z=${z} x=${x} y=${y}:`,
+        error?.message || error,
+      );
+      if (error?.name === 'AbortError') {
+        res.status(499).json({ error: 'Glow tile request aborted' });
+      } else if (typeof error?.message === 'string' && error.message.includes('Unsupported glow dataset')) {
+        res.status(404).json({ error: 'Unknown glow dataset' });
+      } else {
+        res.status(500).json({ error: 'Failed to render glow tile' });
+      }
+      metrics.glowTiles.totalDurationMs += durationMs;
+      metrics.glowTiles.maxDurationMs = Math.max(metrics.glowTiles.maxDurationMs, durationMs);
+    } finally {
+      clearTimeout(timeout);
+      req.off('close', handleClose);
+    }
+  });
+
   app.get('/tiles/:z/:x/:y.pbf', async (req, res) => {
+    console.log('[tiles] request', req.url, req.headers.accept);
     const z = Number.parseInt(req.params.z, 10);
     const x = Number.parseInt(req.params.x, 10);
     const y = Number.parseInt(req.params.y, 10);
@@ -1617,7 +1809,7 @@ function registerTileRoutes(app) {
 
     if (!preferPostgis && dataset !== 'parking_tickets') {
       tileSource = 'dataset-disabled';
-      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      res.setHeader('Cache-Control', TILE_HTTP_CACHE_CONTROL);
       applyHeadersIfNeeded();
       res.status(204).end();
       return;
@@ -1639,7 +1831,7 @@ function registerTileRoutes(app) {
       const { buffer: encoded, encoding } = encodeTileBuffer(EMPTY_TILE_BUFFER, acceptEncoding);
       encodeDurationMs += performance.now() - encodeStart;
       res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
-      res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+      res.setHeader('Cache-Control', TILE_HTTP_CACHE_CONTROL);
       res.setHeader('Vary', 'Accept-Encoding');
       if (encoding) {
         res.setHeader('Content-Encoding', encoding);
@@ -1719,14 +1911,31 @@ function registerTileRoutes(app) {
       encodeDurationMs += performance.now() - encodeStart;
 
       const cacheSeconds = Number.isFinite(tile.cacheSeconds)
-        ? Math.max(30, tile.cacheSeconds)
-        : 600;
-      const sharedSeconds = Math.max(cacheSeconds, cacheSeconds * 2);
-      const staleSeconds = Math.min(sharedSeconds, Math.max(60, Math.round(cacheSeconds * 0.5)));
+        ? Math.max(60, tile.cacheSeconds)
+        : tileCacheRuntime.baseTtlSeconds;
+      const staleRevalidateSeconds = 600;
 
       res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
-      res.setHeader('Cache-Control', `public, max-age=${cacheSeconds}, s-maxage=${sharedSeconds}, stale-while-revalidate=${staleSeconds}`);
+      res.setHeader('Cache-Control', `public, max-age=${cacheSeconds}, stale-while-revalidate=${staleRevalidateSeconds}`);
       res.setHeader('X-Tile-Cache-Seconds', String(cacheSeconds));
+      if (tile.mode) {
+        res.setHeader('X-Tile-Mode', tile.mode);
+      }
+      if (Number.isFinite(tile.featureCount)) {
+        res.setHeader('X-Tile-Features', String(tile.featureCount));
+      }
+      if (tile.partial) {
+        res.setHeader('X-Tile-Partial', '1');
+      }
+      if (Number.isFinite(tile.gridMeters)) {
+        res.setHeader('X-Tile-Grid-Meters', String(tile.gridMeters));
+      }
+      if (Number.isFinite(tile.sampleLimit)) {
+        res.setHeader('X-Tile-Sample-Limit', String(tile.sampleLimit));
+      }
+      if (Number.isFinite(tile.pointLimit)) {
+        res.setHeader('X-Tile-Point-Limit', String(tile.pointLimit));
+      }
       res.setHeader('Vary', 'Accept-Encoding');
       if (encoding) {
         res.setHeader('Content-Encoding', encoding);
@@ -1845,7 +2054,7 @@ function registerTileRoutes(app) {
       const acceptEncoding = req.headers['accept-encoding'] || '';
       const { buffer: encoded, encoding } = encodeTileBuffer(tile.buffer, acceptEncoding);
       res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
-      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600');
+      res.setHeader('Cache-Control', TILE_HTTP_CACHE_CONTROL);
       res.setHeader('Vary', 'Accept-Encoding');
       if (encoding) {
         res.setHeader('Content-Encoding', encoding);
@@ -2233,7 +2442,7 @@ function registerDataRoutes(app, dataDirectory) {
 
   app.get('/api/pmtiles-manifest', (req, res) => {
     if (!pmtilesManifest.enabled) {
-      res.status(503).json({ enabled: false, message: 'PMTiles pipeline disabled' });
+      res.status(204).end();
       return;
     }
     res.json(pmtilesManifest);
@@ -2455,6 +2664,24 @@ async function createDevServer() {
 
   app.use(vite.middlewares);
 
+  app.get('/installHook.js.map', (req, res, next) => {
+    if (req.accepts('text/html')) {
+      next();
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'installHook source map unavailable in dev' });
+  });
+
+  app.get('/react_devtools_backend_compact.js.map', (req, res, next) => {
+    if (req.accepts('text/html')) {
+      next();
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'React DevTools source map unavailable in dev' });
+  });
+
   // Heavy warmup tasks run in the background after the server starts listening.
 
   app.use('*', async (req, res) => {
@@ -2525,6 +2752,24 @@ async function createProdServer() {
   registerDataRoutes(app, dataDir);
 
   app.use(express.static(distPath, { index: false }));
+
+  app.get('/installHook.js.map', (req, res, next) => {
+    if (req.accepts('text/html')) {
+      next();
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'installHook source map unavailable in prod' });
+  });
+
+  app.get('/react_devtools_backend_compact.js.map', (req, res, next) => {
+    if (req.accepts('text/html')) {
+      next();
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'React DevTools source map unavailable in prod' });
+  });
 
   try {
     console.time('app-data:warmup');

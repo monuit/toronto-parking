@@ -29,7 +29,42 @@ DATASETS: tuple[DatasetConfig, ...] = (
     DatasetConfig("red_light_locations", "red_light_ward_choropleth.mbtiles", "red_light_ward_choropleth.pmtiles"),
     DatasetConfig("ase_locations", "ase_ward_choropleth.mbtiles", "ase_ward_choropleth.pmtiles"),
     DatasetConfig("cameras_combined", "cameras_combined_ward_choropleth.mbtiles", "cameras_combined_ward_choropleth.pmtiles"),
+    DatasetConfig("parking_tickets_glow", "parking_glow_lines.mbtiles", "parking_glow_lines.pmtiles"),
+    DatasetConfig("red_light_glow", "red_light_glow_lines.mbtiles", "red_light_glow_lines.pmtiles"),
+    DatasetConfig("ase_glow", "ase_glow_lines.mbtiles", "ase_glow_lines.pmtiles"),
 )
+
+
+DEFAULT_VECTOR_LAYER_FIELDS = {
+    "glow_lines": {
+        "centreline_id": "Number",
+        "count": "Number",
+        "years_mask": "Number",
+        "months_mask": "Number",
+    },
+    "ward_polygons": {
+        "wardCode": "Number",
+        "ticketCount": "Number",
+        "totalRevenue": "Number",
+    },
+}
+
+
+def _default_layer_id(dataset_key: str) -> str:
+    return "glow_lines" if dataset_key.endswith("_glow") else "ward_polygons"
+
+
+def _sanitize_fields(raw_fields, fallback_id: str) -> dict:
+    if isinstance(raw_fields, dict) and raw_fields:
+        sanitized = {}
+        for key, value in raw_fields.items():
+            if not isinstance(key, str):
+                continue
+            sanitized[key] = value if isinstance(value, str) else str(value)
+        if sanitized:
+            return sanitized
+    fallback = DEFAULT_VECTOR_LAYER_FIELDS.get(fallback_id, {})
+    return dict(fallback)
 
 
 def parse_metadata(conn: sqlite3.Connection) -> dict[str, str]:
@@ -70,13 +105,58 @@ def build_header(meta: dict[str, str]) -> dict[str, int]:
 
 
 def build_metadata(dataset: DatasetConfig, meta: dict[str, str]) -> dict:
+    json_blob = meta.get("json")
+    extra: dict | None = None
+    if json_blob:
+        try:
+            extra = json.loads(json_blob)
+        except json.JSONDecodeError:
+            extra = None
+
     name = meta.get("name", dataset.key)
-    description = meta.get("description", f"Ward choropleth tiles for {dataset.key}")
+    description = meta.get("description", f"Vector tiles for {dataset.key}")
     minzoom = int(float(meta.get("minzoom", 8)))
     maxzoom = int(float(meta.get("maxzoom", 12)))
     bounds = meta.get("bounds", "-180,-85,180,85")
     center = meta.get("center")
-    return {
+    year_base = None
+    vector_layers_meta: list[dict] = []
+
+    if isinstance(extra, dict):
+        year_base = extra.get("year_base")
+        if extra.get("description"):
+            description = extra["description"]
+        raw_layers = extra.get("vector_layers")
+        if isinstance(raw_layers, list):
+            for entry in raw_layers:
+                if not isinstance(entry, dict):
+                    continue
+                layer_id = str(entry.get("id") or _default_layer_id(dataset.key))
+                entry_minzoom = entry.get("minzoom")
+                entry_maxzoom = entry.get("maxzoom")
+                vector_layers_meta.append(
+                    {
+                        "id": layer_id,
+                        "description": (entry.get("description") or layer_id.replace("_", " ").title()),
+                        "minzoom": int(float(entry_minzoom if entry_minzoom is not None else minzoom)),
+                        "maxzoom": int(float(entry_maxzoom if entry_maxzoom is not None else maxzoom)),
+                        "fields": _sanitize_fields(entry.get("fields"), layer_id),
+                    }
+                )
+
+    if not vector_layers_meta:
+        fallback_id = _default_layer_id(dataset.key)
+        vector_layers_meta.append(
+            {
+                "id": fallback_id,
+                "description": fallback_id.replace("_", " ").title(),
+                "minzoom": minzoom,
+                "maxzoom": maxzoom,
+                "fields": dict(DEFAULT_VECTOR_LAYER_FIELDS.get(fallback_id, {})),
+            }
+        )
+
+    metadata = {
         "name": name,
         "description": description,
         "version": meta.get("version", "1.0.0"),
@@ -86,18 +166,13 @@ def build_metadata(dataset: DatasetConfig, meta: dict[str, str]) -> dict:
         "maxzoom": maxzoom,
         "bounds": bounds,
         "center": center,
-        "vector_layers": [
-            {
-                "id": dataset.key,
-                "description": dataset.key.replace("_", " ").title(),
-                "fields": {
-                    "wardCode": "Number",
-                    "ticketCount": "Number",
-                    "totalRevenue": "Number",
-                },
-            }
-        ],
+        "vector_layers": vector_layers_meta,
     }
+
+    if year_base is not None:
+        metadata["year_base"] = year_base
+
+    return metadata
 
 
 def convert_dataset(dataset: DatasetConfig) -> Path:
