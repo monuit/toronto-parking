@@ -85,6 +85,8 @@ class TileSchemaManager:
         self._ensure_helper_functions()
         self._log("Ensuring tile batch functions")
         self._ensure_tile_fetch_functions()
+        self._log("Ensuring glow vector tile support")
+        self._ensure_glow_support()
 
     def _quote_ident(self, value: str) -> str:
         return f'"{str(value).replace("\"", "\"\"")}"'
@@ -392,6 +394,110 @@ class TileSchemaManager:
                   AND cache.y = p.y
             ) AS cache ON p.z <= 10
             WHERE p.prefix_full IS NOT NULL
+            $$;
+            """
+        )
+
+    def _ensure_glow_support(self) -> None:
+        self._log("  Ensuring glow_lines table")
+        self.pg.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.glow_lines (
+                dataset TEXT NOT NULL,
+                centreline_id BIGINT NOT NULL,
+                count INTEGER NOT NULL,
+                years_mask INTEGER NOT NULL,
+                months_mask INTEGER NOT NULL,
+                geom geometry(MultiLineString, 4326) NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (dataset, centreline_id)
+            );
+            """
+        )
+        self.pg.execute(
+            """
+            CREATE INDEX IF NOT EXISTS glow_lines_geom_idx
+            ON public.glow_lines USING GIST (geom);
+            """
+        )
+        self.pg.execute(
+            """
+            CREATE INDEX IF NOT EXISTS glow_lines_dataset_count_idx
+            ON public.glow_lines (dataset, count DESC);
+            """
+        )
+
+        self._log("  Creating get_glow_tile function")
+        self.pg.execute(
+            """
+            CREATE OR REPLACE FUNCTION public.get_glow_tile(
+                p_dataset TEXT,
+                p_z INTEGER,
+                p_x INTEGER,
+                p_y INTEGER
+            )
+            RETURNS BYTEA
+            LANGUAGE SQL
+            STABLE
+            AS $$
+                WITH bounds AS (
+                    SELECT ST_TileEnvelope(p_z, p_x, p_y) AS geom
+                ), metrics AS (
+                    SELECT
+                        geom AS tile_geom,
+                        (ST_XMax(geom) - ST_XMin(geom)) AS tile_width
+                    FROM bounds
+                ), buffered AS (
+                    SELECT
+                        tile_geom,
+                        tile_width,
+                        ST_Buffer(tile_geom, (tile_width / 4096.0) * 32.0) AS geom
+                    FROM metrics
+                ), source AS (
+                    SELECT
+                        gl.centreline_id,
+                        gl.count,
+                        gl.years_mask,
+                        gl.months_mask,
+                        CASE
+                            WHEN p_z <= 9 THEN ST_SimplifyVW(gl.geom_3857, tile_width / 6.0)
+                            WHEN p_z <= 11 THEN ST_SimplifyVW(gl.geom_3857, tile_width / 12.0)
+                            WHEN p_z <= 13 THEN ST_SimplifyVW(gl.geom_3857, tile_width / 24.0)
+                            WHEN p_z <= 15 THEN ST_SimplifyVW(gl.geom_3857, tile_width / 48.0)
+                            ELSE gl.geom_3857
+                        END AS geom_3857
+                    FROM (
+                        SELECT
+                            centreline_id,
+                            count,
+                            years_mask,
+                            months_mask,
+                            ST_Transform(geom, 3857) AS geom_3857
+                        FROM public.glow_lines
+                        WHERE dataset = p_dataset
+                    ) AS gl
+                    CROSS JOIN buffered b
+                    WHERE ST_Intersects(gl.geom_3857, b.geom)
+                ), clipped AS (
+                    SELECT
+                        centreline_id,
+                        count,
+                        years_mask,
+                        months_mask,
+                        ST_AsMVTGeom(
+                            geom_3857,
+                            (SELECT tile_geom FROM metrics LIMIT 1),
+                            4096,
+                            32,
+                            TRUE
+                        ) AS geom
+                    FROM source
+                    WHERE geom_3857 IS NOT NULL
+                )
+                SELECT COALESCE(
+                    (SELECT ST_AsMVT(clipped, 'glow_lines', 4096, 'geom') FROM clipped),
+                    '\\x'::BYTEA
+                );
             $$;
             """
         )

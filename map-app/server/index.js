@@ -1344,6 +1344,17 @@ bootstrapStartup();
 
 function registerTileRoutes(app) {
   const clientMetricsParser = express.json({ limit: '32kb' });
+
+  app.get('/installHook.js.map', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'installHook source map unavailable' });
+  });
+
+  app.get('/react_devtools_backend_compact.js.map', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'React DevTools source map unavailable' });
+  });
+
   app.get('/healthz', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (req.query.deep === '1') {
