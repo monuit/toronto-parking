@@ -1,7 +1,7 @@
 /* eslint-env serviceworker */
 
-const TILE_CACHE_NAME = 'tile-cache-v2';
-const ASSET_CACHE_NAME = 'map-assets-v1';
+const TILE_CACHE_NAME = 'tile-cache-v3';
+const ASSET_CACHE_NAME = 'map-assets-v2';
 const MAX_TILE_ENTRIES = 512;
 const PRECACHE_ASSETS = ['/styles/basic-style.json'];
 
