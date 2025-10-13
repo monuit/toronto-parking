@@ -1,7 +1,7 @@
 import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Pool } from 'pg';
-import { getPostgresConfig } from './runtimeConfig.js';
+import { getTileDbConfig } from './runtimeConfig.js';
 import { loadTicketsSummary, loadDatasetSummary } from './ticketsDataStore.js';
 
 const MAX_ATTEMPTS = 3;
@@ -55,7 +55,7 @@ export function primeDatasetTotalsCache(dataset, payload, ttlMs = DATASET_TOTALS
 let pool = null;
 
 function ensurePool() {
-  const config = getPostgresConfig();
+  const config = getTileDbConfig();
   if (!config.enabled || !config.connectionString) {
     return null;
   }

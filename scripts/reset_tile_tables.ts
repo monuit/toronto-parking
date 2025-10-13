@@ -12,9 +12,12 @@ const TARGET_TABLES = tables.length > 0 ? tables : DEFAULT_TABLES;
 const TOP_TABLE_LIMIT = Number.parseInt(process.env.TABLE_USAGE_LIMIT || '25', 10);
 
 function resolveConnectionString(): { connectionString: string; ssl?: boolean | { rejectUnauthorized: boolean } } {
-  const dsn = process.env.DATABASE_PRIVATE_URL;
+  const dsn = process.env.TILES_DB_URL
+    || process.env.POSTGIS_DATABASE_URL
+    || process.env.DATABASE_PRIVATE_URL
+    || process.env.DATABASE_URL;
   if (!dsn || dsn.trim().length === 0) {
-    throw new Error('DATABASE_PRIVATE_URL is not defined; cannot connect to Postgres.');
+    throw new Error('TILES_DB_URL (or POSTGIS_DATABASE_URL/DATABASE_PRIVATE_URL) must be defined; cannot connect to Postgres.');
   }
 
   const needsSsl =
