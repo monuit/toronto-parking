@@ -77,9 +77,10 @@ def resolve_dsn() -> str:
 
 def main() -> None:
     dsn = resolve_dsn()
-    redacted = dsn
     if "@" in dsn:
         redacted = f"***@{dsn.split('@', 1)[-1]}"
+    else:
+        redacted = "***"
     print("Rebuilding camera tile tables using DSN:", redacted, flush=True)
 
     extra_pgoptions = [

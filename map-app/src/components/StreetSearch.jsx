@@ -60,7 +60,7 @@ export function StreetSearch({ onSelect, variant }) {
       } else if (entry.key.includes(normalisedQuery)) {
         contains.push(entry.summary);
       }
-      if (startsWith.length >= MAX_RESULTS) {
+      if (startsWith.length + contains.length >= MAX_RESULTS) {
         break;
       }
     }

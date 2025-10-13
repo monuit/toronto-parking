@@ -59,7 +59,8 @@ def resolve_dsn() -> str:
     port = os.getenv("POSTGRES_PORT") or os.getenv("PGPORT") or "5432"
 
     if host and user:
-        return f"postgresql://{user}:{password or ''}@{host}:{port}/{database}".strip()
+        password_part = f":{password}" if password else ""
+        return f"postgresql://{user}{password_part}@{host}:{port}/{database}".strip()
 
     raise RuntimeError("Unable to resolve Postgres DSN from environment variables.")
 
@@ -84,15 +85,18 @@ def main() -> None:
         ORDER BY c.relname;
         """
     )
-
     counts = client.fetch_all(
         """
         SELECT 'red_light_camera_tiles' AS table, COUNT(*)::bigint
         FROM red_light_camera_tiles
         UNION ALL
         SELECT 'ase_camera_tiles' AS table, COUNT(*)::bigint
-        FROM ase_camera_tiles;
+        FROM ase_camera_tiles
+        UNION ALL
+        SELECT 'parking_ticket_tiles' AS table, COUNT(*)::bigint
+        FROM parking_ticket_tiles;
         """
+    )
     )
 
     actual_counts = {name: value for name, value in counts}
