@@ -97,7 +97,6 @@ def main() -> None:
         FROM parking_ticket_tiles;
         """
     )
-    )
 
     actual_counts = {name: value for name, value in counts}
 
