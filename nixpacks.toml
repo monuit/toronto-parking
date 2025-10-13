@@ -5,7 +5,7 @@ nixPkgs = ['nodejs_22']
 cmds = [
   # Install dependencies
   # Note: Split GeoJSON chunks are committed to Git and will be merged at runtime
-  'cd map-app && npm ci'
+  'cd map-app && npm ci --include=dev'
 ]
 
 [phases.build]
