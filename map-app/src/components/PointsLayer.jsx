@@ -737,10 +737,10 @@ export function PointsLayer({
   }, [dataset, pmtilesSource]);
 
   const isParkingDataset = dataset === 'parking_tickets';
-  const vectorLayerName = useMemo(
-    () => pmtilesSource?.vectorLayer || datasetManifest?.vectorLayer || TILE_LAYER_NAME,
-    [datasetManifest, pmtilesSource],
-  );
+  const vectorLayerName = useMemo(() => {
+    const fallback = dataset === 'parking_tickets' ? TILE_LAYER_NAME : dataset;
+    return pmtilesSource?.vectorLayer || datasetManifest?.vectorLayer || fallback;
+  }, [dataset, datasetManifest, pmtilesSource]);
 
   const vectorLayerDefinitions = useMemo(
     () => ([{ id: vectorLayerName }]),
@@ -753,28 +753,37 @@ export function PointsLayer({
 
   const datasetStyle = useMemo(() => {
     if (dataset === 'red_light_locations') {
-      const baseRadius = [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        7.5, 6.5,
-        10, 8.5,
-        13, 11.5,
-        16, 14.5,
-      ];
       const clusterSizeExpression = [
         'max',
         ['to-number', ['coalesce', ['get', 'cluster_size'], ['get', 'clusterSize'], 1], 1],
         1,
       ];
       const clusterScale = [
-        'interpolate',
-        ['linear'],
-        ['sqrt', clusterSizeExpression],
-        1, 1,
-        3, 1.25,
-        6, 1.55,
-        10, 1.85,
+        'min',
+        1.85,
+        [
+          '+',
+          1,
+          [
+            '*',
+            0.2,
+            [
+              'max',
+              0,
+              [
+                '-',
+                ['sqrt', clusterSizeExpression],
+                1,
+              ],
+            ],
+          ],
+        ],
+      ];
+      const buildRadiusStop = (baseValue) => [
+        'case',
+        ['==', ['get', 'kind'], 'cluster'],
+        ['*', baseValue, clusterScale],
+        baseValue,
       ];
       return {
         pointColor: STYLE_CONSTANTS.COLORS.RED_LIGHT_POINT,
@@ -783,36 +792,48 @@ export function PointsLayer({
         opacity: 0.95,
         minZoom: 7.5,
         radiusExpression: [
-          'case',
-          ['==', ['get', 'kind'], 'cluster'],
-          ['*', baseRadius, clusterScale],
-          baseRadius,
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          7.5, buildRadiusStop(6.5),
+          10, buildRadiusStop(8.5),
+          13, buildRadiusStop(11.5),
+          16, buildRadiusStop(14.5),
         ],
       };
     }
     if (dataset === 'ase_locations') {
-      const baseRadius = [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        7.5, 6,
-        10, 8,
-        13, 11,
-        16, 14,
-      ];
       const clusterSizeExpression = [
         'max',
         ['to-number', ['coalesce', ['get', 'cluster_size'], ['get', 'clusterSize'], 1], 1],
         1,
       ];
       const clusterScale = [
-        'interpolate',
-        ['linear'],
-        ['sqrt', clusterSizeExpression],
-        1, 1,
-        3, 1.2,
-        6, 1.5,
-        10, 1.8,
+        'min',
+        1.8,
+        [
+          '+',
+          1,
+          [
+            '*',
+            0.18,
+            [
+              'max',
+              0,
+              [
+                '-',
+                ['sqrt', clusterSizeExpression],
+                1,
+              ],
+            ],
+          ],
+        ],
+      ];
+      const buildRadiusStop = (baseValue) => [
+        'case',
+        ['==', ['get', 'kind'], 'cluster'],
+        ['*', baseValue, clusterScale],
+        baseValue,
       ];
       return {
         pointColor: STYLE_CONSTANTS.COLORS.ASE_POINT,
@@ -821,10 +842,13 @@ export function PointsLayer({
         opacity: 0.96,
         minZoom: 7.5,
         radiusExpression: [
-          'case',
-          ['==', ['get', 'kind'], 'cluster'],
-          ['*', baseRadius, clusterScale],
-          baseRadius,
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          7.5, buildRadiusStop(6),
+          10, buildRadiusStop(8),
+          13, buildRadiusStop(11),
+          16, buildRadiusStop(14),
         ],
       };
     }
@@ -863,9 +887,7 @@ export function PointsLayer({
         'circle-opacity': datasetStyle.opacity,
       },
     };
-    if (isParkingDataset) {
-      layer['source-layer'] = vectorLayerName;
-    }
+    layer['source-layer'] = vectorLayerName;
     return layer;
   }, [datasetStyle, pointFilter, isParkingDataset, vectorLayerName]);
 
