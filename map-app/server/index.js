@@ -64,6 +64,10 @@ const __dirname = path.dirname(__filename);
 
 const resolve = (p) => path.resolve(__dirname, '..', p);
 
+if (typeof globalThis.fetch !== 'function') {
+  console.warn('[init] global fetch API is unavailable; MapTiler proxy requires Node.js 18+ with native fetch support.');
+}
+
 function normaliseBaseUrl(baseUrl) {
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     return '';
@@ -81,6 +85,22 @@ function getMaptilerProxyPrefix(baseUrl = '') {
   return origin ? `${origin}${MAPTILER_PROXY_LOCAL_PREFIX}` : MAPTILER_PROXY_LOCAL_PREFIX;
 }
 const MAPTILER_PROXY_ROUTE = `${MAPTILER_PROXY_BASE}/:path(*)`;
+
+const TILE_WARMUP_ENABLED = process.env.TILE_WARMUP_ENABLED !== '0';
+const TILE_WARMUP_ZOOMS = (process.env.TILE_WARMUP_ZOOMS || '8,9,10,11')
+  .split(',')
+  .map((entry) => Number.parseInt(entry, 10))
+  .filter((value) => Number.isInteger(value) && value >= 0 && value <= 16);
+const TILE_WARMUP_DATASETS = (process.env.TILE_WARMUP_DATASETS || 'parking_tickets,red_light_locations,ase_locations')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter((entry) => entry.length > 0);
+const TILE_WARMUP_BOUNDS = {
+  west: Number.parseFloat(process.env.TILE_WARMUP_WEST ?? '-79.6393'),
+  south: Number.parseFloat(process.env.TILE_WARMUP_SOUTH ?? '43.4032'),
+  east: Number.parseFloat(process.env.TILE_WARMUP_EAST ?? '-79.1169'),
+  north: Number.parseFloat(process.env.TILE_WARMUP_NORTH ?? '43.8554'),
+};
 
 function shouldUseMaptilerProxy() {
   if (maptilerProxyState.mode === 'proxy') {
@@ -433,6 +453,143 @@ if (pmtilesManifest.enabled) {
 }
 
 scheduleMaptilerProxyProbe();
+validateMaptilerConfiguration().catch((error) => {
+  console.warn('[maptiler] configuration validation failed:', error?.message || error);
+});
+
+function clampLatitude(lat) {
+  if (!Number.isFinite(lat)) {
+    return 0;
+  }
+  const max = 85.05112878;
+  return Math.min(Math.max(lat, -max), max);
+}
+
+function wrapTileX(x, zoom) {
+  const scale = 2 ** zoom;
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return 0;
+  }
+  const wrapped = ((x % scale) + scale) % scale;
+  return Number.isFinite(wrapped) ? wrapped : 0;
+}
+
+function clampTileY(y, zoom) {
+  const scale = 2 ** zoom;
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return 0;
+  }
+  if (!Number.isFinite(y)) {
+    return 0;
+  }
+  return Math.min(Math.max(y, 0), scale - 1);
+}
+
+function lonLatToTileIndices(longitude, latitude, zoom) {
+  const tileZoom = Math.max(0, Math.floor(Number.isFinite(zoom) ? zoom : 0));
+  const boundedLat = clampLatitude(latitude);
+  const scale = 2 ** tileZoom;
+  const x = Math.floor(((longitude + 180) / 360) * scale);
+  const latRad = boundedLat * (Math.PI / 180);
+  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + (1 / Math.cos(latRad))) / Math.PI) / 2) * scale);
+  return {
+    z: tileZoom,
+    x: wrapTileX(x, tileZoom),
+    y: clampTileY(y, tileZoom),
+  };
+}
+
+function enumerateTilesForBounds(bounds, zoom) {
+  if (!bounds || !Number.isFinite(bounds.west) || !Number.isFinite(bounds.south)
+    || !Number.isFinite(bounds.east) || !Number.isFinite(bounds.north)) {
+    return [];
+  }
+  const west = bounds.west;
+  const south = bounds.south;
+  const east = bounds.east;
+  const north = bounds.north;
+  const zoomLevel = Math.max(0, Math.floor(Number.isFinite(zoom) ? zoom : 0));
+  const nw = lonLatToTileIndices(west, north, zoomLevel);
+  const se = lonLatToTileIndices(east, south, zoomLevel);
+  const scale = 2 ** zoomLevel;
+  const minX = Math.min(nw.x, se.x);
+  const maxX = Math.max(nw.x, se.x);
+  const minY = Math.min(nw.y, se.y);
+  const maxY = Math.max(nw.y, se.y);
+  const tiles = [];
+  for (let x = minX; x <= maxX; x += 1) {
+    for (let y = minY; y <= maxY; y += 1) {
+      tiles.push({
+        z: zoomLevel,
+        x: wrapTileX(x, zoomLevel),
+        y: clampTileY(y, zoomLevel),
+      });
+    }
+  }
+  if (tiles.length === 0 && scale > 0) {
+    tiles.push({
+      z: zoomLevel,
+      x: wrapTileX(nw.x, zoomLevel),
+      y: clampTileY(nw.y, zoomLevel),
+    });
+  }
+  return tiles;
+}
+
+async function warmInitialTiles(reason = 'startup') {
+  if (!TILE_WARMUP_ENABLED) {
+    return;
+  }
+  if (!postgisTileService.isEnabled()) {
+    console.warn('[warmup] postgis tile service disabled; skipping tile warmup');
+    return;
+  }
+  if (!Array.isArray(TILE_WARMUP_ZOOMS) || TILE_WARMUP_ZOOMS.length === 0) {
+    return;
+  }
+  const targetDatasets = TILE_WARMUP_DATASETS
+    .filter((dataset) => postgisTileService.isDatasetEnabled(dataset));
+  if (targetDatasets.length === 0) {
+    console.warn('[warmup] no datasets enabled for tile warmup');
+    return;
+  }
+
+  const bounds = TILE_WARMUP_BOUNDS;
+  if (![bounds.west, bounds.south, bounds.east, bounds.north].every(Number.isFinite)) {
+    console.warn('[warmup] invalid warmup bounds; skipping tile warmup');
+    return;
+  }
+
+  const startedAt = Date.now();
+  let warmed = 0;
+  for (const dataset of targetDatasets) {
+    for (const zoom of TILE_WARMUP_ZOOMS) {
+      const coords = enumerateTilesForBounds(bounds, zoom);
+      for (const coord of coords) {
+        try {
+          const tile = await postgisTileService.getTile(dataset, coord.z, coord.x, coord.y, { prefetch: true });
+          if (tile?.buffer?.length) {
+            warmed += 1;
+          }
+        } catch (error) {
+          console.warn(
+            `[warmup] failed to prefetch ${dataset} tile ${coord.z}/${coord.x}/${coord.y}:`,
+            error?.message || error,
+          );
+        }
+      }
+    }
+  }
+
+  const durationMs = Date.now() - startedAt;
+  console.log('[warmup] postgis tiles prepared', {
+    datasets: targetDatasets.length,
+    tiles: warmed,
+    zooms: TILE_WARMUP_ZOOMS,
+    durationMs,
+    reason,
+  });
+}
 
 let maptilerRedisPromise = null;
 const maptilerInflight = new Map();
@@ -1109,6 +1266,36 @@ async function loadBaseStyle() {
     .replace(/\{\{MAPLIBRE_API_KEY\}\}/g, key);
 }
 
+async function validateMaptilerConfiguration() {
+  const configuredKey = process.env.MAPLIBRE_API_KEY
+    || process.env.MAPTILER_API_KEY
+    || process.env.VITE_MAPTILER_KEY
+    || '';
+  if (!configuredKey) {
+    console.warn('[maptiler] MAPLIBRE_API_KEY not configured; proxy will fall back to placeholder URLs.');
+    return;
+  }
+
+  try {
+    const style = await loadBaseStyle();
+    if (typeof style === 'string') {
+      if (/\{\{MAPLIBRE_API_KEY\}\}|get_your_own_/iu.test(style)) {
+        console.warn('[maptiler] base style still contains placeholder key; verify MAPLIBRE_API_KEY is loaded in the server environment.');
+      }
+      if (shouldUseMaptilerProxy()) {
+        const proxyPrefix = getMaptilerProxyPrefix();
+        if (style.includes('api.maptiler.com') && !style.includes(proxyPrefix)) {
+          console.warn('[maptiler] proxy mode enabled but style includes direct MapTiler URLs; ensure sanitizeMaptilerText is applied.');
+        }
+      } else if (style.includes(MAPTILER_PROXY_LOCAL_PREFIX)) {
+        console.warn('[maptiler] direct basemap mode active but style references proxy prefix; consider restarting to refresh the style cache.');
+      }
+    }
+  } catch (error) {
+    console.warn('[maptiler] failed to validate base style:', error?.message || error);
+  }
+}
+
 function encodeTileBuffer(buffer, acceptEncoding = '') {
   if (!buffer || buffer.length < 512) {
     return { buffer, encoding: null };
@@ -1264,6 +1451,12 @@ function scheduleProductionWarmup() {
         console.warn('Ward tile prewarm failed:', error.message);
         setWarmupStatus('wardPrewarm', 'failed', error?.message || String(error));
       }
+
+      try {
+        await warmInitialTiles('production-warmup');
+      } catch (error) {
+        console.warn('[warmup] initial tile warmup failed:', error?.message || error);
+      }
     })().catch((error) => {
       console.error('Production warmup encountered an unexpected error:', error);
     });
@@ -1310,6 +1503,7 @@ async function bootstrapStartup() {
         try {
           await tileService.ensureLoaded();
           await Promise.all([...WARD_DATASETS].map((dataset) => prewarmWardTiles(dataset)));
+          await warmInitialTiles('background-refresh');
         } catch (error) {
           console.warn('Background tile priming failed:', error.message);
         }
@@ -2751,6 +2945,9 @@ async function createDevServer() {
     startupState.listening = true;
     startupState.readyAt = Date.now();
     console.log(`\nSSR dev server running at http://localhost:${port}`);
+    warmInitialTiles('dev-server').catch((error) => {
+      console.warn('[warmup] dev tile warmup failed:', error?.message || error);
+    });
   });
 }
 
@@ -2796,6 +2993,12 @@ async function createProdServer() {
     console.timeEnd('tile-service:warmup');
   } catch (error) {
     console.warn('Unable to warm tile cache:', error.message);
+  }
+
+  try {
+    await warmInitialTiles('prod-startup');
+  } catch (error) {
+    console.warn('[warmup] production tile warmup failed:', error?.message || error);
   }
 
   app.use('*', async (req, res) => {

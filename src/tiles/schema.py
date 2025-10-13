@@ -50,6 +50,7 @@ class TileSchemaManager:
     pg: PostgresClient
     quadkey_zoom: int = 16
     quadkey_prefix_length: int = 16
+    tile_rebuild_workers: int = 1
     logger: Callable[[str], None] | None = None
 
     def ensure(self, *, include_tile_tables: bool = True) -> None:
@@ -399,6 +400,18 @@ class TileSchemaManager:
         )
 
     def _ensure_glow_support(self) -> None:
+        prefix_len = self.quadkey_prefix_length
+        quadkey_zoom = self.quadkey_zoom
+        for camera_table in ("red_light_camera_tiles", "ase_camera_tiles"):
+            self.pg.execute(
+                f"ALTER TABLE IF EXISTS {camera_table} ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'point';"
+            )
+            self.pg.execute(
+                f"ALTER TABLE IF EXISTS {camera_table} ADD COLUMN IF NOT EXISTS cluster_size INTEGER;"
+            )
+            self.pg.execute(
+                f"ALTER TABLE IF EXISTS {camera_table} ADD COLUMN IF NOT EXISTS grid_meters NUMERIC;"
+            )
         self._log("  Ensuring glow_lines table")
         self.pg.execute(
             """
@@ -549,13 +562,19 @@ class TileSchemaManager:
                                 t.total_fine_amount,
                                 t.location_name,
                                 t.location,
-                                t.ward
+                                t.status,
+                                t.ward,
+                                t.kind,
+                                COALESCE(t.cluster_size, 1)::integer AS cluster_size,
+                                t.grid_meters,
+                                t.ticket_count AS count,
+                                t.total_fine_amount AS total_revenue
                             FROM red_light_camera_tiles t
                             WHERE t.dataset = 'red_light_locations'
                               AND t.min_zoom <= p.z
                               AND t.max_zoom >= p.z
                               AND t.tile_qk_group = p.grp
-                          AND t.tile_qk_prefix LIKE p.prefix_zoom || '%%'
+                              AND t.tile_qk_prefix LIKE p.prefix_zoom || '%%'
                               AND t.geom && b.geom
                         ) AS mvt_rows
                     )
@@ -620,15 +639,21 @@ class TileSchemaManager:
                                 t.feature_id,
                                 t.ticket_count,
                                 t.total_fine_amount,
+                                t.location_name,
                                 t.location,
                                 t.status,
-                                t.ward
+                                t.ward,
+                                t.kind,
+                                COALESCE(t.cluster_size, 1)::integer AS cluster_size,
+                                t.grid_meters,
+                                t.ticket_count AS count,
+                                t.total_fine_amount AS total_revenue
                             FROM ase_camera_tiles t
                             WHERE t.dataset = 'ase_locations'
                               AND t.min_zoom <= p.z
                               AND t.max_zoom >= p.z
                               AND t.tile_qk_group = p.grp
-                          AND t.tile_qk_prefix LIKE p.prefix_zoom || '%%'
+                              AND t.tile_qk_prefix LIKE p.prefix_zoom || '%%'
                               AND t.geom && b.geom
                         ) AS mvt_rows
                     )
@@ -717,10 +742,13 @@ class TileSchemaManager:
                         agg.total_fines,
                         agg.street_normalized,
                         agg.centreline_id::BIGINT,
-                        NULL::TEXT AS location_name,
-                        NULL::TEXT AS location,
+                        COALESCE(agg.street_normalized, agg.feature_id) AS location_name,
+                        COALESCE(agg.street_normalized, agg.feature_id) AS location,
                         NULL::TEXT AS status,
-                        NULL::TEXT AS ward
+                        NULL::TEXT AS ward,
+                        'point'::TEXT AS kind,
+                        1::INTEGER AS cluster_size,
+                        NULL::NUMERIC AS grid_meters
                     FROM aggregated AS agg
                     CROSS JOIN LATERAL (
                         SELECT 0 AS min_zoom, 10 AS max_zoom, subdivided.geom AS geom_variant
@@ -746,47 +774,135 @@ class TileSchemaManager:
                 "red_light_locations",
                 f"""
                     SELECT
-                        'red_light_locations' AS dataset,
-                        base.intersection_id AS feature_id,
-                        variants.min_zoom,
-                        variants.max_zoom,
+                        rows.dataset,
+                        rows.feature_id,
+                        rows.min_zoom,
+                        rows.max_zoom,
                         mercator_quadkey_prefix(parts.geom, {self.quadkey_zoom}, {self.quadkey_prefix_length}) AS tile_qk_prefix,
                         SUBSTRING(mercator_quadkey_prefix(parts.geom, {self.quadkey_zoom}, {self.quadkey_prefix_length}) FROM 1 FOR 1) AS tile_qk_group,
                         parts.geom,
-                        base.ticket_count,
-                        base.total_fine_amount,
-                        NULL::TEXT AS street_normalized,
-                        NULL::BIGINT AS centreline_id,
-                        base.location_name,
-                        base.location_name AS location,
-                        NULL::TEXT AS status,
-                        base.ward_1 AS ward
+                        rows.ticket_count,
+                        rows.total_fine_amount,
+                        rows.street_normalized,
+                        rows.centreline_id,
+                        rows.location_name,
+                        rows.location,
+                        rows.status,
+                        rows.ward,
+                        rows.kind,
+                        rows.cluster_size,
+                        rows.grid_meters
                     FROM (
                         SELECT
-                            intersection_id,
-                            location_name,
-                            ticket_count,
-                            total_fine_amount,
-                            ward_1,
-                            geom_3857
-                        FROM red_light_camera_locations
-                        WHERE geom_3857 IS NOT NULL
-                    ) AS base
-                    CROSS JOIN LATERAL (
-                        SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(
-                            ST_SnapToGrid(ST_SimplifyPreserveTopology(base.geom_3857, 30), 1.0),
-                            32
-                        ) AS subdivided(geom)
+                            'red_light_locations' AS dataset,
+                            CONCAT('cluster:', cluster.grid_meters::INTEGER, ':', cluster.gx, ':', cluster.gy) AS feature_id,
+                            cluster.min_zoom,
+                            cluster.max_zoom,
+                            ST_SetSRID(
+                                ST_MakePoint(
+                                    (cluster.gx + 0.5) * cluster.grid_meters,
+                                    (cluster.gy + 0.5) * cluster.grid_meters
+                                ),
+                                3857
+                            ) AS geom_variant,
+                            cluster.ticket_count,
+                            cluster.total_fine_amount,
+                            NULL::TEXT AS street_normalized,
+                            NULL::BIGINT AS centreline_id,
+                            CONCAT('Cluster (', cluster.location_count, ' cameras)') AS location_name,
+                            CONCAT('Cluster of ', cluster.location_count, ' cameras') AS location,
+                            NULL::TEXT AS status,
+                            NULL::TEXT AS ward,
+                            'cluster'::TEXT AS kind,
+                            cluster.location_count::INTEGER AS cluster_size,
+                            cluster.grid_meters
+                        FROM (
+                            SELECT
+                                cfg.min_zoom,
+                                cfg.max_zoom,
+                                cfg.grid_meters,
+                                floor(ST_X(base.geom_3857) / cfg.grid_meters)::BIGINT AS gx,
+                                floor(ST_Y(base.geom_3857) / cfg.grid_meters)::BIGINT AS gy,
+                                COUNT(*)::INTEGER AS location_count,
+                                SUM(base.ticket_count)::BIGINT AS ticket_count,
+                                SUM(base.total_fine_amount)::NUMERIC AS total_fine_amount
+                            FROM (
+                                SELECT
+                                    intersection_id,
+                                    location_name,
+                                    ticket_count,
+                                    total_fine_amount,
+                                    ward_1,
+                                    geom_3857
+                                FROM red_light_camera_locations
+                                WHERE geom_3857 IS NOT NULL
+                            ) AS base
+                            CROSS JOIN (
+                                SELECT * FROM (VALUES
+                                    (2000.0::NUMERIC, 0::INTEGER, 8::INTEGER),
+                                    (1200.0::NUMERIC, 9::INTEGER, 10::INTEGER),
+                                    (600.0::NUMERIC, 11::INTEGER, 12::INTEGER)
+                                ) AS cfg(grid_meters, min_zoom, max_zoom)
+                            ) AS cfg
+                            GROUP BY cfg.min_zoom, cfg.max_zoom, cfg.grid_meters, gx, gy
+                        ) AS cluster
                         UNION ALL
-                        SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(
-                            ST_SnapToGrid(base.geom_3857, 0.25),
-                            32
-                        ) AS subdivided(geom)
-                    ) AS variants(min_zoom, max_zoom, geom_variant)
+                        SELECT
+                            'red_light_locations' AS dataset,
+                            point.intersection_id::TEXT AS feature_id,
+                            point.min_zoom,
+                            point.max_zoom,
+                            point.geom_variant,
+                            point.ticket_count,
+                            point.total_fine_amount,
+                            NULL::TEXT AS street_normalized,
+                            NULL::BIGINT AS centreline_id,
+                            point.location_name,
+                            point.location,
+                            NULL::TEXT AS status,
+                            point.ward AS ward,
+                            'point'::TEXT AS kind,
+                            1::INTEGER AS cluster_size,
+                            NULL::NUMERIC AS grid_meters
+                        FROM (
+                            SELECT
+                                base.intersection_id,
+                                base.location_name,
+                                base.location_name AS location,
+                                base.ticket_count,
+                                base.total_fine_amount,
+                                base.ward_1 AS ward,
+                                variants.min_zoom,
+                                variants.max_zoom,
+                                variants.geom_variant
+                            FROM (
+                                SELECT
+                                    intersection_id,
+                                    location_name,
+                                    ticket_count,
+                                    total_fine_amount,
+                                    ward_1,
+                                    geom_3857
+                                FROM red_light_camera_locations
+                                WHERE geom_3857 IS NOT NULL
+                            ) AS base
+                            CROSS JOIN LATERAL (
+                                SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
+                                FROM ST_Subdivide(
+                                    ST_SnapToGrid(ST_SimplifyPreserveTopology(base.geom_3857, 30), 1.0),
+                                    32
+                                ) AS subdivided(geom)
+                                UNION ALL
+                                SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
+                                FROM ST_Subdivide(
+                                    ST_SnapToGrid(base.geom_3857, 0.25),
+                                    32
+                                ) AS subdivided(geom)
+                            ) AS variants(min_zoom, max_zoom, geom_variant)
+                        ) AS point
+                    ) AS rows
                     CROSS JOIN LATERAL (
-                        SELECT (ST_Dump(geom_variant)).geom
+                        SELECT (ST_Dump(rows.geom_variant)).geom
                     ) AS parts
                 """,
             ),
@@ -796,54 +912,144 @@ class TileSchemaManager:
                 "ase_locations",
                 f"""
                     SELECT
-                        'ase_locations' AS dataset,
-                        base.location_code AS feature_id,
-                        variants.min_zoom,
-                        variants.max_zoom,
+                        rows.dataset,
+                        rows.feature_id,
+                        rows.min_zoom,
+                        rows.max_zoom,
                         mercator_quadkey_prefix(parts.geom, {self.quadkey_zoom}, {self.quadkey_prefix_length}) AS tile_qk_prefix,
                         SUBSTRING(mercator_quadkey_prefix(parts.geom, {self.quadkey_zoom}, {self.quadkey_prefix_length}) FROM 1 FOR 1) AS tile_qk_group,
                         parts.geom,
-                        base.ticket_count,
-                        base.total_fine_amount,
-                        NULL::TEXT AS street_normalized,
-                        NULL::BIGINT AS centreline_id,
-                        NULL::TEXT AS location_name,
-                        base.location,
-                        base.status,
-                        base.ward
+                        rows.ticket_count,
+                        rows.total_fine_amount,
+                        rows.street_normalized,
+                        rows.centreline_id,
+                        rows.location_name,
+                        rows.location,
+                        rows.status,
+                        rows.ward,
+                        rows.kind,
+                        rows.cluster_size,
+                        rows.grid_meters
                     FROM (
                         SELECT
-                            location_code,
-                            location,
-                            ticket_count,
-                            total_fine_amount,
-                            status,
-                            ward,
-                            geom_3857
-                        FROM ase_camera_locations
-                        WHERE geom_3857 IS NOT NULL
-                    ) AS base
-                    CROSS JOIN LATERAL (
-                        SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(
-                            ST_SnapToGrid(ST_SimplifyPreserveTopology(base.geom_3857, 30), 1.0),
-                            32
-                        ) AS subdivided(geom)
+                            'ase_locations' AS dataset,
+                            CONCAT('cluster:', cluster.grid_meters::INTEGER, ':', cluster.gx, ':', cluster.gy) AS feature_id,
+                            cluster.min_zoom,
+                            cluster.max_zoom,
+                            ST_SetSRID(
+                                ST_MakePoint(
+                                    (cluster.gx + 0.5) * cluster.grid_meters,
+                                    (cluster.gy + 0.5) * cluster.grid_meters
+                                ),
+                                3857
+                            ) AS geom_variant,
+                            cluster.ticket_count,
+                            cluster.total_fine_amount,
+                            NULL::TEXT AS street_normalized,
+                            NULL::BIGINT AS centreline_id,
+                            CONCAT('Cluster (', cluster.location_count, ' cameras)') AS location_name,
+                            CONCAT('Cluster of ', cluster.location_count, ' cameras') AS location,
+                            NULL::TEXT AS status,
+                            NULL::TEXT AS ward,
+                            'cluster'::TEXT AS kind,
+                            cluster.location_count::INTEGER AS cluster_size,
+                            cluster.grid_meters
+                        FROM (
+                            SELECT
+                                cfg.min_zoom,
+                                cfg.max_zoom,
+                                cfg.grid_meters,
+                                floor(ST_X(base.geom_3857) / cfg.grid_meters)::BIGINT AS gx,
+                                floor(ST_Y(base.geom_3857) / cfg.grid_meters)::BIGINT AS gy,
+                                COUNT(*)::INTEGER AS location_count,
+                                SUM(base.ticket_count)::BIGINT AS ticket_count,
+                                SUM(base.total_fine_amount)::NUMERIC AS total_fine_amount
+                            FROM (
+                                SELECT
+                                    location_code,
+                                    location,
+                                    ticket_count,
+                                    total_fine_amount,
+                                    status,
+                                    ward,
+                                    geom_3857
+                                FROM ase_camera_locations
+                                WHERE geom_3857 IS NOT NULL
+                            ) AS base
+                            CROSS JOIN (
+                                SELECT * FROM (VALUES
+                                    (1800.0::NUMERIC, 0::INTEGER, 8::INTEGER),
+                                    (1000.0::NUMERIC, 9::INTEGER, 10::INTEGER),
+                                    (500.0::NUMERIC, 11::INTEGER, 12::INTEGER)
+                                ) AS cfg(grid_meters, min_zoom, max_zoom)
+                            ) AS cfg
+                            GROUP BY cfg.min_zoom, cfg.max_zoom, cfg.grid_meters, gx, gy
+                        ) AS cluster
                         UNION ALL
-                        SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
-                        FROM ST_Subdivide(
-                            ST_SnapToGrid(base.geom_3857, 0.25),
-                            32
-                        ) AS subdivided(geom)
-                    ) AS variants(min_zoom, max_zoom, geom_variant)
+                        SELECT
+                            'ase_locations' AS dataset,
+                            point.location_code::TEXT AS feature_id,
+                            point.min_zoom,
+                            point.max_zoom,
+                            point.geom_variant,
+                            point.ticket_count,
+                            point.total_fine_amount,
+                            NULL::TEXT AS street_normalized,
+                            NULL::BIGINT AS centreline_id,
+                            NULL::TEXT AS location_name,
+                            point.location,
+                            point.status,
+                            point.ward,
+                            'point'::TEXT AS kind,
+                            1::INTEGER AS cluster_size,
+                            NULL::NUMERIC AS grid_meters
+                        FROM (
+                            SELECT
+                                base.location_code,
+                                base.location,
+                                base.status,
+                                base.ward,
+                                base.ticket_count,
+                                base.total_fine_amount,
+                                variants.min_zoom,
+                                variants.max_zoom,
+                                variants.geom_variant
+                            FROM (
+                                SELECT
+                                    location_code,
+                                    location,
+                                    ticket_count,
+                                    total_fine_amount,
+                                    status,
+                                    ward,
+                                    geom_3857
+                                FROM ase_camera_locations
+                                WHERE geom_3857 IS NOT NULL
+                            ) AS base
+                            CROSS JOIN LATERAL (
+                                SELECT 0 AS min_zoom, 11 AS max_zoom, subdivided.geom AS geom_variant
+                                FROM ST_Subdivide(
+                                    ST_SnapToGrid(ST_SimplifyPreserveTopology(base.geom_3857, 30), 1.0),
+                                    32
+                                ) AS subdivided(geom)
+                                UNION ALL
+                                SELECT 12 AS min_zoom, 16 AS max_zoom, subdivided.geom AS geom_variant
+                                FROM ST_Subdivide(
+                                    ST_SnapToGrid(base.geom_3857, 0.25),
+                                    32
+                                ) AS subdivided(geom)
+                            ) AS variants(min_zoom, max_zoom, geom_variant)
+                        ) AS point
+                    ) AS rows
                     CROSS JOIN LATERAL (
-                        SELECT (ST_Dump(geom_variant)).geom
+                        SELECT (ST_Dump(rows.geom_variant)).geom
                     ) AS parts
                 """,
             ),
         )
 
-        for table_name, base_table, dataset_name, populate_sql in builders:
+        def rebuild_table(builder: tuple[str, str, str, str]) -> None:
+            table_name, base_table, dataset_name, populate_sql = builder
             self._log(f"  Ensuring tile table '{table_name}' (source: {base_table})")
             parent_definition = f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
@@ -863,11 +1069,24 @@ class TileSchemaManager:
                     location TEXT,
                     status TEXT,
                     ward TEXT,
+                    kind TEXT NOT NULL DEFAULT 'point',
+                    cluster_size INTEGER,
+                    grid_meters NUMERIC,
                     PRIMARY KEY (tile_qk_group, tile_id)
                 ) PARTITION BY LIST (tile_qk_group);
             """
             self._log("    Creating parent partitioned table if needed")
             self.pg.execute(parent_definition)
+
+            self.pg.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'point';"
+            )
+            self.pg.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS cluster_size INTEGER;"
+            )
+            self.pg.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS grid_meters NUMERIC;"
+            )
 
             self.pg.execute(
                 f"""
@@ -929,7 +1148,10 @@ class TileSchemaManager:
                     location_name,
                     location,
                     status,
-                    ward
+                    ward,
+                    kind,
+                    cluster_size,
+                    grid_meters
                 )
                 {populate_sql}
                 """
@@ -951,6 +1173,17 @@ class TileSchemaManager:
                 f"CREATE INDEX IF NOT EXISTS {table_name}_prefix_idx ON {table_name} (tile_qk_prefix);"
             )
             self.pg.execute(f"ANALYZE {table_name};")
+
+        worker_count = max(1, int(self.tile_rebuild_workers or 1))
+        if worker_count > 1:
+            self._log(f"  Rebuilding tile tables with up to {worker_count} worker threads")
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                list(executor.map(rebuild_table, builders))
+        else:
+            for builder in builders:
+                rebuild_table(builder)
 
     def _ensure_quadkey_partitions(self, parent: str) -> None:
         """Ensure four list partitions (0-3) exist for the given parent table."""
