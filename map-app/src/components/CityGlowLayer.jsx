@@ -2,10 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources.js';
 import { loadGlowDataset } from '../lib/glowDatasetLoader.js';
+import { usePmtiles } from '../context/PmtilesContext.jsx';
+import { getPmtilesDataset } from '../lib/pmtilesProtocol.js';
+
+const GLOW_STOPS = STYLE_CONSTANTS.CITY_GLOW_STOPS;
 
 const EMPTY_FEATURE_COLLECTION = { type: 'FeatureCollection', features: [] };
 
-const GLOW_STOPS = STYLE_CONSTANTS.CITY_GLOW_STOPS;
+const GLOW_DATASET_META = {
+  parking_tickets: { minZoom: 9, maxZoom: 16, yearBase: 2008 },
+  red_light_locations: { minZoom: 9, maxZoom: 15, yearBase: 2010 },
+  ase_locations: { minZoom: 9, maxZoom: 15, yearBase: 2010 },
+};
+
+const GLOW_TILE_TEMPLATE = MAP_CONFIG.TILE_SOURCE?.CITY_GLOW || '/tiles/glow/{dataset}/{z}/{x}/{y}.mvt';
 
 function hexToRgba(hex, alpha) {
   const normalized = hex.replace('#', '');
@@ -31,19 +41,45 @@ function buildColorExpression(countExpression, alphaStart, alphaEnd) {
   return expression;
 }
 
-function buildFilterExpression(filter) {
+function buildMaskClause(property, mask) {
+  return ['>', ['bitwise-and', ['coalesce', ['get', property], 0], mask], 0];
+}
+
+function buildFilterExpression(filter, options = {}) {
   if (!filter) {
     return null;
   }
 
   const clauses = ['all'];
+  const {
+    useMasks = false,
+    yearBase = 2008,
+    yearMaskProperty = 'years_mask',
+    monthMaskProperty = 'months_mask',
+  } = options;
 
   if (filter.year) {
-    clauses.push(['in', filter.year, ['get', 'years']]);
+    if (useMasks) {
+      const offset = Number(filter.year) - Number(yearBase);
+      if (Number.isFinite(offset) && offset >= 0 && offset < 53) {
+        const mask = Math.pow(2, offset);
+        clauses.push(buildMaskClause(yearMaskProperty, mask));
+      }
+    } else {
+      clauses.push(['in', filter.year, ['get', 'years']]);
+    }
   }
 
   if (filter.month) {
-    clauses.push(['in', filter.month, ['get', 'months']]);
+    if (useMasks) {
+      const monthIndex = Number(filter.month) - 1;
+      if (Number.isFinite(monthIndex) && monthIndex >= 0 && monthIndex < 12) {
+        const mask = Math.pow(2, monthIndex);
+        clauses.push(buildMaskClause(monthMaskProperty, mask));
+      }
+    } else {
+      clauses.push(['in', filter.month, ['get', 'months']]);
+    }
   }
 
   return clauses.length > 1 ? clauses : null;
@@ -57,11 +93,75 @@ export function CityGlowLayer({
   highlightCentrelineIds = [],
   dataset = 'parking_tickets',
 }) {
+  const datasetMeta = GLOW_DATASET_META[dataset] || GLOW_DATASET_META.parking_tickets;
+
+  const { manifest, ready: pmtilesReady } = usePmtiles();
+  const pmtilesDataset = useMemo(
+    () => (pmtilesReady ? getPmtilesDataset(manifest, dataset, 'glowDatasets') : null),
+    [pmtilesReady, manifest, dataset],
+  );
+
+  const pmtilesSource = useMemo(() => {
+    if (!pmtilesDataset) {
+      return null;
+    }
+    const shards = Array.isArray(pmtilesDataset.shards) && pmtilesDataset.shards.length > 0
+      ? pmtilesDataset.shards
+      : [pmtilesDataset];
+    const [primaryShard] = shards;
+    if (!primaryShard) {
+      return null;
+    }
+    const urlCandidates = [];
+    if (primaryShard.originUrl) {
+      urlCandidates.push(primaryShard.originUrl);
+    }
+    if (primaryShard.url && primaryShard.url !== primaryShard.originUrl) {
+      urlCandidates.push(primaryShard.url);
+    }
+    const selectedUrl = urlCandidates.find((candidate) => typeof candidate === 'string' && candidate.length > 0);
+    if (!selectedUrl) {
+      return null;
+    }
+    const toProtocolUrl = (value) => (value.startsWith('pmtiles://') ? value : `pmtiles://${value}`);
+    return {
+      tilesUrl: toProtocolUrl(selectedUrl),
+      minZoom: Number.isFinite(primaryShard.minZoom) ? primaryShard.minZoom : pmtilesDataset.minZoom || 9,
+      maxZoom: Number.isFinite(primaryShard.maxZoom) ? primaryShard.maxZoom : pmtilesDataset.maxZoom || 16,
+      vectorLayer: pmtilesDataset.vectorLayer || 'glow_lines',
+      yearBase: Number.isFinite(pmtilesDataset.yearBase) ? pmtilesDataset.yearBase : null,
+    };
+  }, [pmtilesDataset]);
+
+  const usingPmtiles = Boolean(pmtilesSource?.tilesUrl);
+  const fallbackVectorTileUrl = useMemo(() => {
+    if (usingPmtiles) {
+      return null;
+    }
+    const template = (MAP_CONFIG.TILE_SOURCE?.CITY_GLOW || '').replace('{dataset}', dataset);
+    if (!template) {
+      return null;
+    }
+    if (/^https?:\/\//iu.test(template)) {
+      return template;
+    }
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}${template}`;
+    }
+    return template;
+  }, [dataset, usingPmtiles]);
+
+  const usingVectorTiles = usingPmtiles || Boolean(fallbackVectorTileUrl);
   const [glowData, setGlowData] = useState(EMPTY_FEATURE_COLLECTION);
   const loadedDatasetRef = useRef(null);
 
   useEffect(() => {
     if (!visible) {
+      return undefined;
+    }
+    if (usingVectorTiles) {
+      loadedDatasetRef.current = dataset;
+      setGlowData(EMPTY_FEATURE_COLLECTION);
       return undefined;
     }
     if (loadedDatasetRef.current === dataset) {
@@ -78,7 +178,7 @@ export function CityGlowLayer({
         }
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (!cancelled && error?.name !== 'AbortError') {
           console.error(`Failed to load ${dataset} glow data`, error);
           loadedDatasetRef.current = null;
         }
@@ -87,9 +187,14 @@ export function CityGlowLayer({
     return () => {
       cancelled = true;
     };
-  }, [dataset, visible]);
+  }, [dataset, visible, usingVectorTiles]);
 
-  const filterExpression = useMemo(() => buildFilterExpression(filter), [filter]);
+  const filterExpression = useMemo(() => buildFilterExpression(filter, {
+    useMasks: true,
+    yearBase: datasetMeta.yearBase,
+    yearMaskProperty: 'years_mask',
+    monthMaskProperty: 'months_mask',
+  }), [filter, datasetMeta.yearBase]);
 
   const layerFilter = useMemo(() => {
     const baseFilter = ['>', ['coalesce', ['get', 'count'], 0], 0];
@@ -303,21 +408,48 @@ export function CityGlowLayer({
     return null;
   }
 
+  const sourceId = MAP_CONFIG.SOURCE_IDS.CITY_GLOW;
+  const vectorLayerName = pmtilesSource?.vectorLayer || 'glow_lines';
+  const sourceProps = usingVectorTiles
+    ? {
+        type: 'vector',
+        tiles: [pmtilesSource?.tilesUrl || fallbackVectorTileUrl],
+        minzoom: pmtilesSource?.minZoom ?? 9,
+        maxzoom: pmtilesSource?.maxZoom ?? 16,
+        promoteId: 'centreline_id',
+      }
+    : {
+        type: 'geojson',
+        data: glowData,
+        lineMetrics: true,
+        promoteId: 'centreline_id',
+      };
+
+  const sourceLayerProps = usingVectorTiles
+    ? { 'source-layer': vectorLayerName }
+    : {};
+
+  const softLayerMinZoom = usingVectorTiles
+    ? Math.max(9, pmtilesSource?.minZoom ?? 9)
+    : 9;
+  const coreLayerMinZoom = usingVectorTiles
+    ? Math.max(10, pmtilesSource?.minZoom ?? 10)
+    : 10;
+  const layerMaxZoom = usingVectorTiles
+    ? Math.min(18, pmtilesSource?.maxZoom ?? 16)
+    : 18;
+
   return (
-    <Source
-      id={MAP_CONFIG.SOURCE_IDS.CITY_GLOW}
-      type="geojson"
-      lineMetrics
-      data={glowData}
-    >
+    <Source id={sourceId} {...sourceProps}>
       <Layer
         id={MAP_CONFIG.LAYER_IDS.CITY_GLOW_SOFT}
         type="line"
         layout={lineLayout}
         paint={softGlowPaint}
         filter={layerFilter}
-        minzoom={9}
-        maxzoom={18}
+        minzoom={softLayerMinZoom}
+        maxzoom={layerMaxZoom}
+        {...sourceLayerProps}
       />
       <Layer
         id={MAP_CONFIG.LAYER_IDS.CITY_GLOW_CORE}
@@ -325,8 +457,9 @@ export function CityGlowLayer({
         layout={lineLayout}
         paint={coreGlowPaint}
         filter={layerFilter}
-        minzoom={10}
-        maxzoom={18}
+        minzoom={coreLayerMinZoom}
+        maxzoom={layerMaxZoom}
+        {...sourceLayerProps}
       />
       <Layer
         id={`${MAP_CONFIG.LAYER_IDS.CITY_GLOW_CORE}-highlight`}
@@ -334,8 +467,9 @@ export function CityGlowLayer({
         layout={highlightLayout}
         paint={highlightPaint}
         filter={highlightFilter}
-        minzoom={9}
-        maxzoom={18}
+        minzoom={softLayerMinZoom}
+        maxzoom={layerMaxZoom}
+        {...sourceLayerProps}
       />
     </Source>
   );

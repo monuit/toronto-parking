@@ -349,7 +349,8 @@ class TileSchemaManager:
                     r.z,
                     r.x,
                     r.y,
-                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix_full,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, r.z) AS prefix_zoom,
                     SUBSTRING(mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) FROM 1 FOR 1) AS grp
                 FROM req r
                 JOIN bounds b USING (ord, z, x, y)
@@ -375,7 +376,7 @@ class TileSchemaManager:
                               AND t.min_zoom <= p.z
                               AND t.max_zoom >= p.z
                               AND t.tile_qk_group = p.grp
-                          AND t.tile_qk_prefix LIKE p.prefix || '%%'
+                          AND t.tile_qk_prefix LIKE p.prefix_zoom || '%%'
                               AND t.geom && b.geom
                         ) AS mvt_rows
                     )
@@ -390,7 +391,7 @@ class TileSchemaManager:
                   AND cache.x = p.x
                   AND cache.y = p.y
             ) AS cache ON p.z <= 10
-            WHERE p.prefix IS NOT NULL
+            WHERE p.prefix_full IS NOT NULL
             $$;
             """
         )
@@ -420,7 +421,8 @@ class TileSchemaManager:
                     r.z,
                     r.x,
                     r.y,
-                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix_full,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, r.z) AS prefix_zoom,
                     SUBSTRING(mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) FROM 1 FOR 1) AS grp
                 FROM req r
                 JOIN bounds b USING (ord, z, x, y)
@@ -447,7 +449,7 @@ class TileSchemaManager:
                               AND t.min_zoom <= p.z
                               AND t.max_zoom >= p.z
                               AND t.tile_qk_group = p.grp
-                          AND t.tile_qk_prefix LIKE p.prefix || '%%'
+                          AND t.tile_qk_prefix LIKE p.prefix_zoom || '%%'
                               AND t.geom && b.geom
                         ) AS mvt_rows
                     )
@@ -462,7 +464,7 @@ class TileSchemaManager:
                   AND cache.x = p.x
                   AND cache.y = p.y
             ) AS cache ON p.z <= 10
-            WHERE p.prefix IS NOT NULL
+            WHERE p.prefix_full IS NOT NULL
             $$;
             """
         )
@@ -492,7 +494,8 @@ class TileSchemaManager:
                     r.z,
                     r.x,
                     r.y,
-                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) AS prefix_full,
+                    mercator_quadkey_prefix(b.geom, {quadkey_zoom}, r.z) AS prefix_zoom,
                     SUBSTRING(mercator_quadkey_prefix(b.geom, {quadkey_zoom}, {prefix_len}) FROM 1 FOR 1) AS grp
                 FROM req r
                 JOIN bounds b USING (ord, z, x, y)
@@ -519,7 +522,7 @@ class TileSchemaManager:
                               AND t.min_zoom <= p.z
                               AND t.max_zoom >= p.z
                               AND t.tile_qk_group = p.grp
-                          AND t.tile_qk_prefix LIKE p.prefix || '%%'
+                          AND t.tile_qk_prefix LIKE p.prefix_zoom || '%%'
                               AND t.geom && b.geom
                         ) AS mvt_rows
                     )
@@ -534,7 +537,7 @@ class TileSchemaManager:
                   AND cache.x = p.x
                   AND cache.y = p.y
             ) AS cache ON p.z <= 10
-            WHERE p.prefix IS NOT NULL
+            WHERE p.prefix_full IS NOT NULL
             $$;
             """
         )

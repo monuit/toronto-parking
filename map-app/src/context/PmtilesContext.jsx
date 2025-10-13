@@ -9,39 +9,48 @@ import {
 } from 'react';
 import { registerPmtilesSources } from '../lib/pmtilesProtocol.js';
 
-const PmtilesContext = createContext({ manifest: null, ready: false, error: null, refresh: () => {} });
+const tilesMode = (import.meta.env?.VITE_TILES_MODE || 'pmtiles').toLowerCase();
+const pmtilesFeatureEnabled = tilesMode === 'pmtiles';
+
+const DISABLED_CONTEXT_VALUE = Object.freeze({
+  manifest: null,
+  ready: false,
+  loading: false,
+  error: null,
+  refresh: () => {},
+});
+
+function readInlineManifest() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const payload = window.__PMTILES_MANIFEST__;
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  return payload;
+}
+
+const PmtilesContext = createContext(DISABLED_CONTEXT_VALUE);
 
 export function PmtilesProvider({ children }) {
-  const getInlineManifest = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    const payload = window.__PMTILES_MANIFEST__;
-    if (!payload || typeof payload !== 'object') {
-      return null;
-    }
-    return payload;
-  }, []);
+  const disabled = !pmtilesFeatureEnabled;
 
-  const [manifest, setManifest] = useState(() => getInlineManifest());
+  const [manifest, setManifest] = useState(() => (disabled ? null : readInlineManifest()));
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const seededInlineManifest = useRef(Boolean(manifest));
+  const seededInlineManifest = useRef(disabled ? true : Boolean(manifest));
 
   const loadManifest = useCallback(async () => {
-    if (loading) {
-      return;
-    }
-    if (manifest?.enabled) {
+    if (disabled || loading || manifest?.enabled) {
       return;
     }
     setLoading(true);
     try {
       const response = await fetch('/api/pmtiles-manifest', { cache: 'no-store' });
       if (!response.ok) {
-        if (response.status === 503) {
-          const payload = await response.json().catch(() => null);
-          setManifest(payload || { enabled: false });
+        if (response.status === 204) {
+          setManifest({ enabled: false });
           setError(null);
         } else {
           throw new Error(`PMTiles manifest request failed with status ${response.status}`);
@@ -52,38 +61,46 @@ export function PmtilesProvider({ children }) {
         setError(null);
       }
     } catch (err) {
-      setError(err);
+      if (!disabled) {
+        setError(err);
+      }
     } finally {
       setLoading(false);
     }
-  }, [loading, manifest]);
+  }, [disabled, loading, manifest]);
 
   useEffect(() => {
+    if (disabled) {
+      return undefined;
+    }
     if (manifest?.enabled || loading) {
-      return;
+      return undefined;
     }
     if (!seededInlineManifest.current) {
-      const inline = getInlineManifest();
+      const inline = readInlineManifest();
       if (inline) {
         seededInlineManifest.current = true;
         setManifest(inline);
         setError(null);
-        return;
+        return undefined;
       }
     }
     loadManifest();
-  }, [getInlineManifest, loadManifest, loading, manifest]);
+    return undefined;
+  }, [disabled, loadManifest, loading, manifest]);
 
   useEffect(() => {
-    if (manifest?.enabled) {
-      registerPmtilesSources(manifest);
-      if (typeof window !== 'undefined') {
-        window.__PMTILES_MANIFEST__ = manifest;
-      }
+    if (disabled || !manifest?.enabled) {
+      return undefined;
     }
-  }, [manifest]);
+    registerPmtilesSources(manifest);
+    if (typeof window !== 'undefined') {
+      window.__PMTILES_MANIFEST__ = manifest;
+    }
+    return undefined;
+  }, [disabled, manifest]);
 
-  const value = useMemo(() => ({
+  const activeValue = useMemo(() => ({
     manifest,
     ready: Boolean(manifest?.enabled),
     loading,
@@ -91,11 +108,9 @@ export function PmtilesProvider({ children }) {
     refresh: loadManifest,
   }), [manifest, loading, error, loadManifest]);
 
-  return (
-    <PmtilesContext.Provider value={value}>
-      {children}
-    </PmtilesContext.Provider>
-  );
+  const value = disabled ? DISABLED_CONTEXT_VALUE : activeValue;
+
+  return <PmtilesContext.Provider value={value}>{children}</PmtilesContext.Provider>;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
