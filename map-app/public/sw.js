@@ -61,7 +61,7 @@ function isAssetRequest(request) {
   if (url.pathname.includes('/sprite')) {
     return true;
   }
-  if (url.pathname.startsWith('/api/maptiler/fonts/')) {
+  if (url.pathname.startsWith('/proxy/maptiler/fonts/')) {
     return true;
   }
   return false;

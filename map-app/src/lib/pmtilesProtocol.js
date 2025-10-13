@@ -54,7 +54,7 @@ export function registerPmtilesSources(manifest) {
   if (!protocol) {
     return;
   }
-  const collections = [manifest.datasets || {}, manifest.wardDatasets || {}, manifest.glowDatasets || {}];
+  const collections = [manifest.datasets || {}, manifest.wardDatasets || {}];
   for (const collection of collections) {
     for (const dataset of Object.values(collection)) {
       if (!dataset) {

@@ -5,25 +5,10 @@ import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const APP_ROOT = path.resolve(__dirname, '..');
-const PROJECT_ROOT = path.resolve(APP_ROOT, '..');
+const PROJECT_ROOT = path.resolve(__dirname, '../..');
 
-const envSources = [];
-const baseEnvPath = path.join(APP_ROOT, '.env');
-const baseResult = dotenv.config({ path: baseEnvPath });
-if (!baseResult.error && baseResult.parsed) {
-  envSources.push('.env');
-}
-const localEnvPath = path.join(APP_ROOT, '.env.local');
-const localResult = dotenv.config({ path: localEnvPath, override: true });
-if (!localResult.error && localResult.parsed) {
-  envSources.push('.env.local');
-}
-const envLogToken = Symbol.for('mapApp.envLogged');
-if (envSources.length > 0 && !globalThis[envLogToken]) {
-  console.log(`[env] loaded ${envSources.join(', ')} from ${APP_ROOT}`);
-  globalThis[envLogToken] = true;
-}
+const DOTENV_PATH = path.join(PROJECT_ROOT, '.env');
+dotenv.config({ path: DOTENV_PATH });
 
 const DEFAULT_PORT = 5173;
 
@@ -55,170 +40,67 @@ export function isLocalDevServer() {
 }
 
 export function getRedisConfig() {
-  const urlCandidates = [
-    process.env.REDIS_URL,
-    process.env.REDIS_CONNECTION,
-    process.env.REDIS_PUBLIC_URL,
-  ];
-  const redisUrl = resolveFirst(urlCandidates);
-  if (!redisUrl) {
-    return { enabled: false, url: null, rawUrl: null };
+  const url =
+    process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL || process.env.REDIS_CONNECTION || null;
+  if (!url) {
+    return { enabled: false, url: null };
   }
-
-  let enabled = true;
-  if (isForcedLocal()) {
-    enabled = false;
-  } else if (isForcedRemote()) {
-    enabled = true;
-  } else if (isLocalDevServer()) {
-    enabled = false;
-  }
-
+  const enabled = !isLocalDevServer();
   return {
     enabled,
-    url: enabled ? redisUrl : null,
-    rawUrl: redisUrl,
+    url: enabled ? url : null,
+    rawUrl: url,
   };
 }
 
-function resolveFirst(values) {
-  for (const value of values) {
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-  }
-  return null;
-}
-
-function resolveSslOptions(url) {
-  if (!url) {
-    return undefined;
-  }
-  const sslRequired =
-    process.env.DATABASE_SSL === '1'
-    || process.env.PGSSLMODE === 'require'
-    || url.includes('railway');
-  if (!sslRequired) {
-    return undefined;
-  }
-  const rejectEnv = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED;
-  const defaultReject = url.includes('railway') ? false : true;
-  const rejectUnauthorized = rejectEnv !== undefined ? rejectEnv !== '0' : defaultReject;
-  return { rejectUnauthorized };
-}
-
-function buildDbConfigFromCandidates({
-  primaryCandidates = [],
-  replicaCandidates = [],
-  poolCandidates = [],
-  disableInDev = false,
-}) {
-  const connectionString = resolveFirst(primaryCandidates);
+export function getPostgresConfig() {
+  const connectionString =
+    process.env.DATABASE_URL ||
+    process.env.DATABASE_PUBLIC_URL ||
+    process.env.POSTGRES_URL ||
+    null;
+  const replicaConnectionString =
+    process.env.DATABASE_REPLICA_URL ||
+    process.env.DATABASE_RO_URL ||
+    process.env.POSTGRES_READONLY_URL ||
+    null;
+  const poolConnectionString =
+    process.env.DATABASE_POOL_URL ||
+    process.env.PGBOUNCER_URL ||
+    null;
   if (!connectionString) {
     return {
       enabled: false,
       connectionString: null,
       readOnlyConnectionString: null,
       poolConnectionString: null,
-      replicaConnectionString: null,
-      ssl: undefined,
     };
   }
-
-  const replicaConnectionString = resolveFirst(replicaCandidates) || null;
-  const poolConnectionString = resolveFirst(poolCandidates) || null;
-
+  const forceDisable = process.env.FORCE_LOCAL_DB === '1';
+  const disableInDev = process.env.DISABLE_DB_IN_DEV === '1';
   let enabled = true;
-  if (isForcedLocal()) {
+  if (forceDisable) {
     enabled = false;
-  } else if (isForcedRemote()) {
-    enabled = true;
-  } else if (disableInDev && isLocalDevServer()) {
-    enabled = false;
+  } else if (isLocalDevServer()) {
+    enabled = !disableInDev;
   }
-
-  const ssl = resolveSslOptions(connectionString);
-
+  const sslRequired =
+    process.env.DATABASE_SSL === '1' ||
+    process.env.PGSSLMODE === 'require' ||
+    connectionString.includes('railway');
+  const defaultRejectUnauthorized = connectionString.includes('railway') ? false : true;
+  const rejectEnv = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED;
+  const rejectUnauthorized =
+    rejectEnv !== undefined ? rejectEnv !== '0' : defaultRejectUnauthorized;
+  const sslOptions = sslRequired ? { rejectUnauthorized } : undefined;
   return {
     enabled,
     connectionString: enabled ? connectionString : null,
-    readOnlyConnectionString: enabled
-      ? (replicaConnectionString || poolConnectionString || connectionString)
-      : null,
-    poolConnectionString: enabled ? poolConnectionString : null,
-    replicaConnectionString: enabled ? replicaConnectionString : null,
-    ssl,
-  };
-}
-
-export function getCoreDbConfig() {
-  return buildDbConfigFromCandidates({
-    primaryCandidates: [
-      process.env.CORE_DB_URL,
-      process.env.DATABASE_CORE_URL,
-      process.env.DATABASE_PUBLIC_URL,
-      (!process.env.TILES_DB_URL && !process.env.DATABASE_PRIVATE_URL) ? process.env.DATABASE_URL : null,
-      process.env.POSTGRES_URL,
-    ],
-    replicaCandidates: [
-      process.env.CORE_DB_READONLY_URL,
-      process.env.DATABASE_RO_URL,
-      process.env.DATABASE_REPLICA_URL,
-    ],
-    poolCandidates: [
-      process.env.CORE_DB_POOL_URL,
-      process.env.DATABASE_POOL_URL,
-      process.env.PGBOUNCER_URL,
-    ],
-    disableInDev: process.env.DISABLE_DB_IN_DEV === '1',
-  });
-}
-
-export function getTileDbConfig() {
-  const baseConfig = buildDbConfigFromCandidates({
-    primaryCandidates: [
-      process.env.TILES_DB_URL,
-      process.env.POSTGIS_DATABASE_URL,
-      process.env.DATABASE_PRIVATE_URL,
-      process.env.DATABASE_URL,
-    ],
-    replicaCandidates: [
-      process.env.TILES_DB_READONLY_URL,
-      process.env.DATABASE_RO_URL,
-      process.env.DATABASE_REPLICA_URL,
-    ],
-    poolCandidates: [
-      process.env.TILES_DB_POOL_URL,
-      process.env.DATABASE_POOL_URL,
-      process.env.PGBOUNCER_URL,
-    ],
-  });
-  return {
-    ...baseConfig,
-    statementTimeoutMs: getSqlStatementTimeoutMs(),
-  };
-}
-
-export function getPostgresConfig() {
-  return getCoreDbConfig();
-}
-
-export function getSqlStatementTimeoutMs(defaultValue = 0) {
-  const parsed = Number.parseInt(process.env.SQL_STATEMENT_TIMEOUT_MS ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
-}
-
-export function getTileCacheConfig() {
-  const baseTtl = Number.parseInt(process.env.CACHE_TTL_S ?? '', 10);
-  const staleTtl = Number.parseInt(process.env.CACHE_STALE_TTL_S ?? '', 10);
-  const baseTtlSeconds = Number.isFinite(baseTtl) && baseTtl > 0 ? baseTtl : 86400;
-  const staleSeconds = Number.isFinite(staleTtl) && staleTtl > 0 ? staleTtl : 604800;
-  return {
-    baseTtlSeconds,
-    staleWhileRevalidateSeconds: staleSeconds,
+    rawConnectionString: connectionString,
+    readOnlyConnectionString: enabled ? (replicaConnectionString || poolConnectionString || connectionString) : null,
+    poolConnectionString: enabled ? (poolConnectionString || null) : null,
+    replicaConnectionString: enabled ? (replicaConnectionString || null) : null,
+    ssl: sslOptions,
   };
 }
 
@@ -304,7 +186,6 @@ export function getPmtilesRuntimeConfig() {
   const warmupLatitude = Number.parseFloat(process.env.PMTILES_WARMUP_LATITUDE || '43.6532');
   const datasetOverrides = parseJsonConfig(process.env.PMTILES_DATASETS, null);
   const wardDatasetOverrides = parseJsonConfig(process.env.PMTILES_WARD_DATASETS, null);
-  const glowDatasetOverrides = parseJsonConfig(process.env.PMTILES_GLOW_DATASETS, null);
 
   const enabledSetting = typeof process.env.PMTILES_ENABLED === 'string'
     ? process.env.PMTILES_ENABLED.trim().toLowerCase()
@@ -343,7 +224,6 @@ export function getPmtilesRuntimeConfig() {
     warmupCenter: [warmupLongitude, warmupLatitude],
     datasetOverrides,
     wardDatasetOverrides,
-    glowDatasetOverrides,
   };
 }
 
@@ -376,5 +256,5 @@ export function getDataDir(defaultDir) {
 
 export const runtimeInfo = {
   projectRoot: PROJECT_ROOT,
-  envFiles: envSources.map((name) => path.join(APP_ROOT, name)),
+  dotenvPath: DOTENV_PATH,
 };

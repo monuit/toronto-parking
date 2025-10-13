@@ -1,7 +1,7 @@
 import process from 'node:process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createClient } from 'redis';
-import { getRedisConfig, getCoreDbConfig, getTileDbConfig } from './runtimeConfig.js';
+import { getRedisConfig, getPostgresConfig } from './runtimeConfig.js';
 
 const DEFAULT_ATTEMPTS = Number.parseInt(process.env.REMOTE_WAKE_ATTEMPTS || '6', 10);
 const DEFAULT_INITIAL_DELAY = Number.parseInt(process.env.REMOTE_WAKE_DELAY_MS || '500', 10);
@@ -60,8 +60,8 @@ async function wakeRedis({ attempts, initialDelay }) {
   return { enabled: true, awake: false };
 }
 
-async function wakeDatabase(configResolver, { attempts, initialDelay }) {
-  const postgresConfig = configResolver();
+async function wakePostgres({ attempts, initialDelay }) {
+  const postgresConfig = getPostgresConfig();
   if (!postgresConfig.enabled || !postgresConfig.connectionString) {
     return { enabled: false, awake: false };
   }
@@ -82,10 +82,10 @@ async function wakeDatabase(configResolver, { attempts, initialDelay }) {
       });
       await pool.query('SELECT 1');
       await pool.end();
-      console.log(`🔌 Database awake after ${attempt} attempt${attempt === 1 ? '' : 's'}.`);
+      console.log(`🔌 Postgres awake after ${attempt} attempt${attempt === 1 ? '' : 's'}.`);
       return { enabled: true, awake: true };
     } catch (error) {
-      console.warn(`Database wake attempt ${attempt} failed: ${error.message}`);
+      console.warn(`Postgres wake attempt ${attempt} failed: ${error.message}`);
       if (pool) {
         try {
           await pool.end();
@@ -108,26 +108,21 @@ export async function wakeRemoteServices(options = {}) {
   const attempts = resolveAttempts(options.attempts);
   const initialDelay = resolveInitialDelay(options.initialDelay);
 
-  const [redisResult, coreResult, tileResult] = await Promise.all([
+  const [redisResult, postgresResult] = await Promise.all([
     wakeRedis({ attempts, initialDelay }),
-    wakeDatabase(getCoreDbConfig, { attempts, initialDelay }),
-    wakeDatabase(getTileDbConfig, { attempts, initialDelay }),
+    wakePostgres({ attempts, initialDelay }),
   ]);
 
   if (redisResult.enabled && !redisResult.awake) {
     console.warn('Redis did not wake after retries; proceeding with local fallbacks.');
   }
-  if (coreResult.enabled && !coreResult.awake) {
-    console.warn('Core database did not wake after retries; API fallbacks may be used.');
-  }
-  if (tileResult.enabled && !tileResult.awake) {
-    console.warn('Tile database did not wake after retries; tile fallbacks may be used.');
+  if (postgresResult.enabled && !postgresResult.awake) {
+    console.warn('Postgres did not wake after retries; API fallbacks may be used.');
   }
 
   return {
     redis: redisResult,
-    coreDb: coreResult,
-    tileDb: tileResult,
+    postgres: postgresResult,
   };
 }
 
@@ -136,9 +131,5 @@ export async function wakeRedisOnly(options = {}) {
 }
 
 export async function wakePostgresOnly(options = {}) {
-  return wakeDatabase(getCoreDbConfig, { attempts: options.attempts, initialDelay: options.initialDelay });
-}
-
-export async function wakeTilePostgres(options = {}) {
-  return wakeDatabase(getTileDbConfig, { attempts: options.attempts, initialDelay: options.initialDelay });
+  return wakePostgres({ attempts: options.attempts, initialDelay: options.initialDelay });
 }
