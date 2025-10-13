@@ -49,12 +49,12 @@ export function HowItWorks() {
           <div className="modal-section">
             <h3>🚦 Red Light Camera (RLC)</h3>
             <p>
-              Toronto operates <strong>319 red light camera locations</strong> at high-risk intersections. These cameras photograph
-              vehicles that run red lights and issue $325 fines.
+              Toronto operates <strong>319 red light camera locations</strong> at intersections. These cameras photograph vehicles that
+              run red lights and issue $325 fines.
             </p>
             <p>
-              <strong>The Challenge?</strong> This dataset spans <strong>18 years</strong> (2007-2024) with over <strong>1 million tickets</strong> issued. Like the ASE feed,
-              it is disaggregated&mdash;each location has yearly counts with no pre-calculated totals.
+              This dataset spans <strong>18 years</strong> (2007-2024) with over <strong>1&nbsp;million tickets</strong> issued. Like the ASE feed, it is
+              disaggregated&mdash;each location has yearly counts with no pre-calculated totals.
             </p>
             <p><strong>How I processed it:</strong></p>
             <ol>
@@ -69,8 +69,8 @@ export function HowItWorks() {
               <strong> $331.9&nbsp;million</strong> in fines over 18 years.
             </p>
             <p>
-              <em>The catch:</em> unlike parking tickets, the City only publishes red light charges as semi-annual aggregates, so the work here
-              rebuilds the totals people actually want to analyze.
+              Unlike parking tickets, the City only publishes red light charges as semi-annual aggregates, so the work here rebuilds the
+              totals people actually want to analyze. You can scroll to find out which intersection has the highest amounts.
             </p>
             <p>
               Questions or suggestions? Reach out on <a href="https://x.com/moevals" target="_blank" rel="noreferrer">X</a> or email
@@ -87,11 +87,11 @@ export function HowItWorks() {
           <div className="modal-section">
             <h3>🚗 Automated Speed Enforcement (ASE)</h3>
             <p>
-              Toronto runs <strong>199 speed camera locations</strong>, mainly in school zones and community safety areas. Each camera
-              photographs vehicles that exceed the posted speed limit and mails a ticket to the owner.
+              Toronto runs <strong>199 speed camera locations</strong> (as of current). Each camera photographs vehicles that exceed the posted
+              speed limit and mails a ticket to the owner.
             </p>
             <p>
-              <strong>The Challenge?</strong> <strong>62 months</strong> (July 2020&ndash;August 2025) of monthly data with more than <strong>2 million tickets</strong> issued.
+              <strong>62 months</strong> (July 2020&ndash;August 2025) of monthly data with more than <strong>2&nbsp;million tickets</strong> issued (wild amount).
               Every record includes a month-by-month breakdown, but totals are missing.
             </p>
             <p><strong>How I processed it:</strong></p>
@@ -102,8 +102,8 @@ export function HowItWorks() {
               <li>Estimated fines at <strong>$50 per ticket</strong> (a conservative average&mdash;actual fines range from $5 to $718).</li>
             </ol>
             <p>
-              This adds leaderboards for the busiest cameras, ward summaries, and an estimated <strong>$102.7&nbsp;million</strong> in revenue.
-              If you assume a more realistic $180&ndash;$200 per ticket (20&nbsp;km/h over), the revenue would push toward ~$400&nbsp;million.
+              This adds leaderboards for the busiest cameras, ward summaries, and an estimated <strong>$102.7&nbsp;million</strong> in revenue. If you
+              assume a more realistic $180&ndash;$200 per ticket (20&nbsp;km/h over), the revenue would push toward ~$400&nbsp;million.
             </p>
             <p>
               Questions or suggestions? Reach out on <a href="https://x.com/moevals" target="_blank" rel="noreferrer">X</a> or email
@@ -124,8 +124,8 @@ export function HowItWorks() {
               date and time, fine amount, and more.
             </p>
             <p>
-              <strong>The challenge?</strong> Roughly <strong>40&nbsp;million</strong> parking tickets from 2008-2024. That&apos;s a lot to wrangle, especially because the older
-              exports are pretty messy.
+              Roughly <strong>40&nbsp;million</strong> parking tickets from 2008-2024. That&apos;s a lot to wrangle, especially because the older exports are
+              pretty messy.
             </p>
             <p>
               I started by pulling every monthly CSV from the City&apos;s Open Data Portal. Each contains thousands of tickets tied to street
@@ -136,19 +136,14 @@ export function HowItWorks() {
               <strong>750k unique addresses</strong> gathered from those tickets.
             </p>
             <p>
-              I built a batch geocoding pipeline that ran at about <strong>3.7 queries per second</strong>. Running continuously, it took a little over two days to
-              finish.
+              The result is this map&mdash;you can explore which streets rack up the most tickets, how much revenue each spot generates, and how
+              patterns change over time. You can search for a street at the top left, or find a street individually by scrolling. Filter by
+              year to see the City&apos;s yearly haul.
             </p>
             <p>
-              The trick: only geocode each unique address once. After that, every ticket can inherit the saved coordinates. That turns a
-              months-long job into a couple of days of processing.
-            </p>
-            <p>
-              The result is this map&mdash;you can explore which streets rack up the most tickets, how much revenue each spot generates, and
-              how patterns change over time. Filter by year to see the City&apos;s yearly haul.
-            </p>
-            <p>
-              Could you get near real-time ticket data? Technically, yes. Let&apos;s just say someone should secure that system a little better.
+              Could you get near real-time ticket data? Technically, yes. It is by no means difficult, but I don&apos;t imagine you can get
+              anything from these tickets, other than people&apos;s names + license plates. <del>By doing so, I would be breaking a few laws, so I
+              choose not to do it.</del>
             </p>
             <p>
               I also layered in the Red Light Camera and Automated Speed Enforcement datasets (toggle them in the top-left) so you can see what
