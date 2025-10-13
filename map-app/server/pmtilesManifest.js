@@ -109,13 +109,42 @@ const FALLBACK_WARD_DATASET_CONFIG = {
   },
 };
 
+const FALLBACK_GLOW_DATASET_CONFIG = {
+  parking_tickets: {
+    label: 'Parking ticket glow lines',
+    vectorLayer: 'glow_lines',
+    filename: 'parking_glow_lines.pmtiles',
+    minZoom: 9,
+    maxZoom: 16,
+    yearBase: 2008,
+  },
+  red_light_locations: {
+    label: 'Red light glow lines',
+    vectorLayer: 'glow_lines',
+    filename: 'red_light_glow_lines.pmtiles',
+    minZoom: 9,
+    maxZoom: 15,
+    yearBase: 2010,
+  },
+  ase_locations: {
+    label: 'ASE glow lines',
+    vectorLayer: 'glow_lines',
+    filename: 'ase_glow_lines.pmtiles',
+    minZoom: 9,
+    maxZoom: 15,
+    yearBase: 2010,
+  },
+};
+
 let DEFAULT_DATASET_CONFIG = FALLBACK_DATASET_CONFIG;
 let DEFAULT_WARD_DATASET_CONFIG = FALLBACK_WARD_DATASET_CONFIG;
+let DEFAULT_GLOW_DATASET_CONFIG = FALLBACK_GLOW_DATASET_CONFIG;
 
 try {
   const shardConfig = getShardConfig();
   DEFAULT_DATASET_CONFIG = shardConfig.datasets || FALLBACK_DATASET_CONFIG;
   DEFAULT_WARD_DATASET_CONFIG = shardConfig.wardDatasets || FALLBACK_WARD_DATASET_CONFIG;
+  DEFAULT_GLOW_DATASET_CONFIG = shardConfig.glowDatasets || FALLBACK_GLOW_DATASET_CONFIG;
 } catch (error) {
   console.warn('[pmtilesManifest] Failed to load shard configuration JSON:', error.message);
 }
@@ -188,6 +217,23 @@ function mergeWardDatasetConfig(baseConfig, overrides) {
   };
 }
 
+function mergeGlowDatasetConfig(baseConfig, overrides) {
+  if (!overrides) {
+    return baseConfig;
+  }
+  const merged = { ...baseConfig };
+  for (const [dataset, override] of Object.entries(overrides)) {
+    if (!override) {
+      continue;
+    }
+    merged[dataset] = {
+      ...(baseConfig[dataset] || {}),
+      ...override,
+    };
+  }
+  return merged;
+}
+
 function resolveWardDataset(base, originBase, datasetKey, config, prefix) {
   if (!config?.filename) {
     throw new Error(`Ward dataset ${datasetKey} missing PMTiles filename`);
@@ -207,6 +253,29 @@ function resolveWardDataset(base, originBase, datasetKey, config, prefix) {
     filename,
     minZoom: Number.isFinite(config.minZoom) ? config.minZoom : 8,
     maxZoom: Number.isFinite(config.maxZoom) ? config.maxZoom : 12,
+  };
+}
+
+function resolveGlowDataset(base, originBase, datasetKey, config, prefix) {
+  if (!config?.filename) {
+    throw new Error(`Glow dataset ${datasetKey} missing PMTiles filename`);
+  }
+  const filename = normalizeFilename(config.filename);
+  const normalizedPrefix = prefix ? prefix.replace(/^\/+/, '').replace(/\/+$/, '') : '';
+  const baseUrl = base ? (normalizedPrefix ? `${base}/${normalizedPrefix}` : base) : null;
+  const originUrlBase = originBase
+    ? (normalizedPrefix ? `${originBase}/${normalizedPrefix}` : originBase)
+    : baseUrl;
+  const originUrl = originUrlBase ? `${originUrlBase}/${filename}` : `${filename}`;
+  return {
+    label: config.label || datasetKey,
+    vectorLayer: config.vectorLayer || 'glow_lines',
+    url: baseUrl ? `${baseUrl}/${filename}` : originUrl,
+    originUrl,
+    filename,
+    minZoom: Number.isFinite(config.minZoom) ? config.minZoom : 9,
+    maxZoom: Number.isFinite(config.maxZoom) ? config.maxZoom : 16,
+    yearBase: Number.isFinite(config.yearBase) ? config.yearBase : null,
   };
 }
 
@@ -235,6 +304,7 @@ export function buildPmtilesManifest(runtimeConfig) {
     return {
       enabled: false,
       datasets: {},
+      glowDatasets: {},
       updatedAt: new Date().toISOString(),
     };
   }
@@ -245,8 +315,10 @@ export function buildPmtilesManifest(runtimeConfig) {
   const objectPrefix = runtime.objectPrefix ? String(runtime.objectPrefix).replace(/^\/+/, '').replace(/\/+$/, '') : '';
   const datasetConfig = mergeDatasetConfig(DEFAULT_DATASET_CONFIG, runtime.datasetOverrides);
   const wardDatasetConfig = mergeWardDatasetConfig(DEFAULT_WARD_DATASET_CONFIG, runtime.wardDatasetOverrides);
+  const glowDatasetConfig = mergeGlowDatasetConfig(DEFAULT_GLOW_DATASET_CONFIG, runtime.glowDatasetOverrides);
   const manifestDatasets = {};
   const wardDatasets = {};
+  const glowDatasets = {};
   const warmupInfo = {
     center: runtime.warmupCenter,
     zooms: runtime.warmupZooms,
@@ -274,6 +346,17 @@ export function buildPmtilesManifest(runtimeConfig) {
     wardDatasets[dataset] = resolveWardDataset(baseUrl, originBaseUrl, dataset, config, objectPrefix);
   }
 
+  for (const [dataset, config] of Object.entries(glowDatasetConfig)) {
+    if (!config) {
+      continue;
+    }
+    try {
+      glowDatasets[dataset] = resolveGlowDataset(baseUrl, originBaseUrl, dataset, config, objectPrefix);
+    } catch (error) {
+      console.warn(`[pmtilesManifest] Failed to resolve glow dataset ${dataset}:`, error.message);
+    }
+  }
+
   return {
     enabled: true,
     baseUrl,
@@ -286,6 +369,7 @@ export function buildPmtilesManifest(runtimeConfig) {
     warmup: warmupInfo,
     datasets: manifestDatasets,
     wardDatasets,
+    glowDatasets,
   };
 }
 

@@ -1,12 +1,13 @@
 import { Pool } from 'pg';
-import { getPostgresConfig } from './runtimeConfig.js';
+import { getTileDbConfig } from './runtimeConfig.js';
 import { loadDatasetSummary } from './ticketsDataStore.js';
 
 let pool = null;
 let poolSignature = null;
+const MISSING_RELATION_CODES = new Set(['42P01']);
 
 function ensurePool() {
-  const config = getPostgresConfig();
+  const config = getTileDbConfig();
   const connectionString = config.readOnlyConnectionString || config.connectionString;
   if (!config.enabled || !connectionString) {
     return null;
@@ -53,6 +54,12 @@ async function query(sqlText, params = []) {
   try {
     const result = await client.query(sqlText, params);
     return result.rows;
+  } catch (error) {
+    if (MISSING_RELATION_CODES.has(error?.code)) {
+      console.warn('[yearlyMetrics] query skipped due to missing relation:', error.message);
+      return null;
+    }
+    throw error;
   } finally {
     client.release();
   }

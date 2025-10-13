@@ -25,7 +25,7 @@ import {
   loadCameraWardGeojson,
 } from './ticketsDataStore.js';
 import { getParkingLocationYearMap } from './yearlyMetricsService.js';
-import { getRedisConfig, getPostgresConfig } from './runtimeConfig.js';
+import { getRedisConfig, getTileDbConfig, getTileCacheConfig } from './runtimeConfig.js';
 
 const TILE_CACHE_LIMIT = 512;
 const SUMMARY_LIMIT = 5;
@@ -54,10 +54,11 @@ const TILE_REDIS_LOCK_TTL_SECONDS = Number.parseInt(
   process.env.MAP_TILE_REDIS_LOCK_SECONDS || '',
   10,
 ) || 45;
+const { baseTtlSeconds: TILE_BASE_TTL_SECONDS } = getTileCacheConfig();
 const TILE_TTL_RULES = [
-  { maxZoom: 11, ttl: 60 * 60 * 24 },
-  { maxZoom: 14, ttl: 60 * 60 * 2 },
-  { maxZoom: Number.POSITIVE_INFINITY, ttl: 60 * 10 },
+  { maxZoom: 10, ttl: TILE_BASE_TTL_SECONDS },
+  { maxZoom: 13, ttl: Math.max(60 * 30, Math.floor(TILE_BASE_TTL_SECONDS / 12)) },
+  { maxZoom: Number.POSITIVE_INFINITY, ttl: Math.max(60 * 5, Math.floor(TILE_BASE_TTL_SECONDS / 24)) },
 ];
 const TILE_PAYLOAD_FLAG_RAW = 0;
 const TILE_PAYLOAD_FLAG_BROTLI = 1;
@@ -332,7 +333,7 @@ async function getTileRedisClient() {
 }
 
 function ensureTilePostgresPool() {
-  const config = getPostgresConfig();
+  const config = getTileDbConfig();
   const connectionString = config.readOnlyConnectionString || config.connectionString;
   if (!config.enabled || !connectionString) {
     return null;
