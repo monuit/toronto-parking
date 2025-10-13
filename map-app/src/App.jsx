@@ -16,8 +16,9 @@ import { ViewportInsights } from './components/ViewportInsights.jsx';
 import { DatasetToggle } from './components/DatasetToggle.jsx';
 import { YearFilter } from './components/YearFilter.jsx';
 import { MobileHeader } from './components/MobileHeader.jsx';
-import { MobileDrawer } from './components/MobileDrawer.jsx';
+import { MobileLegendOverlay } from './components/MobileLegendOverlay.jsx';
 import { MobileAccordion } from './components/MobileAccordion.jsx';
+import { StreetSearch } from './components/StreetSearch.jsx';
 import { MAP_CONFIG } from './lib/mapSources.js';
 import { useBreakpoint, useTouchDevice } from './hooks/useBreakpoint.js';
 import { PmtilesProvider } from './context/PmtilesContext.jsx';
@@ -331,9 +332,8 @@ function AppContent({
   });
   const isMobile = useBreakpoint(768);
   const isTouchDevice = useTouchDevice();
-  const [isDrawerOpen, setDrawerOpen] = useState(false);
-  const [isLegendSheetOpen, setLegendSheetOpen] = useState(false);
   const [isInsightsSheetOpen, setInsightsSheetOpen] = useState(false);
+  const [isLegendExpanded, setLegendExpanded] = useState(false);
   const { getStreetSummary, getCentrelineDetail } = useCentrelineLookup();
   const datasetEntry = useMemo(
     () => (datasetSnapshots && datasetSnapshots[dataset]) || {},
@@ -971,9 +971,8 @@ function AppContent({
 
   useEffect(() => {
     if (!isMobile) {
-      setDrawerOpen(false);
-      setLegendSheetOpen(false);
       setInsightsSheetOpen(false);
+      setLegendExpanded(false);
     }
   }, [isMobile]);
 
@@ -1114,25 +1113,12 @@ function AppContent({
     }
     setIsOverlayCollapsed((current) => !current);
   }, [isMobile]);
-
-  const handleDrawerToggle = useCallback(() => {
-    setDrawerOpen((current) => !current);
-  }, []);
-
-  const closeDrawer = useCallback(() => {
-    setDrawerOpen(false);
-  }, []);
-
-  const openLegendSheet = useCallback(() => {
-    setLegendSheetOpen(true);
-  }, []);
-
-  const closeLegendSheet = useCallback(() => {
-    setLegendSheetOpen(false);
-  }, []);
-
   const closeInsightsSheet = useCallback(() => {
     setInsightsSheetOpen(false);
+  }, []);
+
+  const toggleLegendExpanded = useCallback(() => {
+    setLegendExpanded((current) => !current);
   }, []);
 
   useEffect(() => {
@@ -1146,7 +1132,7 @@ function AppContent({
 
   useEffect(() => {
     if (isMobile) {
-      setDrawerOpen(false);
+      setLegendExpanded(false);
     }
   }, [dataset, isMobile]);
 
@@ -1238,6 +1224,33 @@ function AppContent({
     setPopupData(payload);
     setPopupPosition(computePopupPosition());
   }, [dataset, datasetEntry, getStreetSummary, computePopupPosition, focusOnBounds, focusOnPoint, activeYear, fetchCameraDetail]);
+
+  const handleStreetSearchSelect = useCallback((summary) => {
+    if (!summary) {
+      return;
+    }
+    setActiveTab('streets');
+    if (dataset !== 'parking_tickets') {
+      setDataset('parking_tickets');
+    } else {
+      const streetName = summary.street || summary.name || summary.sampleLocation || null;
+      const ticketCountValue = Number(summary.ticketCount ?? summary.count ?? 0);
+      const totalRevenueValue = Number(summary.totalRevenue ?? summary.total_revenue ?? 0);
+      const payload = {
+        ...summary,
+        street: streetName,
+        ticketCount: ticketCountValue,
+        totalRevenue: totalRevenueValue,
+        source: 'street-search',
+      };
+      if (activeYear !== null && payload.yearFilter === undefined) {
+        payload.yearFilter = activeYear;
+      }
+      setActiveCentrelineIds(Array.isArray(summary.centrelineIds) ? summary.centrelineIds : []);
+      setPopupData(payload);
+      setPopupPosition(computePopupPosition());
+    }
+  }, [dataset, setDataset, computePopupPosition, activeYear]);
 
   const handleStreetSegmentClick = useCallback((centrelineId, feature, event) => {
     const detail = getCentrelineDetail?.(centrelineId) || null;
@@ -1425,6 +1438,7 @@ function AppContent({
 
   const sidebarContent = (
     <div className="sidebar-content">
+      <StreetSearch onSelect={handleStreetSearchSelect} variant="sidebar" />
       <MobileAccordion
         title="Totals"
         isMobile={isMobile}
@@ -1442,6 +1456,20 @@ function AppContent({
           combinedBreakdownOverride={combinedBreakdownOverride}
         />
       </MobileAccordion>
+
+      {isMobile ? (
+        <MobileAccordion
+          title="Viewport insights"
+          isMobile={isMobile}
+          defaultOpen={false}
+        >
+          <ViewportInsights
+            summary={viewportSummary}
+            fallbackTopStreets={fallbackTopStreets}
+            variant="compact"
+          />
+        </MobileAccordion>
+      ) : null}
 
       <MobileAccordion
         title="Year filter"
@@ -1567,14 +1595,15 @@ function AppContent({
         <>
           <MobileHeader
             dataset={dataset}
+            displayDataset={summaryDatasetKey}
             onDatasetChange={setDataset}
-            onDrawerToggle={handleDrawerToggle}
-            isDrawerOpen={isDrawerOpen}
-            onLegendToggle={openLegendSheet}
-            onInsightsToggle={() => setInsightsSheetOpen(true)}
+            totals={statsTotalsToUse || primaryDisplayTotals}
+            year={activeViewMode === 'ward' ? null : activeYear}
+            onInsightsOpen={() => setInsightsSheetOpen(true)}
+            searchSlot={<StreetSearch onSelect={handleStreetSearchSelect} variant="mobile" />}
           >
             {(dataset === 'red_light_locations' || dataset === 'ase_locations') ? (
-              <Suspense fallback={<div className="mobile-header__placeholder" />}
+              <Suspense fallback={<div style={{ minHeight: 40 }} />}
               >
                 <WardModeToggle
                   dataset={dataset}
@@ -1609,30 +1638,11 @@ function AppContent({
             <div className="map-container map-container__placeholder">Preparing map…</div>
           )}
 
-          <MobileDrawer open={isDrawerOpen} onClose={closeDrawer}>
-            {sidebarContent}
-          </MobileDrawer>
-
-          <div
-            className={`mobile-modal ${isLegendSheetOpen ? 'mobile-modal--open' : ''}`}
-            onClick={closeLegendSheet}
-            role="dialog"
-            aria-modal="true"
-            aria-hidden={!isLegendSheetOpen}
-          >
-            <div
-              className="mobile-modal__sheet"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="mobile-modal__header">
-                <h2>Legend</h2>
-                <button type="button" className="mobile-modal__close" onClick={closeLegendSheet}>
-                  Close
-                </button>
-              </div>
-              <Legend visible dataset={legendDataset} />
-            </div>
-          </div>
+          <MobileLegendOverlay
+            dataset={legendDataset}
+            expanded={isLegendExpanded}
+            onToggle={toggleLegendExpanded}
+          />
 
           <div
             className={`mobile-modal ${isInsightsSheetOpen ? 'mobile-modal--open' : ''}`}
@@ -1646,16 +1656,12 @@ function AppContent({
               onClick={(event) => event.stopPropagation()}
             >
               <div className="mobile-modal__header">
-                <h2>Viewport insights</h2>
+                <h2>Explore insights</h2>
                 <button type="button" className="mobile-modal__close" onClick={closeInsightsSheet}>
                   Close
                 </button>
               </div>
-              <ViewportInsights
-                summary={viewportSummary}
-                fallbackTopStreets={fallbackTopStreets}
-                variant="compact"
-              />
+              {sidebarContent}
             </div>
           </div>
 

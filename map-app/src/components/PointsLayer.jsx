@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Source, Layer } from 'react-map-gl/maplibre';
 import { MAP_CONFIG, STYLE_CONSTANTS } from '../lib/mapSources';
 import { usePmtiles } from '../context/PmtilesContext.jsx';
-import { loadCameraDataset } from '../lib/cameraDatasetLoader.js';
 import { recordTicketsPaint } from '../lib/clientMetrics.js';
 
 const rawTilesBaseUrl = (import.meta.env?.VITE_TILES_BASE_URL || '').trim();
@@ -176,7 +175,6 @@ export function PointsLayer({
   const inFlightSummaryKeyRef = useRef(null);
   const summaryRequestIdRef = useRef(0);
   const summaryRetryRef = useRef(0);
-  const [geojsonData, setGeojsonData] = useState(null);
   const { manifest: pmtilesManifest, ready: pmtilesReady } = usePmtiles();
   const [pmtilesSource, setPmtilesSource] = useState(null);
   const vectorSourceKey = pmtilesSource?.shardId ? `${dataset}-${pmtilesSource.shardId}` : dataset;
@@ -191,10 +189,10 @@ export function PointsLayer({
     inFlightSummaryKeyRef.current = null;
     lastSummaryKeyRef.current = null;
     paintRecordedRef.current = false;
-    dataStatusRef.current = dataset === 'parking_tickets' ? 'loading' : 'ready';
+    dataStatusRef.current = 'loading';
     summaryRetryRef.current = 0;
     if (typeof onDataStatusChange === 'function') {
-      onDataStatusChange(dataset === 'parking_tickets' ? 'loading' : 'ready');
+      onDataStatusChange('loading');
     }
   }, [dataset, filter?.year, filter?.month, onDataStatusChange]);
 
@@ -373,7 +371,7 @@ export function PointsLayer({
   }, [map, datasetManifest, pmtilesReady]);
 
   const pointFilter = useMemo(
-    () => buildFilterExpression(['sample', 'point'], filter, { fallbackToRawPoints: true }),
+    () => buildFilterExpression(['sample', 'point', 'cluster'], filter, { fallbackToRawPoints: true }),
     [filter],
   );
 
@@ -752,46 +750,32 @@ export function PointsLayer({
   const vectorSourceMetadata = useMemo(() => ({
     'mapbox:vector_layers': vectorLayerDefinitions,
   }), [vectorLayerDefinitions]);
-  useEffect(() => {
-    if (!visible) {
-      return undefined;
-    }
-    if (isParkingDataset) {
-      setGeojsonData(null);
-      return undefined;
-    }
-
-    let cancelled = false;
-    setGeojsonData(null);
-    if (typeof onDataStatusChange === 'function') {
-      onDataStatusChange('loading');
-    }
-
-    loadCameraDataset(dataset)
-      .then((data) => {
-        if (!cancelled && data) {
-          setGeojsonData(data);
-          if (typeof onDataStatusChange === 'function') {
-            onDataStatusChange('ready');
-          }
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error(`Failed to load ${dataset} camera geojson`, error);
-          if (typeof onDataStatusChange === 'function') {
-            onDataStatusChange('error');
-          }
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dataset, isParkingDataset, onDataStatusChange, visible]);
 
   const datasetStyle = useMemo(() => {
     if (dataset === 'red_light_locations') {
+      const baseRadius = [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        7.5, 6.5,
+        10, 8.5,
+        13, 11.5,
+        16, 14.5,
+      ];
+      const clusterSizeExpression = [
+        'max',
+        ['to-number', ['coalesce', ['get', 'cluster_size'], ['get', 'clusterSize'], 1], 1],
+        1,
+      ];
+      const clusterScale = [
+        'interpolate',
+        ['linear'],
+        ['sqrt', clusterSizeExpression],
+        1, 1,
+        3, 1.25,
+        6, 1.55,
+        10, 1.85,
+      ];
       return {
         pointColor: STYLE_CONSTANTS.COLORS.RED_LIGHT_POINT,
         strokeColor: STYLE_CONSTANTS.COLORS.RED_LIGHT_STROKE,
@@ -799,17 +783,37 @@ export function PointsLayer({
         opacity: 0.95,
         minZoom: 7.5,
         radiusExpression: [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          7.5, 6.5,
-          10, 8.5,
-          13, 11.5,
-          16, 14.5
+          'case',
+          ['==', ['get', 'kind'], 'cluster'],
+          ['*', baseRadius, clusterScale],
+          baseRadius,
         ],
       };
     }
     if (dataset === 'ase_locations') {
+      const baseRadius = [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        7.5, 6,
+        10, 8,
+        13, 11,
+        16, 14,
+      ];
+      const clusterSizeExpression = [
+        'max',
+        ['to-number', ['coalesce', ['get', 'cluster_size'], ['get', 'clusterSize'], 1], 1],
+        1,
+      ];
+      const clusterScale = [
+        'interpolate',
+        ['linear'],
+        ['sqrt', clusterSizeExpression],
+        1, 1,
+        3, 1.2,
+        6, 1.5,
+        10, 1.8,
+      ];
       return {
         pointColor: STYLE_CONSTANTS.COLORS.ASE_POINT,
         strokeColor: STYLE_CONSTANTS.COLORS.ASE_STROKE,
@@ -817,13 +821,10 @@ export function PointsLayer({
         opacity: 0.96,
         minZoom: 7.5,
         radiusExpression: [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          7.5, 6,
-          10, 8,
-          13, 11,
-          16, 14
+          'case',
+          ['==', ['get', 'kind'], 'cluster'],
+          ['*', baseRadius, clusterScale],
+          baseRadius,
         ],
       };
     }
@@ -915,7 +916,7 @@ export function PointsLayer({
   }, [isParkingDataset, notifyDataStatus, scheduleDeferredUpdate, vectorSourceKey, tileUrl]);
 
   useEffect(() => {
-    if (!map || !isParkingDataset) {
+    if (!map) {
       return undefined;
     }
 
@@ -966,22 +967,15 @@ export function PointsLayer({
       map.off('sourcedata', handleSourceData);
       map.off('dataloading', handleDataLoading);
     };
-  }, [isParkingDataset, map, notifyDataStatus, scheduleDeferredUpdate]);
+  }, [map, notifyDataStatus, scheduleDeferredUpdate]);
 
   useEffect(() => {
     if (!visible || paintRecordedRef.current) {
       return;
     }
-    if (isParkingDataset && pmtilesSource?.url) {
-      paintRecordedRef.current = true;
-      recordTicketsPaint();
-      return;
-    }
-    if (!isParkingDataset && geojsonData) {
-      paintRecordedRef.current = true;
-      recordTicketsPaint();
-    }
-  }, [visible, isParkingDataset, pmtilesSource, geojsonData]);
+    paintRecordedRef.current = true;
+    recordTicketsPaint();
+  }, [visible, vectorSourceKey]);
 
   useEffect(() => {
     if (typeof document === 'undefined' || typeof window === 'undefined') {
@@ -1047,17 +1041,13 @@ export function PointsLayer({
       });
     };
   }, [tileUrl, pmtilesSource]);
-  if (!isParkingDataset && !geojsonData) {
-    return null;
-  }
-
   if (!visible) {
     return null;
   }
 
-  const shouldRenderParkingLayers = true;
+  const shouldRenderParkingLayers = isParkingDataset;
 
-  return isParkingDataset ? (
+  return (
     <Source
       key={vectorSourceKey}
       id={MAP_CONFIG.SOURCE_IDS.TICKETS}
@@ -1065,21 +1055,11 @@ export function PointsLayer({
       {...vectorSourceProps}
       minzoom={vectorMinZoom}
       maxzoom={vectorMaxZoom}
-      promoteId="centreline_id"
       metadata={vectorSourceMetadata}
+      promoteId={isParkingDataset ? 'centreline_id' : undefined}
     >
       {shouldRenderParkingLayers && clusterLayer ? <Layer {...clusterLayer} /> : null}
       {shouldRenderParkingLayers && clusterCountLayer ? <Layer {...clusterCountLayer} /> : null}
-      {shouldRenderParkingLayers ? <Layer {...pointLayer} /> : null}
-    </Source>
-  ) : (
-    <Source
-      key={dataset}
-      id={MAP_CONFIG.SOURCE_IDS.TICKETS}
-      type="geojson"
-      data={geojsonData}
-      generateId
-    >
       <Layer {...pointLayer} />
     </Source>
   );
