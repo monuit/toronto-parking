@@ -1,0 +1,212 @@
+{
+  "data_quality_metrics": {
+    "total_ase_cameras": 593,
+    "cameras_with_valid_coords": 593,
+    "cameras_with_ward": 593,
+    "cameras_with_tickets": 520,
+    "total_schools": 585,
+    "schools_with_valid_geom": 585,
+    "schools_with_data": 585,
+    "school_cameras_pairs": 203,
+    "unique_cameras_near_schools": 179
+  },
+  "distance_distribution": {
+    "min": 3.63,
+    "max": 149.32,
+    "mean": 95.19394088669951,
+    "median": 95.4,
+    "total_pairs": 203
+  },
+  "distance_bands": [
+    {
+      "band": "0-25m (very close)",
+      "unique_cameras": 3,
+      "total_pairs": 3,
+      "avg_tickets": 9687,
+      "total_tickets": 29060
+    },
+    {
+      "band": "25-50m (close)",
+      "unique_cameras": 16,
+      "total_pairs": 17,
+      "avg_tickets": 3020,
+      "total_tickets": 51343
+    },
+    {
+      "band": "50-100m (moderate)",
+      "unique_cameras": 83,
+      "total_pairs": 89,
+      "avg_tickets": 2079,
+      "total_tickets": 185040
+    },
+    {
+      "band": "100-150m (edge)",
+      "unique_cameras": 81,
+      "total_pairs": 94,
+      "avg_tickets": 3138,
+      "total_tickets": 294951
+    }
+  ],
+  "closest_cameras_sample": [
+    {
+      "location_code": "A107",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 3.63,
+      "avg_distance_m": 3.63,
+      "tickets": 10173,
+      "nearby_schools": "School 321"
+    },
+    {
+      "location_code": "A171",
+      "nearby_schools_count": 3,
+      "closest_distance_m": 13.07,
+      "avg_distance_m": 90.29,
+      "tickets": 17342,
+      "nearby_schools": "School 367, School 82, School 84"
+    },
+    {
+      "location_code": "A038",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 22.58,
+      "avg_distance_m": 22.58,
+      "tickets": 1545,
+      "nearby_schools": "School 285"
+    },
+    {
+      "location_code": "A017",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 28.15,
+      "avg_distance_m": 28.15,
+      "tickets": 10882,
+      "nearby_schools": "School 217"
+    },
+    {
+      "location_code": "A439",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 30.98,
+      "avg_distance_m": 30.98,
+      "tickets": 3076,
+      "nearby_schools": "School 94"
+    },
+    {
+      "location_code": "ASE-19",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 31.79,
+      "avg_distance_m": 31.79,
+      "tickets": 0,
+      "nearby_schools": "School 26"
+    },
+    {
+      "location_code": "ASE-58",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 33.0,
+      "avg_distance_m": 33.0,
+      "tickets": 0,
+      "nearby_schools": "School 92"
+    },
+    {
+      "location_code": "A137",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 33.52,
+      "avg_distance_m": 33.52,
+      "tickets": 11098,
+      "nearby_schools": "School 301"
+    },
+    {
+      "location_code": "A126",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 34.26,
+      "avg_distance_m": 34.26,
+      "tickets": 4667,
+      "nearby_schools": "School 58"
+    },
+    {
+      "location_code": "A128",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 38.53,
+      "avg_distance_m": 38.53,
+      "tickets": 3150,
+      "nearby_schools": "School 183"
+    },
+    {
+      "location_code": "A002",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 40.23,
+      "avg_distance_m": 40.23,
+      "tickets": 90,
+      "nearby_schools": "School 139"
+    },
+    {
+      "location_code": "ASE-174",
+      "nearby_schools_count": 2,
+      "closest_distance_m": 40.85,
+      "avg_distance_m": 67.46,
+      "tickets": 0,
+      "nearby_schools": "School 583, School 86"
+    },
+    {
+      "location_code": "A070",
+      "nearby_schools_count": 2,
+      "closest_distance_m": 42.05,
+      "avg_distance_m": 42.05,
+      "tickets": 3279,
+      "nearby_schools": "School 43, School 44"
+    },
+    {
+      "location_code": "ASE-13",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 43.2,
+      "avg_distance_m": 43.2,
+      "tickets": 0,
+      "nearby_schools": "School 235"
+    },
+    {
+      "location_code": "A086",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 44.71,
+      "avg_distance_m": 44.71,
+      "tickets": 1204,
+      "nearby_schools": "School 369"
+    },
+    {
+      "location_code": "A229",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 44.73,
+      "avg_distance_m": 44.73,
+      "tickets": 8735,
+      "nearby_schools": "School 22"
+    },
+    {
+      "location_code": "A287",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 47.7,
+      "avg_distance_m": 47.7,
+      "tickets": 398,
+      "nearby_schools": "School 360"
+    },
+    {
+      "location_code": "A057",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 48.5,
+      "avg_distance_m": 48.5,
+      "tickets": 69,
+      "nearby_schools": "School 209"
+    },
+    {
+      "location_code": "A118",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 49.45,
+      "avg_distance_m": 49.45,
+      "tickets": 1416,
+      "nearby_schools": "School 415"
+    },
+    {
+      "location_code": "A147",
+      "nearby_schools_count": 1,
+      "closest_distance_m": 50.55,
+      "avg_distance_m": 50.55,
+      "tickets": 4802,
+      "nearby_schools": "School 501"
+    }
+  ]
+}
