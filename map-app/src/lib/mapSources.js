@@ -58,7 +58,13 @@ export const MAP_CONFIG = {
     CITY_GLOW_CORE: 'tickets-glow-core',
     TICKETS_CLUSTER: 'tickets-cluster',
     TICKETS_CLUSTER_COUNT: 'tickets-cluster-count',
-    TICKETS_POINTS: 'tickets-points'
+    TICKETS_POINTS: 'tickets-points',
+    SCHOOLS: 'schools-points',
+    ASE_ACTIVE: 'ase-active-points',
+    ASE_HISTORICAL: 'ase-historical-points',
+    ASE_PLANNED: 'ase-planned-points',
+    RED_LIGHT_ACTIVE: 'red-light-active-points',
+    RED_LIGHT_INACTIVE: 'red-light-inactive-points',
   },
 
   // Source IDs
@@ -86,7 +92,8 @@ export const MAP_CONFIG = {
     ASE_LOCATIONS: '/data/ase_locations.geojson',
     RED_LIGHT_GLOW_LINES: '/data/red_light_glow_lines.geojson',
     ASE_GLOW_LINES: '/data/ase_glow_lines.geojson',
-    CENTRELINE_LOOKUP: '/data/centreline_lookup.json'
+    CENTRELINE_LOOKUP: '/data/centreline_lookup.json',
+    ENFORCEMENT_SCHOOLS: '/api/enforcement-schools'
   },
 
   TILE_SOURCE: {
@@ -125,6 +132,12 @@ export const STYLE_CONSTANTS = {
     RED_LIGHT_STROKE: '#4A2500',
     ASE_POINT: '#4BC0FF',
     ASE_STROKE: '#07364A',
+    SCHOOL: '#FFA500',
+    ASE_ACTIVE: '#FF0000',
+    ASE_HISTORICAL: '#CCCCCC',
+    ASE_PLANNED: '#FFFF00',
+    RED_LIGHT_ACTIVE: '#00FF00',
+    RED_LIGHT_INACTIVE: '#AAAAAA',
     BACKGROUND: '#F8F9FA'
   },
 
