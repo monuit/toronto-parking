@@ -4,6 +4,7 @@ import { CityGlowLayer } from './CityGlowLayer.jsx';
 import { NeighbourhoodLayer } from './NeighbourhoodLayer.jsx';
 import { PointsLayer } from './PointsLayer.jsx';
 import { WardChoroplethLayer } from './WardChoroplethLayer.jsx';
+import { EnforcementSchoolsLayer } from './EnforcementSchoolsLayer.jsx';
 import { MAP_CONFIG } from '../lib/mapSources.js';
 import { usePmtiles } from '../context/PmtilesContext.jsx';
 import { registerMapMetrics } from '../lib/clientMetrics.js';
@@ -50,6 +51,7 @@ function MapExperience({
   const [basemapReady, setBasemapReady] = useState(false);
   const [heavyLayersReady, setHeavyLayersReady] = useState(false);
   const [pointsStatus, setPointsStatus] = useState(dataset === 'parking_tickets' ? 'loading' : 'ready');
+  const [showEnforcementSchools, setShowEnforcementSchools] = useState(false);
   const wardDatasetId = useMemo(() => {
     if (wardDataset && SUPPORTED_WARD_DATASETS.has(wardDataset)) {
       return wardDataset;
@@ -318,6 +320,16 @@ function MapExperience({
               dataset={wardDatasetId}
               onWardClick={onWardClick}
               onWardHover={onWardHover}
+            />
+          ) : null}
+          {heavyLayersReady ? (
+            <EnforcementSchoolsLayer
+              map={mapInstance}
+              visible={showEnforcementSchools}
+              showSchools={true}
+              showASE={true}
+              showRedLight={true}
+              onError={(error) => console.error('Enforcement schools layer error:', error)}
             />
           ) : null}
         </>
