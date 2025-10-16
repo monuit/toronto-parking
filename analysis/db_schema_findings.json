@@ -1,0 +1,227 @@
+{
+  "tables": [
+    "ase_camera_locations",
+    "ase_camera_locations_staging",
+    "ase_camera_tiles",
+    "ase_camera_tiles_p0",
+    "ase_camera_tiles_p1",
+    "ase_camera_tiles_p2",
+    "ase_camera_tiles_p3",
+    "ase_charges",
+    "ase_charges_staging",
+    "ase_yearly_locations",
+    "camera_ward_totals",
+    "centreline_segments",
+    "centreline_segments_staging",
+    "city_wards",
+    "etl_state",
+    "geography_columns",
+    "geometry_columns",
+    "glow_lines",
+    "parking_ticket_tiles",
+    "parking_ticket_tiles_p0",
+    "parking_ticket_tiles_p1",
+    "parking_ticket_tiles_p2",
+    "parking_ticket_tiles_p3",
+    "parking_ticket_yearly_locations",
+    "parking_ticket_yearly_neighbourhoods",
+    "parking_ticket_yearly_streets",
+    "parking_tickets",
+    "parking_tickets_staging",
+    "raster_columns",
+    "raster_overviews",
+    "red_light_camera_locations",
+    "red_light_camera_locations_staging",
+    "red_light_camera_tiles",
+    "red_light_camera_tiles_p0",
+    "red_light_camera_tiles_p1",
+    "red_light_camera_tiles_p2",
+    "red_light_camera_tiles_p3",
+    "red_light_charges",
+    "red_light_charges_staging",
+    "red_light_yearly_locations",
+    "schools",
+    "schools_with_nearby_cameras",
+    "spatial_ref_sys",
+    "tile_blob_cache"
+  ],
+  "ase_schema": {
+    "location_code": {
+      "type": "text",
+      "nullable": false
+    },
+    "ward": {
+      "type": "text",
+      "nullable": true
+    },
+    "status": {
+      "type": "text",
+      "nullable": true
+    },
+    "location": {
+      "type": "text",
+      "nullable": true
+    },
+    "ticket_count": {
+      "type": "integer",
+      "nullable": true
+    },
+    "total_fine_amount": {
+      "type": "numeric",
+      "nullable": true
+    },
+    "years": {
+      "type": "ARRAY",
+      "nullable": true
+    },
+    "months": {
+      "type": "ARRAY",
+      "nullable": true
+    },
+    "yearly_counts": {
+      "type": "jsonb",
+      "nullable": true
+    },
+    "monthly_counts": {
+      "type": "jsonb",
+      "nullable": true
+    },
+    "geom": {
+      "type": "USER-DEFINED",
+      "nullable": true
+    },
+    "geom_3857": {
+      "type": "USER-DEFINED",
+      "nullable": true
+    },
+    "tile_qk_prefix": {
+      "type": "text",
+      "nullable": true
+    }
+  },
+  "ase_status_dist": [
+    {
+      "status": "Active",
+      "count": 148
+    },
+    {
+      "status": "Historical",
+      "count": 396
+    },
+    {
+      "status": "Planned",
+      "count": 49
+    }
+  ],
+  "red_light_schema": {
+    "intersection_id": {
+      "type": "text",
+      "nullable": false
+    },
+    "location_code": {
+      "type": "text",
+      "nullable": true
+    },
+    "linear_name_full_1": {
+      "type": "text",
+      "nullable": true
+    },
+    "linear_name_full_2": {
+      "type": "text",
+      "nullable": true
+    },
+    "location_name": {
+      "type": "text",
+      "nullable": true
+    },
+    "ward_1": {
+      "type": "text",
+      "nullable": true
+    },
+    "police_division_1": {
+      "type": "text",
+      "nullable": true
+    },
+    "activation_date": {
+      "type": "date",
+      "nullable": true
+    },
+    "ticket_count": {
+      "type": "integer",
+      "nullable": true
+    },
+    "total_fine_amount": {
+      "type": "numeric",
+      "nullable": true
+    },
+    "years": {
+      "type": "ARRAY",
+      "nullable": true
+    },
+    "months": {
+      "type": "ARRAY",
+      "nullable": true
+    },
+    "yearly_counts": {
+      "type": "jsonb",
+      "nullable": true
+    },
+    "geom": {
+      "type": "USER-DEFINED",
+      "nullable": true
+    },
+    "geom_3857": {
+      "type": "USER-DEFINED",
+      "nullable": true
+    },
+    "tile_qk_prefix": {
+      "type": "text",
+      "nullable": true
+    }
+  },
+  "red_light_status_dist": [
+    {
+      "total": 309,
+      "with_activation_date": 276,
+      "without_date": 33
+    }
+  ],
+  "school_schema": {
+    "id": {
+      "type": "integer",
+      "nullable": false
+    },
+    "name": {
+      "type": "text",
+      "nullable": true
+    },
+    "type": {
+      "type": "text",
+      "nullable": true
+    },
+    "data": {
+      "type": "jsonb",
+      "nullable": true
+    },
+    "geom": {
+      "type": "USER-DEFINED",
+      "nullable": true
+    }
+  },
+  "enforcement_summary": [
+    {
+      "type": "ase",
+      "total_cameras": 593,
+      "active": 148,
+      "inactive": 445,
+      "with_tickets": 593
+    },
+    {
+      "type": "red_light",
+      "total_cameras": 309,
+      "active": 276,
+      "inactive": 33,
+      "with_tickets": 309
+    }
+  ]
+}
