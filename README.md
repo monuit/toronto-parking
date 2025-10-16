@@ -1,4 +1,7 @@
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z51MBSO5)
+[![ko-We turn Toronto's open data into a living enforcement dashboard.
+The map covers 40 million parking tickets between 2008 and 2024.
+It tracks 319 red light cameras, 199 speed cameras, and 585 schools.
+PostGIS, Redis, and PMTiles keep tiles snappy across the GTA.https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z51MBSO5)
 
 Parking tickets map where the city earns and drivers fume.
 
