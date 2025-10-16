@@ -1,0 +1,281 @@
+{
+  "generated_at": "2025-10-16T00:13:50.979875+00:00",
+  "yearly_metrics": {
+    "2023": {
+      "active_locations": 130,
+      "total_tickets": 0,
+      "total_revenue": 0.0,
+      "avg_tickets_per_location": 0.0
+    },
+    "2024": {
+      "active_locations": 207,
+      "total_tickets": 0,
+      "total_revenue": 0.0,
+      "avg_tickets_per_location": 0.0
+    },
+    "2025": {
+      "active_locations": 159,
+      "total_tickets": 0,
+      "total_revenue": 0.0,
+      "avg_tickets_per_location": 0.0
+    }
+  },
+  "high_risk_corridors": [
+    {
+      "street": "Parkside Dr. South of Algonquin Ave.",
+      "camera_count": 1,
+      "total_tickets": 68860,
+      "total_revenue": 3443000.0,
+      "avg_revenue_per_camera": 3443000.0,
+      "center_lat": 43.64253,
+      "center_lon": -79.45528,
+      "cameras": [
+        "A207"
+      ]
+    },
+    {
+      "street": "The East Mall South of Faludon Court",
+      "camera_count": 1,
+      "total_tickets": 36847,
+      "total_revenue": 1842350.0,
+      "avg_revenue_per_camera": 1842350.0,
+      "center_lat": 43.633155,
+      "center_lon": -79.555658,
+      "cameras": [
+        "A205"
+      ]
+    },
+    {
+      "street": "Sheppard Ave. E. West of Don Mills Rd.",
+      "camera_count": 1,
+      "total_tickets": 35239,
+      "total_revenue": 1761950.0,
+      "avg_revenue_per_camera": 1761950.0,
+      "center_lat": 43.795186,
+      "center_lon": -79.311134,
+      "cameras": [
+        "A083"
+      ]
+    },
+    {
+      "street": "O'Connor Dr. West of Lankin Blvd.",
+      "camera_count": 1,
+      "total_tickets": 30989,
+      "total_revenue": 1549450.0,
+      "avg_revenue_per_camera": 1549450.0,
+      "center_lat": 43.697477,
+      "center_lon": -79.331139,
+      "cameras": [
+        "A225"
+      ]
+    },
+    {
+      "street": "Leslie St. North of Overland Dr.",
+      "camera_count": 1,
+      "total_tickets": 29952,
+      "total_revenue": 1497600.0,
+      "avg_revenue_per_camera": 1497600.0,
+      "center_lat": 43.721578,
+      "center_lon": -79.35213,
+      "cameras": [
+        "A409"
+      ]
+    },
+    {
+      "street": "Lower Jarvis St.  South of The Esplanade",
+      "camera_count": 1,
+      "total_tickets": 28841,
+      "total_revenue": 1442050.0,
+      "avg_revenue_per_camera": 1442050.0,
+      "center_lat": 43.648065,
+      "center_lon": -79.371073,
+      "cameras": [
+        "A334"
+      ]
+    },
+    {
+      "street": "Bathurst St. Near Ardmore Rd.",
+      "camera_count": 1,
+      "total_tickets": 24851,
+      "total_revenue": 1242550.0,
+      "avg_revenue_per_camera": 1242550.0,
+      "center_lat": 43.69361,
+      "center_lon": -79.422227,
+      "cameras": [
+        "A172"
+      ]
+    },
+    {
+      "street": "Bloor St. W. East of Forest View Rd.",
+      "camera_count": 1,
+      "total_tickets": 24219,
+      "total_revenue": 1210950.0,
+      "avg_revenue_per_camera": 1210950.0,
+      "center_lat": 43.63331,
+      "center_lon": -79.57205,
+      "cameras": [
+        "A436"
+      ]
+    },
+    {
+      "street": "Mount Pleasant Rd. Near South Dr.",
+      "camera_count": 1,
+      "total_tickets": 23691,
+      "total_revenue": 1184550.0,
+      "avg_revenue_per_camera": 1184550.0,
+      "center_lat": 43.676184,
+      "center_lon": -79.380478,
+      "cameras": [
+        "A449"
+      ]
+    },
+    {
+      "street": "Rockcliffe Blvd. Near Rockcliffe Court",
+      "camera_count": 2,
+      "total_tickets": 21248,
+      "total_revenue": 1062400.0,
+      "avg_revenue_per_camera": 531200.0,
+      "center_lat": 43.674918,
+      "center_lon": -79.48821,
+      "cameras": [
+        "A391",
+        "A059"
+      ]
+    },
+    {
+      "street": "Mortimer Ave. East of Carlaw Ave.",
+      "camera_count": 1,
+      "total_tickets": 21023,
+      "total_revenue": 1051150.0,
+      "avg_revenue_per_camera": 1051150.0,
+      "center_lat": 43.685372,
+      "center_lon": -79.349268,
+      "cameras": [
+        "A496"
+      ]
+    },
+    {
+      "street": "Avenue Rd.  South of McMaster Ave.",
+      "camera_count": 1,
+      "total_tickets": 20913,
+      "total_revenue": 1045650.0,
+      "avg_revenue_per_camera": 1045650.0,
+      "center_lat": 43.707231,
+      "center_lon": -79.409327,
+      "cameras": [
+        "A371"
+      ]
+    },
+    {
+      "street": "McCowan Rd. South of Sandhurst Circle.",
+      "camera_count": 1,
+      "total_tickets": 19781,
+      "total_revenue": 989050.0,
+      "avg_revenue_per_camera": 989050.0,
+      "center_lat": 43.803452,
+      "center_lon": -79.264725,
+      "cameras": [
+        "A426"
+      ]
+    },
+    {
+      "street": "Avenue Rd. Near Oaklands Ave.",
+      "camera_count": 1,
+      "total_tickets": 19312,
+      "total_revenue": 965600.0,
+      "avg_revenue_per_camera": 965600.0,
+      "center_lat": 43.680343,
+      "center_lon": -79.398755,
+      "cameras": [
+        "A450"
+      ]
+    },
+    {
+      "street": "Birchmount Rd. South of Huntingwood Dr.",
+      "camera_count": 1,
+      "total_tickets": 19051,
+      "total_revenue": 952550.0,
+      "avg_revenue_per_camera": 952550.0,
+      "center_lat": 43.788339,
+      "center_lon": -79.301517,
+      "cameras": [
+        "A093"
+      ]
+    },
+    {
+      "street": "Victoria Park Ave.  North of Southmead Rd.",
+      "camera_count": 1,
+      "total_tickets": 18529,
+      "total_revenue": 926450.0,
+      "avg_revenue_per_camera": 926450.0,
+      "center_lat": 43.718402,
+      "center_lon": -79.299209,
+      "cameras": [
+        "A499"
+      ]
+    },
+    {
+      "street": "Scarborough Golf Club Rd. North of Lawrence Ave. E.",
+      "camera_count": 1,
+      "total_tickets": 17959,
+      "total_revenue": 897950.0,
+      "avg_revenue_per_camera": 897950.0,
+      "center_lat": 43.768357,
+      "center_lon": -79.193145,
+      "cameras": [
+        "A097"
+      ]
+    },
+    {
+      "street": "Beecroft Rd.  Near Lorraine Dr.",
+      "camera_count": 1,
+      "total_tickets": 17942,
+      "total_revenue": 897100.0,
+      "avg_revenue_per_camera": 897100.0,
+      "center_lat": 43.778689,
+      "center_lon": -79.41786,
+      "cameras": [
+        "A282"
+      ]
+    },
+    {
+      "street": "Beverley St. Near D'Arcy St.",
+      "camera_count": 1,
+      "total_tickets": 17342,
+      "total_revenue": 867100.0,
+      "avg_revenue_per_camera": 867100.0,
+      "center_lat": 43.655059,
+      "center_lon": -79.394438,
+      "cameras": [
+        "A171"
+      ]
+    },
+    {
+      "street": "Isabella St. West of Sherbourne St.",
+      "camera_count": 1,
+      "total_tickets": 17144,
+      "total_revenue": 857200.0,
+      "avg_revenue_per_camera": 857200.0,
+      "center_lat": 43.669368,
+      "center_lon": -79.377108,
+      "cameras": [
+        "A175"
+      ]
+    }
+  ],
+  "school_zone_analysis": {
+    "total_cameras": 520,
+    "adjacent_to_schools": 3,
+    "percentage": 0.58
+  },
+  "removal_risk": {
+    "current_annual_tickets": 2054677,
+    "current_annual_fines": 102733850.0,
+    "total_camera_locations": 520,
+    "school_zone_cameras": 0,
+    "estimated_suppression_rate": "30%",
+    "estimated_annual_increase_without_cameras": 880576.0,
+    "estimated_revenue_loss": 44028792.86,
+    "risk_assessment": "LOW"
+  }
+}

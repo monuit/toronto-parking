@@ -1,0 +1,2650 @@
+{
+  "export_date": "2025-10-16T12:44:55.830004",
+  "buffer_distance_meters": 150,
+  "total_schools_analyzed": 585,
+  "schools_with_cameras": 176,
+  "total_school_camera_pairs": 203,
+  "coverage_percentage": 30.1,
+  "schools": [
+    {
+      "name": "School 92",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 48.71,
+        "closest_meters": 33.0
+      },
+      "enforcement_stats": {
+        "total_tickets": 28841,
+        "total_fines": 1442050.0
+      },
+      "cameras": "A334, ASE-58",
+      "camera_locations": "Lower Jarvis St.  South of The Esplanade | Lower Jarvis St. South of The Esplanade"
+    },
+    {
+      "name": "School 84",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 31.87,
+        "closest_meters": 13.07
+      },
+      "enforcement_stats": {
+        "total_tickets": 19892,
+        "total_fines": 994600.0
+      },
+      "cameras": "A171, A404",
+      "camera_locations": "Beverley St. Near D'Arcy St. | D'Arcy St. West of Beverley St."
+    },
+    {
+      "name": "School 367",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 128.9,
+        "closest_meters": 128.9
+      },
+      "enforcement_stats": {
+        "total_tickets": 17342,
+        "total_fines": 867100.0
+      },
+      "cameras": "A171",
+      "camera_locations": "Beverley St. Near D'Arcy St."
+    },
+    {
+      "name": "School 82",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 128.9,
+        "closest_meters": 128.9
+      },
+      "enforcement_stats": {
+        "total_tickets": 17342,
+        "total_fines": 867100.0
+      },
+      "cameras": "A171",
+      "camera_locations": "Beverley St. Near D'Arcy St."
+    },
+    {
+      "name": "School 534",
+      "type": "Unknown",
+      "cameras_nearby": 3,
+      "distance_stats": {
+        "average_meters": 86.15,
+        "closest_meters": 52.31
+      },
+      "enforcement_stats": {
+        "total_tickets": 16605,
+        "total_fines": 830250.0
+      },
+      "cameras": "A333, ASE-166, ASE-57",
+      "camera_locations": "Eireann Quay  South of Queens Quay | Eireann Quay South of Queens Quay W. | Queens Quay W. East of Bathurst St."
+    },
+    {
+      "name": "School 535",
+      "type": "Unknown",
+      "cameras_nearby": 3,
+      "distance_stats": {
+        "average_meters": 86.15,
+        "closest_meters": 52.31
+      },
+      "enforcement_stats": {
+        "total_tickets": 16605,
+        "total_fines": 830250.0
+      },
+      "cameras": "A333, ASE-166, ASE-57",
+      "camera_locations": "Eireann Quay  South of Queens Quay | Eireann Quay South of Queens Quay W. | Queens Quay W. East of Bathurst St."
+    },
+    {
+      "name": "School 514",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 128.69,
+        "closest_meters": 128.69
+      },
+      "enforcement_stats": {
+        "total_tickets": 14627,
+        "total_fines": 731350.0
+      },
+      "cameras": "A498",
+      "camera_locations": "Blythwood Rd. West of Strathgowan Cres."
+    },
+    {
+      "name": "School 478",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 121.73,
+        "closest_meters": 121.73
+      },
+      "enforcement_stats": {
+        "total_tickets": 13551,
+        "total_fines": 677550.0
+      },
+      "cameras": "A391",
+      "camera_locations": "Rockcliffe Blvd. Near Rockcliffe Court"
+    },
+    {
+      "name": "School 185",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 83.54,
+        "closest_meters": 83.54
+      },
+      "enforcement_stats": {
+        "total_tickets": 13414,
+        "total_fines": 670700.0
+      },
+      "cameras": "A477",
+      "camera_locations": "Galloway Rd. South of Lawrence Ave. E."
+    },
+    {
+      "name": "School 377",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 149.32,
+        "closest_meters": 149.32
+      },
+      "enforcement_stats": {
+        "total_tickets": 11763,
+        "total_fines": 588150.0
+      },
+      "cameras": "A065",
+      "camera_locations": "Avenue Rd. Near Castlefield Ave."
+    },
+    {
+      "name": "School 301",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 33.52,
+        "closest_meters": 33.52
+      },
+      "enforcement_stats": {
+        "total_tickets": 11098,
+        "total_fines": 554900.0
+      },
+      "cameras": "A137",
+      "camera_locations": "Victoria Park Ave. Near Tiago Ave."
+    },
+    {
+      "name": "School 217",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 28.15,
+        "closest_meters": 28.15
+      },
+      "enforcement_stats": {
+        "total_tickets": 10882,
+        "total_fines": 544100.0
+      },
+      "cameras": "A017",
+      "camera_locations": "Caledonia Rd. North of Rogers Rd."
+    },
+    {
+      "name": "School 436",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 104.4,
+        "closest_meters": 77.83
+      },
+      "enforcement_stats": {
+        "total_tickets": 10682,
+        "total_fines": 534100.0
+      },
+      "cameras": "A069, ASE-59",
+      "camera_locations": "Denison Ave. South of Grange Ave. | Dundas St. W. Near Casimir St."
+    },
+    {
+      "name": "School 577",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 104.4,
+        "closest_meters": 77.83
+      },
+      "enforcement_stats": {
+        "total_tickets": 10682,
+        "total_fines": 534100.0
+      },
+      "cameras": "A069, ASE-59",
+      "camera_locations": "Denison Ave. South of Grange Ave. | Dundas St. W. Near Casimir St."
+    },
+    {
+      "name": "School 150",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 110.3,
+        "closest_meters": 110.3
+      },
+      "enforcement_stats": {
+        "total_tickets": 10331,
+        "total_fines": 516550.0
+      },
+      "cameras": "A051",
+      "camera_locations": "Golfdown Dr. East of Turpin Ave."
+    },
+    {
+      "name": "School 574",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 110.3,
+        "closest_meters": 110.3
+      },
+      "enforcement_stats": {
+        "total_tickets": 10331,
+        "total_fines": 516550.0
+      },
+      "cameras": "A051",
+      "camera_locations": "Golfdown Dr. East of Turpin Ave."
+    },
+    {
+      "name": "School 321",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 3.63,
+        "closest_meters": 3.63
+      },
+      "enforcement_stats": {
+        "total_tickets": 10173,
+        "total_fines": 508650.0
+      },
+      "cameras": "A107",
+      "camera_locations": "Windermere Ave. Near St. Olaves Rd."
+    },
+    {
+      "name": "School 153",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 107.29,
+        "closest_meters": 107.29
+      },
+      "enforcement_stats": {
+        "total_tickets": 10049,
+        "total_fines": 502450.0
+      },
+      "cameras": "A360",
+      "camera_locations": "Markham Rd.  South of Greencedar Circuit"
+    },
+    {
+      "name": "School 322",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 80.98,
+        "closest_meters": 80.98
+      },
+      "enforcement_stats": {
+        "total_tickets": 9490,
+        "total_fines": 474500.0
+      },
+      "cameras": "A007",
+      "camera_locations": "Jameson Ave. South of Laxton Ave."
+    },
+    {
+      "name": "School 22",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 44.73,
+        "closest_meters": 44.73
+      },
+      "enforcement_stats": {
+        "total_tickets": 8735,
+        "total_fines": 436750.0
+      },
+      "cameras": "A229",
+      "camera_locations": "The Donway E. North of Greenland Rd."
+    },
+    {
+      "name": "School 394",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 137.54,
+        "closest_meters": 137.54
+      },
+      "enforcement_stats": {
+        "total_tickets": 8554,
+        "total_fines": 427700.0
+      },
+      "cameras": "A085",
+      "camera_locations": "Doris Ave. North of Spring Garden Ave."
+    },
+    {
+      "name": "School 317",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 65.95,
+        "closest_meters": 65.95
+      },
+      "enforcement_stats": {
+        "total_tickets": 8483,
+        "total_fines": 424150.0
+      },
+      "cameras": "A184",
+      "camera_locations": "Senlac Rd. South of Horsham Ave."
+    },
+    {
+      "name": "School 389",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 124.49,
+        "closest_meters": 124.49
+      },
+      "enforcement_stats": {
+        "total_tickets": 8248,
+        "total_fines": 412400.0
+      },
+      "cameras": "A286",
+      "camera_locations": "Midland Ave. South of Aylesworth Ave."
+    },
+    {
+      "name": "School 560",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 106.12,
+        "closest_meters": 106.12
+      },
+      "enforcement_stats": {
+        "total_tickets": 7550,
+        "total_fines": 377500.0
+      },
+      "cameras": "A216",
+      "camera_locations": "Orfus Rd. West of Dufferin St."
+    },
+    {
+      "name": "School 516",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 125.74,
+        "closest_meters": 125.74
+      },
+      "enforcement_stats": {
+        "total_tickets": 7466,
+        "total_fines": 373300.0
+      },
+      "cameras": "A435",
+      "camera_locations": "Islington Ave. North of Fordwich Cres."
+    },
+    {
+      "name": "School 21",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 60.22,
+        "closest_meters": 60.22
+      },
+      "enforcement_stats": {
+        "total_tickets": 7250,
+        "total_fines": 362500.0
+      },
+      "cameras": "A073",
+      "camera_locations": "Ava Rd. East of Westover Hill Rd."
+    },
+    {
+      "name": "School 79",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 121.45,
+        "closest_meters": 121.45
+      },
+      "enforcement_stats": {
+        "total_tickets": 7173,
+        "total_fines": 358650.0
+      },
+      "cameras": "A485",
+      "camera_locations": "Jane St. Near Page Ave."
+    },
+    {
+      "name": "School 186",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 87.94,
+        "closest_meters": 53.39
+      },
+      "enforcement_stats": {
+        "total_tickets": 7082,
+        "total_fines": 354100.0
+      },
+      "cameras": "A292, ASE-193",
+      "camera_locations": "Brimley Rd.  North of Pitfield Rd. | Brimley Rd. North of Pitfield Rd."
+    },
+    {
+      "name": "School 435",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 106.6,
+        "closest_meters": 106.6
+      },
+      "enforcement_stats": {
+        "total_tickets": 6969,
+        "total_fines": 348450.0
+      },
+      "cameras": "A055",
+      "camera_locations": "Mimico Ave. West of Station Rd."
+    },
+    {
+      "name": "School 242",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 88.48,
+        "closest_meters": 88.48
+      },
+      "enforcement_stats": {
+        "total_tickets": 6317,
+        "total_fines": 315850.0
+      },
+      "cameras": "A227",
+      "camera_locations": "York Mills Rd. West of Banbury Rd."
+    },
+    {
+      "name": "School 285",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 70.13,
+        "closest_meters": 22.58
+      },
+      "enforcement_stats": {
+        "total_tickets": 5887,
+        "total_fines": 294350.0
+      },
+      "cameras": "A038, A138",
+      "camera_locations": "Barrington Ave. North of Secord Ave. | Secord Ave. Near Palmer Ave."
+    },
+    {
+      "name": "School 262",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 118.32,
+        "closest_meters": 118.32
+      },
+      "enforcement_stats": {
+        "total_tickets": 5335,
+        "total_fines": 266750.0
+      },
+      "cameras": "A478",
+      "camera_locations": "Meadowvale Rd. South of Claresholme Dr."
+    },
+    {
+      "name": "School 544",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 93.45,
+        "closest_meters": 93.45
+      },
+      "enforcement_stats": {
+        "total_tickets": 5301,
+        "total_fines": 265050.0
+      },
+      "cameras": "A153",
+      "camera_locations": "The Westway West of Brampton Rd."
+    },
+    {
+      "name": "School 417",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 127.43,
+        "closest_meters": 127.43
+      },
+      "enforcement_stats": {
+        "total_tickets": 5108,
+        "total_fines": 255400.0
+      },
+      "cameras": "A341",
+      "camera_locations": "Coxwell Ave.  North of Cosburn Ave."
+    },
+    {
+      "name": "School 193",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 78.09,
+        "closest_meters": 78.09
+      },
+      "enforcement_stats": {
+        "total_tickets": 4892,
+        "total_fines": 244600.0
+      },
+      "cameras": "A459",
+      "camera_locations": "Don Mills Rd. Near Memory Gardens Lane"
+    },
+    {
+      "name": "School 501",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 50.55,
+        "closest_meters": 50.55
+      },
+      "enforcement_stats": {
+        "total_tickets": 4802,
+        "total_fines": 240100.0
+      },
+      "cameras": "A147",
+      "camera_locations": "Military Trail Near 341 Military Trail"
+    },
+    {
+      "name": "School 58",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 34.26,
+        "closest_meters": 34.26
+      },
+      "enforcement_stats": {
+        "total_tickets": 4667,
+        "total_fines": 233350.0
+      },
+      "cameras": "A126",
+      "camera_locations": "Parliament St. North of Oak St."
+    },
+    {
+      "name": "School 174",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 78.82,
+        "closest_meters": 78.82
+      },
+      "enforcement_stats": {
+        "total_tickets": 4615,
+        "total_fines": 230750.0
+      },
+      "cameras": "A016",
+      "camera_locations": "Ridge Hill Dr. West of Old Park Rd."
+    },
+    {
+      "name": "School 230",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 106.09,
+        "closest_meters": 106.09
+      },
+      "enforcement_stats": {
+        "total_tickets": 4608,
+        "total_fines": 230400.0
+      },
+      "cameras": "A208",
+      "camera_locations": "Runnymede Rd. North of Colbeck St."
+    },
+    {
+      "name": "School 532",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 127.43,
+        "closest_meters": 127.43
+      },
+      "enforcement_stats": {
+        "total_tickets": 4533,
+        "total_fines": 226650.0
+      },
+      "cameras": "A422",
+      "camera_locations": "Warden Ave. South of Glen Springs Dr."
+    },
+    {
+      "name": "School 183",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 56.99,
+        "closest_meters": 38.53
+      },
+      "enforcement_stats": {
+        "total_tickets": 4305,
+        "total_fines": 215250.0
+      },
+      "cameras": "A128, A340",
+      "camera_locations": "Durant Ave.  South of Plains Rd. | Plains Rd. Near Milton Rd."
+    },
+    {
+      "name": "School 346",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 76.06,
+        "closest_meters": 76.06
+      },
+      "enforcement_stats": {
+        "total_tickets": 4300,
+        "total_fines": 215000.0
+      },
+      "cameras": "A235",
+      "camera_locations": "St. Clair Ave. E. West of Marilyn Cres."
+    },
+    {
+      "name": "School 319",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 131.71,
+        "closest_meters": 131.71
+      },
+      "enforcement_stats": {
+        "total_tickets": 4010,
+        "total_fines": 200500.0
+      },
+      "cameras": "A009",
+      "camera_locations": "Bicknell Ave. South of Avon Dr."
+    },
+    {
+      "name": "School 420",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 112.55,
+        "closest_meters": 82.18
+      },
+      "enforcement_stats": {
+        "total_tickets": 3790,
+        "total_fines": 189500.0
+      },
+      "cameras": "A460, ASE-99",
+      "camera_locations": "Drewry Ave.  Near Fairchild Ave.  | Drewry Ave. Near Fairchild Ave."
+    },
+    {
+      "name": "School 519",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 82.23,
+        "closest_meters": 81.0
+      },
+      "enforcement_stats": {
+        "total_tickets": 3463,
+        "total_fines": 173150.0
+      },
+      "cameras": "A324, ASE-25",
+      "camera_locations": "Indian Road Cres.  North of Humberside Ave. | Indian Road Cres. North of Humberside Ave."
+    },
+    {
+      "name": "School 341",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 126.73,
+        "closest_meters": 126.73
+      },
+      "enforcement_stats": {
+        "total_tickets": 3436,
+        "total_fines": 171800.0
+      },
+      "cameras": "A231",
+      "camera_locations": "McNicoll Ave. Near Sexton Cres."
+    },
+    {
+      "name": "School 271",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 123.93,
+        "closest_meters": 123.93
+      },
+      "enforcement_stats": {
+        "total_tickets": 3367,
+        "total_fines": 168350.0
+      },
+      "cameras": "A507",
+      "camera_locations": "Danforth Rd. East of Winter Ave."
+    },
+    {
+      "name": "School 44",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 42.05,
+        "closest_meters": 42.05
+      },
+      "enforcement_stats": {
+        "total_tickets": 3279,
+        "total_fines": 163950.0
+      },
+      "cameras": "A070",
+      "camera_locations": "Brant St. South of Adelaide St. W."
+    },
+    {
+      "name": "School 43",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 42.05,
+        "closest_meters": 42.05
+      },
+      "enforcement_stats": {
+        "total_tickets": 3279,
+        "total_fines": 163950.0
+      },
+      "cameras": "A070",
+      "camera_locations": "Brant St. South of Adelaide St. W."
+    },
+    {
+      "name": "School 224",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 147.24,
+        "closest_meters": 147.24
+      },
+      "enforcement_stats": {
+        "total_tickets": 3273,
+        "total_fines": 163650.0
+      },
+      "cameras": "A502",
+      "camera_locations": "Don Mills Rd. South of Seneca Hill Dr."
+    },
+    {
+      "name": "School 375",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 108.61,
+        "closest_meters": 108.61
+      },
+      "enforcement_stats": {
+        "total_tickets": 3242,
+        "total_fines": 162100.0
+      },
+      "cameras": "A266",
+      "camera_locations": "Ossington Ave. North of Churchill Ave."
+    },
+    {
+      "name": "School 530",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 97.42,
+        "closest_meters": 97.42
+      },
+      "enforcement_stats": {
+        "total_tickets": 3226,
+        "total_fines": 161300.0
+      },
+      "cameras": "A428",
+      "camera_locations": "Guildwood Pkwy. Near Schubert Dr."
+    },
+    {
+      "name": "School 400",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 73.65,
+        "closest_meters": 73.65
+      },
+      "enforcement_stats": {
+        "total_tickets": 3136,
+        "total_fines": 156800.0
+      },
+      "cameras": "A226",
+      "camera_locations": "Cosburn Ave. Near Roosevelt Rd."
+    },
+    {
+      "name": "School 176",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 106.98,
+        "closest_meters": 106.98
+      },
+      "enforcement_stats": {
+        "total_tickets": 3083,
+        "total_fines": 154150.0
+      },
+      "cameras": "A361",
+      "camera_locations": "Brimorton Dr.  West of Gaitwin Place"
+    },
+    {
+      "name": "School 94",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 30.98,
+        "closest_meters": 30.98
+      },
+      "enforcement_stats": {
+        "total_tickets": 3076,
+        "total_fines": 153800.0
+      },
+      "cameras": "A439",
+      "camera_locations": "Thirty First St. Near Ash Cres."
+    },
+    {
+      "name": "School 27",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 96.66,
+        "closest_meters": 96.66
+      },
+      "enforcement_stats": {
+        "total_tickets": 3042,
+        "total_fines": 152100.0
+      },
+      "cameras": "A255",
+      "camera_locations": "Norseman St. Near Lothian Ave."
+    },
+    {
+      "name": "School 76",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 83.62,
+        "closest_meters": 83.62
+      },
+      "enforcement_stats": {
+        "total_tickets": 2999,
+        "total_fines": 149950.0
+      },
+      "cameras": "A325",
+      "camera_locations": "McCormack St.  Near Leigh St."
+    },
+    {
+      "name": "School 402",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 51.37,
+        "closest_meters": 51.37
+      },
+      "enforcement_stats": {
+        "total_tickets": 2947,
+        "total_fines": 147350.0
+      },
+      "cameras": "A317",
+      "camera_locations": "Lawrence Ave. E.  West of Port Union Rd."
+    },
+    {
+      "name": "School 368",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 146.7,
+        "closest_meters": 146.7
+      },
+      "enforcement_stats": {
+        "total_tickets": 2920,
+        "total_fines": 146000.0
+      },
+      "cameras": "A012",
+      "camera_locations": "Wilmington Ave. North of Purdon Dr."
+    },
+    {
+      "name": "School 357",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 100.58,
+        "closest_meters": 100.58
+      },
+      "enforcement_stats": {
+        "total_tickets": 2920,
+        "total_fines": 146000.0
+      },
+      "cameras": "A012",
+      "camera_locations": "Wilmington Ave. North of Purdon Dr."
+    },
+    {
+      "name": "School 54",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 113.92,
+        "closest_meters": 113.92
+      },
+      "enforcement_stats": {
+        "total_tickets": 2825,
+        "total_fines": 141250.0
+      },
+      "cameras": "A443",
+      "camera_locations": "Keele St. North of Wandle Ave."
+    },
+    {
+      "name": "School 122",
+      "type": "Unknown",
+      "cameras_nearby": 3,
+      "distance_stats": {
+        "average_meters": 93.94,
+        "closest_meters": 66.67
+      },
+      "enforcement_stats": {
+        "total_tickets": 2766,
+        "total_fines": 138300.0
+      },
+      "cameras": "A133, A458, ASE-181",
+      "camera_locations": "Brian Dr. South of Van Horne Ave. | Van Horne Ave. East of Bickerton Cres. | Van Horne Ave. West of Brian Dr."
+    },
+    {
+      "name": "School 110",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 134.26,
+        "closest_meters": 134.26
+      },
+      "enforcement_stats": {
+        "total_tickets": 2701,
+        "total_fines": 135050.0
+      },
+      "cameras": "A082",
+      "camera_locations": "Underhill Dr. Near Bevridge Dr."
+    },
+    {
+      "name": "School 486",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 90.55,
+        "closest_meters": 90.55
+      },
+      "enforcement_stats": {
+        "total_tickets": 2645,
+        "total_fines": 132250.0
+      },
+      "cameras": "A099, A431",
+      "camera_locations": "Charlottetown Blvd. Near McCulley St. | Charlottetown Blvd. North of McCulley St."
+    },
+    {
+      "name": "School 473",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 72.95,
+        "closest_meters": 66.84
+      },
+      "enforcement_stats": {
+        "total_tickets": 2630,
+        "total_fines": 131500.0
+      },
+      "cameras": "A106, A322",
+      "camera_locations": "Lake Shore Blvd. W. Near Twentieth St. | Twenty First St.  North of Lake Shore Blvd. W."
+    },
+    {
+      "name": "School 328",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 119.72,
+        "closest_meters": 119.72
+      },
+      "enforcement_stats": {
+        "total_tickets": 2613,
+        "total_fines": 130650.0
+      },
+      "cameras": "A328",
+      "camera_locations": "Highview Ave.  North of Maurice Coulter Mews"
+    },
+    {
+      "name": "School 219",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 113.13,
+        "closest_meters": 113.13
+      },
+      "enforcement_stats": {
+        "total_tickets": 2598,
+        "total_fines": 129900.0
+      },
+      "cameras": "A110",
+      "camera_locations": "Culford Rd. North of Burr Ave."
+    },
+    {
+      "name": "School 25",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 58.09,
+        "closest_meters": 58.09
+      },
+      "enforcement_stats": {
+        "total_tickets": 2575,
+        "total_fines": 128750.0
+      },
+      "cameras": "A509",
+      "camera_locations": "Pharmacy Ave. Near Sherwood Ave."
+    },
+    {
+      "name": "School 55",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 67.31,
+        "closest_meters": 67.31
+      },
+      "enforcement_stats": {
+        "total_tickets": 2553,
+        "total_fines": 127650.0
+      },
+      "cameras": "A220",
+      "camera_locations": "Manning Ave. South of Lennox St."
+    },
+    {
+      "name": "School 396",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 100.64,
+        "closest_meters": 100.64
+      },
+      "enforcement_stats": {
+        "total_tickets": 2500,
+        "total_fines": 125000.0
+      },
+      "cameras": "A037",
+      "camera_locations": "Main St. South of Swanwick Ave. "
+    },
+    {
+      "name": "School 395",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 100.64,
+        "closest_meters": 100.64
+      },
+      "enforcement_stats": {
+        "total_tickets": 2500,
+        "total_fines": 125000.0
+      },
+      "cameras": "A037",
+      "camera_locations": "Main St. South of Swanwick Ave. "
+    },
+    {
+      "name": "School 432",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 58.5,
+        "closest_meters": 58.5
+      },
+      "enforcement_stats": {
+        "total_tickets": 2405,
+        "total_fines": 120250.0
+      },
+      "cameras": "A030",
+      "camera_locations": "Ranleigh Ave. East of Yonge St."
+    },
+    {
+      "name": "School 482",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 84.0,
+        "closest_meters": 84.0
+      },
+      "enforcement_stats": {
+        "total_tickets": 2342,
+        "total_fines": 117100.0
+      },
+      "cameras": "A345",
+      "camera_locations": "Gateway Blvd.  Near Grenoble Dr."
+    },
+    {
+      "name": "School 214",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 143.34,
+        "closest_meters": 143.34
+      },
+      "enforcement_stats": {
+        "total_tickets": 2298,
+        "total_fines": 114900.0
+      },
+      "cameras": "A484",
+      "camera_locations": "Mill Rd.  Near 411 Mill Rd."
+    },
+    {
+      "name": "School 439",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 61.93,
+        "closest_meters": 61.93
+      },
+      "enforcement_stats": {
+        "total_tickets": 2292,
+        "total_fines": 114600.0
+      },
+      "cameras": "A168",
+      "camera_locations": "Oakwood Ave. Near Biggar Ave."
+    },
+    {
+      "name": "School 496",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 108.55,
+        "closest_meters": 108.55
+      },
+      "enforcement_stats": {
+        "total_tickets": 2255,
+        "total_fines": 112750.0
+      },
+      "cameras": "A049",
+      "camera_locations": "Hupfield Trail Near Glanvil Cres."
+    },
+    {
+      "name": "School 288",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 142.65,
+        "closest_meters": 142.65
+      },
+      "enforcement_stats": {
+        "total_tickets": 2204,
+        "total_fines": 110200.0
+      },
+      "cameras": "A469",
+      "camera_locations": "Pharmacy Ave. Near Galsworthy Ave."
+    },
+    {
+      "name": "School 371",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 117.54,
+        "closest_meters": 115.17
+      },
+      "enforcement_stats": {
+        "total_tickets": 2100,
+        "total_fines": 105000.0
+      },
+      "cameras": "A155, ASE-20",
+      "camera_locations": "Birmingham St. West of Kipling Ave. | Kipling Ave. South of New Toronto St."
+    },
+    {
+      "name": "School 296",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 137.59,
+        "closest_meters": 137.59
+      },
+      "enforcement_stats": {
+        "total_tickets": 1979,
+        "total_fines": 98950.0
+      },
+      "cameras": "A239",
+      "camera_locations": "Pharmacy Ave. North of Sherwood Ave."
+    },
+    {
+      "name": "School 373",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 102.22,
+        "closest_meters": 102.22
+      },
+      "enforcement_stats": {
+        "total_tickets": 1968,
+        "total_fines": 98400.0
+      },
+      "cameras": "A414",
+      "camera_locations": "Hollywood Ave. East of Estelle Ave."
+    },
+    {
+      "name": "School 212",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 139.55,
+        "closest_meters": 139.55
+      },
+      "enforcement_stats": {
+        "total_tickets": 1953,
+        "total_fines": 97650.0
+      },
+      "cameras": "A178",
+      "camera_locations": "Lawrence Ave. E. East of Mildenhall Rd."
+    },
+    {
+      "name": "School 56",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 60.89,
+        "closest_meters": 60.89
+      },
+      "enforcement_stats": {
+        "total_tickets": 1755,
+        "total_fines": 87750.0
+      },
+      "cameras": "A160",
+      "camera_locations": "King St. South of George St."
+    },
+    {
+      "name": "School 294",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 119.69,
+        "closest_meters": 119.69
+      },
+      "enforcement_stats": {
+        "total_tickets": 1740,
+        "total_fines": 87000.0
+      },
+      "cameras": "A265",
+      "camera_locations": "Glengrove Ave. W. West of Glen Castle St."
+    },
+    {
+      "name": "School 52",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 121.15,
+        "closest_meters": 93.39
+      },
+      "enforcement_stats": {
+        "total_tickets": 1653,
+        "total_fines": 82650.0
+      },
+      "cameras": "A108, A367",
+      "camera_locations": "Annette St. Near Laws St. | Kane Ave.  Near St. Olaves Rd."
+    },
+    {
+      "name": "School 51",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 121.15,
+        "closest_meters": 93.39
+      },
+      "enforcement_stats": {
+        "total_tickets": 1653,
+        "total_fines": 82650.0
+      },
+      "cameras": "A108, A367",
+      "camera_locations": "Annette St. Near Laws St. | Kane Ave.  Near St. Olaves Rd."
+    },
+    {
+      "name": "School 42",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 91.99,
+        "closest_meters": 91.99
+      },
+      "enforcement_stats": {
+        "total_tickets": 1604,
+        "total_fines": 80200.0
+      },
+      "cameras": "A390",
+      "camera_locations": "Keele St. South of Clearview Heights"
+    },
+    {
+      "name": "School 565",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 134.47,
+        "closest_meters": 134.47
+      },
+      "enforcement_stats": {
+        "total_tickets": 1577,
+        "total_fines": 78850.0
+      },
+      "cameras": "A244",
+      "camera_locations": "Seasons Dr. East of Oasis Blvd."
+    },
+    {
+      "name": "School 533",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 57.06,
+        "closest_meters": 57.06
+      },
+      "enforcement_stats": {
+        "total_tickets": 1520,
+        "total_fines": 76000.0
+      },
+      "cameras": "A228",
+      "camera_locations": "Park Lane Circle Near 60 Park Lane Circle"
+    },
+    {
+      "name": "School 440",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 93.85,
+        "closest_meters": 93.85
+      },
+      "enforcement_stats": {
+        "total_tickets": 1513,
+        "total_fines": 75650.0
+      },
+      "cameras": "A177",
+      "camera_locations": "Westwood Ave. West of Carlaw Ave."
+    },
+    {
+      "name": "School 157",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 80.74,
+        "closest_meters": 80.74
+      },
+      "enforcement_stats": {
+        "total_tickets": 1501,
+        "total_fines": 75050.0
+      },
+      "cameras": "A212",
+      "camera_locations": "Stilecroft Dr. West of Sharpecroft Blvd."
+    },
+    {
+      "name": "School 415",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 49.45,
+        "closest_meters": 49.45
+      },
+      "enforcement_stats": {
+        "total_tickets": 1416,
+        "total_fines": 70800.0
+      },
+      "cameras": "A118",
+      "camera_locations": "Concord Ave. North of College St."
+    },
+    {
+      "name": "School 274",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 90.55,
+        "closest_meters": 90.55
+      },
+      "enforcement_stats": {
+        "total_tickets": 1397,
+        "total_fines": 69850.0
+      },
+      "cameras": "A309",
+      "camera_locations": "Sloane Ave.  Near Draycott Dr."
+    },
+    {
+      "name": "School 547",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 148.14,
+        "closest_meters": 148.14
+      },
+      "enforcement_stats": {
+        "total_tickets": 1344,
+        "total_fines": 67200.0
+      },
+      "cameras": "A098",
+      "camera_locations": "Holmfirth Terrace West of Vanwart Dr."
+    },
+    {
+      "name": "School 369",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 44.71,
+        "closest_meters": 44.71
+      },
+      "enforcement_stats": {
+        "total_tickets": 1204,
+        "total_fines": 60200.0
+      },
+      "cameras": "A086",
+      "camera_locations": "Church Ave. East of Doris Ave."
+    },
+    {
+      "name": "School 421",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 60.48,
+        "closest_meters": 60.48
+      },
+      "enforcement_stats": {
+        "total_tickets": 1191,
+        "total_fines": 59550.0
+      },
+      "cameras": "A462",
+      "camera_locations": "Maxome Ave. South of Gustav Cres."
+    },
+    {
+      "name": "School 125",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 105.05,
+        "closest_meters": 105.05
+      },
+      "enforcement_stats": {
+        "total_tickets": 1145,
+        "total_fines": 57250.0
+      },
+      "cameras": "A210",
+      "camera_locations": "Gary Dr. Near Deerhurst Ave."
+    },
+    {
+      "name": "School 484",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 95.4,
+        "closest_meters": 95.4
+      },
+      "enforcement_stats": {
+        "total_tickets": 1143,
+        "total_fines": 57150.0
+      },
+      "cameras": "A429",
+      "camera_locations": "Canmore Blvd. West of Halfmoon Sq."
+    },
+    {
+      "name": "School 211",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 109.99,
+        "closest_meters": 109.99
+      },
+      "enforcement_stats": {
+        "total_tickets": 1062,
+        "total_fines": 53100.0
+      },
+      "cameras": "A150",
+      "camera_locations": "Centennial Rd. South of Cherrydale Court"
+    },
+    {
+      "name": "School 7",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 103.53,
+        "closest_meters": 103.53
+      },
+      "enforcement_stats": {
+        "total_tickets": 1043,
+        "total_fines": 52150.0
+      },
+      "cameras": "A183",
+      "camera_locations": "Brian Dr. North of Clydesdale Dr."
+    },
+    {
+      "name": "School 10",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 73.92,
+        "closest_meters": 73.92
+      },
+      "enforcement_stats": {
+        "total_tickets": 1035,
+        "total_fines": 51750.0
+      },
+      "cameras": "A140",
+      "camera_locations": "Bellamy Rd. S. North of Kingston Rd."
+    },
+    {
+      "name": "School 557",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 70.57,
+        "closest_meters": 70.57
+      },
+      "enforcement_stats": {
+        "total_tickets": 943,
+        "total_fines": 47150.0
+      },
+      "cameras": "A408",
+      "camera_locations": "Strathcona Ave. West of Blake St."
+    },
+    {
+      "name": "School 283",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 61.34,
+        "closest_meters": 61.34
+      },
+      "enforcement_stats": {
+        "total_tickets": 943,
+        "total_fines": 47150.0
+      },
+      "cameras": "A408",
+      "camera_locations": "Strathcona Ave. West of Blake St."
+    },
+    {
+      "name": "School 418",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 129.21,
+        "closest_meters": 129.21
+      },
+      "enforcement_stats": {
+        "total_tickets": 929,
+        "total_fines": 46450.0
+      },
+      "cameras": "A187",
+      "camera_locations": "Cosburn Ave. West of Binswood Ave."
+    },
+    {
+      "name": "School 561",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 86.09,
+        "closest_meters": 86.09
+      },
+      "enforcement_stats": {
+        "total_tickets": 887,
+        "total_fines": 44350.0
+      },
+      "cameras": "A363",
+      "camera_locations": "Nightstar Rd.  Near Pogonia St."
+    },
+    {
+      "name": "School 513",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 99.21,
+        "closest_meters": 99.21
+      },
+      "enforcement_stats": {
+        "total_tickets": 812,
+        "total_fines": 40600.0
+      },
+      "cameras": "A298",
+      "camera_locations": "Thistle Down Blvd.  East of Albion Rd."
+    },
+    {
+      "name": "School 161",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 132.12,
+        "closest_meters": 132.12
+      },
+      "enforcement_stats": {
+        "total_tickets": 792,
+        "total_fines": 39600.0
+      },
+      "cameras": "A482",
+      "camera_locations": "Silverstone Dr. Near Midhurst Dr."
+    },
+    {
+      "name": "School 268",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 93.85,
+        "closest_meters": 93.85
+      },
+      "enforcement_stats": {
+        "total_tickets": 786,
+        "total_fines": 39300.0
+      },
+      "cameras": "A154",
+      "camera_locations": "Montgomery Rd. Near Loyalist Rd."
+    },
+    {
+      "name": "School 254",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 101.31,
+        "closest_meters": 85.77
+      },
+      "enforcement_stats": {
+        "total_tickets": 776,
+        "total_fines": 38800.0
+      },
+      "cameras": "A381, ASE-197",
+      "camera_locations": "Dean Park Rd. East of Sudbury Hill Dr. | Dean Park Rd.  Near Red River Cres."
+    },
+    {
+      "name": "School 28",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 121.81,
+        "closest_meters": 121.81
+      },
+      "enforcement_stats": {
+        "total_tickets": 756,
+        "total_fines": 37800.0
+      },
+      "cameras": "A036",
+      "camera_locations": "Lillian St. South of Abitibi Ave."
+    },
+    {
+      "name": "School 229",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 79.62,
+        "closest_meters": 79.62
+      },
+      "enforcement_stats": {
+        "total_tickets": 682,
+        "total_fines": 34100.0
+      },
+      "cameras": "A522",
+      "camera_locations": "Orton Park Rd. Near 350 Orton Park Rd."
+    },
+    {
+      "name": "School 481",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 77.72,
+        "closest_meters": 63.19
+      },
+      "enforcement_stats": {
+        "total_tickets": 630,
+        "total_fines": 31500.0
+      },
+      "cameras": "A342, ASE-77",
+      "camera_locations": "Denlow Blvd.  Near Hamlet Gate | Denlow Blvd. Near Hamlet Gate"
+    },
+    {
+      "name": "School 455",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 142.26,
+        "closest_meters": 142.26
+      },
+      "enforcement_stats": {
+        "total_tickets": 578,
+        "total_fines": 28900.0
+      },
+      "cameras": "A096",
+      "camera_locations": "Brimwood Blvd. Near Bridley Dr."
+    },
+    {
+      "name": "School 199",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 148.52,
+        "closest_meters": 148.52
+      },
+      "enforcement_stats": {
+        "total_tickets": 539,
+        "total_fines": 26950.0
+      },
+      "cameras": "A311",
+      "camera_locations": "Senlac Rd.  North of Elynhill Dr."
+    },
+    {
+      "name": "School 500",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 113.92,
+        "closest_meters": 90.36
+      },
+      "enforcement_stats": {
+        "total_tickets": 535,
+        "total_fines": 26750.0
+      },
+      "cameras": "A045, A516",
+      "camera_locations": "Crow Trail Near Bradstone Square | Crow Trail Near Horseley Hill Dr."
+    },
+    {
+      "name": "School 576",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 116.78,
+        "closest_meters": 116.78
+      },
+      "enforcement_stats": {
+        "total_tickets": 533,
+        "total_fines": 26650.0
+      },
+      "cameras": "A476",
+      "camera_locations": "Slan Ave. Near Spraywood Gate"
+    },
+    {
+      "name": "School 430",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 116.78,
+        "closest_meters": 116.78
+      },
+      "enforcement_stats": {
+        "total_tickets": 533,
+        "total_fines": 26650.0
+      },
+      "cameras": "A476",
+      "camera_locations": "Slan Ave. Near Spraywood Gate"
+    },
+    {
+      "name": "School 26",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 70.21,
+        "closest_meters": 31.79
+      },
+      "enforcement_stats": {
+        "total_tickets": 525,
+        "total_fines": 26250.0
+      },
+      "cameras": "A440, ASE-19",
+      "camera_locations": "Sixth St. South of Lake Shore Blvd. W | Sixth St. South of Lake Shore Blvd. W."
+    },
+    {
+      "name": "School 549",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 63.58,
+        "closest_meters": 63.58
+      },
+      "enforcement_stats": {
+        "total_tickets": 522,
+        "total_fines": 26100.0
+      },
+      "cameras": "A020",
+      "camera_locations": "Givins St. South of Argyle St."
+    },
+    {
+      "name": "School 215",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 85.64,
+        "closest_meters": 85.64
+      },
+      "enforcement_stats": {
+        "total_tickets": 512,
+        "total_fines": 25600.0
+      },
+      "cameras": "A100",
+      "camera_locations": "Durnford Rd. North of Rylander Blvd."
+    },
+    {
+      "name": "School 289",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 91.91,
+        "closest_meters": 91.91
+      },
+      "enforcement_stats": {
+        "total_tickets": 415,
+        "total_fines": 20750.0
+      },
+      "cameras": "A376",
+      "camera_locations": "Highview Ave.  Near Anneke Rd."
+    },
+    {
+      "name": "School 360",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 47.7,
+        "closest_meters": 47.7
+      },
+      "enforcement_stats": {
+        "total_tickets": 398,
+        "total_fines": 19900.0
+      },
+      "cameras": "A287",
+      "camera_locations": "Blantyre Ave. South of Swanwick Ave."
+    },
+    {
+      "name": "School 330",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 71.67,
+        "closest_meters": 71.67
+      },
+      "enforcement_stats": {
+        "total_tickets": 388,
+        "total_fines": 19400.0
+      },
+      "cameras": "A337",
+      "camera_locations": "Mount Pleasant Rd.  Near Balliol St."
+    },
+    {
+      "name": "School 387",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 125.75,
+        "closest_meters": 125.75
+      },
+      "enforcement_stats": {
+        "total_tickets": 362,
+        "total_fines": 18100.0
+      },
+      "cameras": "A039",
+      "camera_locations": "Falmouth Ave. South of Brussels Rd."
+    },
+    {
+      "name": "School 200",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 94.64,
+        "closest_meters": 94.64
+      },
+      "enforcement_stats": {
+        "total_tickets": 340,
+        "total_fines": 17000.0
+      },
+      "cameras": "A355",
+      "camera_locations": "Birkdale Rd.  Near Abbottswood Rd."
+    },
+    {
+      "name": "School 116",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 72.95,
+        "closest_meters": 72.95
+      },
+      "enforcement_stats": {
+        "total_tickets": 323,
+        "total_fines": 16150.0
+      },
+      "cameras": "A081",
+      "camera_locations": "Fenside Dr. South of Roywood Dr."
+    },
+    {
+      "name": "School 128",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 146.87,
+        "closest_meters": 146.87
+      },
+      "enforcement_stats": {
+        "total_tickets": 323,
+        "total_fines": 16150.0
+      },
+      "cameras": "A081",
+      "camera_locations": "Fenside Dr. South of Roywood Dr."
+    },
+    {
+      "name": "School 507",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 64.89,
+        "closest_meters": 64.89
+      },
+      "enforcement_stats": {
+        "total_tickets": 315,
+        "total_fines": 15750.0
+      },
+      "cameras": "A479",
+      "camera_locations": "John Tabor Trail Near Duffort Court"
+    },
+    {
+      "name": "School 107",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 99.85,
+        "closest_meters": 99.85
+      },
+      "enforcement_stats": {
+        "total_tickets": 283,
+        "total_fines": 14150.0
+      },
+      "cameras": "A033",
+      "camera_locations": "Elkhorn Dr. West of Red Maple Court"
+    },
+    {
+      "name": "School 30",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 64.86,
+        "closest_meters": 59.68
+      },
+      "enforcement_stats": {
+        "total_tickets": 234,
+        "total_fines": 11700.0
+      },
+      "cameras": "A021, A448",
+      "camera_locations": "Lippincott St. South of Vankoughnet St. | Lippincott St. South of Vankoughnet St. "
+    },
+    {
+      "name": "School 298",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 82.39,
+        "closest_meters": 82.39
+      },
+      "enforcement_stats": {
+        "total_tickets": 233,
+        "total_fines": 11650.0
+      },
+      "cameras": "A068",
+      "camera_locations": "Ruskin Ave. West of Perth Ave."
+    },
+    {
+      "name": "School 442",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 83.19,
+        "closest_meters": 83.19
+      },
+      "enforcement_stats": {
+        "total_tickets": 196,
+        "total_fines": 9800.0
+      },
+      "cameras": "A379",
+      "camera_locations": "Chartland Blvd. S. Near Shellamwood Trail"
+    },
+    {
+      "name": "School 443",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 83.19,
+        "closest_meters": 83.19
+      },
+      "enforcement_stats": {
+        "total_tickets": 196,
+        "total_fines": 9800.0
+      },
+      "cameras": "A379",
+      "camera_locations": "Chartland Blvd. S. Near Shellamwood Trail"
+    },
+    {
+      "name": "School 491",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 95.93,
+        "closest_meters": 95.93
+      },
+      "enforcement_stats": {
+        "total_tickets": 159,
+        "total_fines": 7950.0
+      },
+      "cameras": "A523",
+      "camera_locations": "Murison Blvd. Near United Square"
+    },
+    {
+      "name": "School 539",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 132.55,
+        "closest_meters": 132.55
+      },
+      "enforcement_stats": {
+        "total_tickets": 152,
+        "total_fines": 7600.0
+      },
+      "cameras": "A120",
+      "camera_locations": "The Esplanade East of Princess St."
+    },
+    {
+      "name": "School 460",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 144.5,
+        "closest_meters": 144.5
+      },
+      "enforcement_stats": {
+        "total_tickets": 146,
+        "total_fines": 7300.0
+      },
+      "cameras": "A064",
+      "camera_locations": "Gracedale Blvd. Near Crimscott Rd."
+    },
+    {
+      "name": "School 50",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 116.34,
+        "closest_meters": 105.24
+      },
+      "enforcement_stats": {
+        "total_tickets": 126,
+        "total_fines": 6300.0
+      },
+      "cameras": "A454, ASE-71",
+      "camera_locations": "Sproat Ave. Near Curzon St. | Sproat Ave. West of Curzon St."
+    },
+    {
+      "name": "School 201",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 117.03,
+        "closest_meters": 117.03
+      },
+      "enforcement_stats": {
+        "total_tickets": 115,
+        "total_fines": 5750.0
+      },
+      "cameras": "A023",
+      "camera_locations": "Atlas Ave. South of Ava Rd."
+    },
+    {
+      "name": "School 40",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 136.66,
+        "closest_meters": 136.66
+      },
+      "enforcement_stats": {
+        "total_tickets": 98,
+        "total_fines": 4900.0
+      },
+      "cameras": "A071",
+      "camera_locations": "Orde St. West of Murray St."
+    },
+    {
+      "name": "School 291",
+      "type": "Unknown",
+      "cameras_nearby": 2,
+      "distance_stats": {
+        "average_meters": 107.21,
+        "closest_meters": 74.82
+      },
+      "enforcement_stats": {
+        "total_tickets": 91,
+        "total_fines": 4550.0
+      },
+      "cameras": "A524, ASE-147",
+      "camera_locations": "East Ave. Near Maberley Cres. | East Ave. Near Maberley Crescent"
+    },
+    {
+      "name": "School 139",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 40.23,
+        "closest_meters": 40.23
+      },
+      "enforcement_stats": {
+        "total_tickets": 90,
+        "total_fines": 4500.0
+      },
+      "cameras": "A002",
+      "camera_locations": "Harefield Dr. Near Barford Rd."
+    },
+    {
+      "name": "School 137",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 58.14,
+        "closest_meters": 58.14
+      },
+      "enforcement_stats": {
+        "total_tickets": 89,
+        "total_fines": 4450.0
+      },
+      "cameras": "A466",
+      "camera_locations": "East Haven Dr. Near Leatherwood Gardens"
+    },
+    {
+      "name": "School 73",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 131.48,
+        "closest_meters": 131.48
+      },
+      "enforcement_stats": {
+        "total_tickets": 89,
+        "total_fines": 4450.0
+      },
+      "cameras": "A125",
+      "camera_locations": "Homewood Ave. Near Maitland Place"
+    },
+    {
+      "name": "School 156",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 94.53,
+        "closest_meters": 94.53
+      },
+      "enforcement_stats": {
+        "total_tickets": 74,
+        "total_fines": 3700.0
+      },
+      "cameras": "A094",
+      "camera_locations": "Southlawn Dr. Near Buena Vista Ave."
+    },
+    {
+      "name": "School 209",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 48.5,
+        "closest_meters": 48.5
+      },
+      "enforcement_stats": {
+        "total_tickets": 69,
+        "total_fines": 3450.0
+      },
+      "cameras": "A057",
+      "camera_locations": "Willard Ave. Near Rexford Rd."
+    },
+    {
+      "name": "School 181",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 131.7,
+        "closest_meters": 131.7
+      },
+      "enforcement_stats": {
+        "total_tickets": 58,
+        "total_fines": 2900.0
+      },
+      "cameras": "A090",
+      "camera_locations": "Birchcliff Ave. Near Freeman St."
+    },
+    {
+      "name": "School 265",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 133.63,
+        "closest_meters": 133.63
+      },
+      "enforcement_stats": {
+        "total_tickets": 47,
+        "total_fines": 2350.0
+      },
+      "cameras": "A351",
+      "camera_locations": "Bowmore Rd.  South of Fairmount Cres."
+    },
+    {
+      "name": "School 323",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 116.47,
+        "closest_meters": 116.47
+      },
+      "enforcement_stats": {
+        "total_tickets": 46,
+        "total_fines": 2300.0
+      },
+      "cameras": "A076",
+      "camera_locations": "Berkeley St. South of Gerrard St. E."
+    },
+    {
+      "name": "School 324",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 116.47,
+        "closest_meters": 116.47
+      },
+      "enforcement_stats": {
+        "total_tickets": 46,
+        "total_fines": 2300.0
+      },
+      "cameras": "A076",
+      "camera_locations": "Berkeley St. South of Gerrard St. E."
+    },
+    {
+      "name": "School 14",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 90.53,
+        "closest_meters": 90.53
+      },
+      "enforcement_stats": {
+        "total_tickets": 36,
+        "total_fines": 1800.0
+      },
+      "cameras": "A013",
+      "camera_locations": "Derrydown Rd. North of Catford Rd."
+    },
+    {
+      "name": "School 485",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 141.39,
+        "closest_meters": 141.39
+      },
+      "enforcement_stats": {
+        "total_tickets": 31,
+        "total_fines": 1550.0
+      },
+      "cameras": "A043",
+      "camera_locations": "Beverly Glen Blvd. West of Stonebridge Blvd."
+    },
+    {
+      "name": "School 85",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 78.85,
+        "closest_meters": 78.85
+      },
+      "enforcement_stats": {
+        "total_tickets": 13,
+        "total_fines": 650.0
+      },
+      "cameras": "A026",
+      "camera_locations": "Spruce St. Near Gifford St. "
+    },
+    {
+      "name": "School 438",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 130.53,
+        "closest_meters": 130.53
+      },
+      "enforcement_stats": {
+        "total_tickets": 12,
+        "total_fines": 600.0
+      },
+      "cameras": "A058",
+      "camera_locations": "Mountview Ave. Near 51 Mountview Ave."
+    },
+    {
+      "name": "School 437",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 130.53,
+        "closest_meters": 130.53
+      },
+      "enforcement_stats": {
+        "total_tickets": 12,
+        "total_fines": 600.0
+      },
+      "cameras": "A058",
+      "camera_locations": "Mountview Ave. Near 51 Mountview Ave."
+    },
+    {
+      "name": "School 38",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 54.86,
+        "closest_meters": 54.86
+      },
+      "enforcement_stats": {
+        "total_tickets": 10,
+        "total_fines": 500.0
+      },
+      "cameras": "A025",
+      "camera_locations": "Prospect St. East of Ontario St."
+    },
+    {
+      "name": "School 583",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 94.07,
+        "closest_meters": 94.07
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-174",
+      "camera_locations": "Gerrard St. E. Near De Grassi St."
+    },
+    {
+      "name": "School 286",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 97.87,
+        "closest_meters": 97.87
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-162",
+      "camera_locations": "Glengrove Ave. W. West of Dalemount Ave."
+    },
+    {
+      "name": "School 86",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 40.85,
+        "closest_meters": 40.85
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-174",
+      "camera_locations": "Gerrard St. E. Near De Grassi St."
+    },
+    {
+      "name": "School 88",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 113.2,
+        "closest_meters": 113.2
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-168",
+      "camera_locations": "Bloor St. E. East of Castle Frank Rd."
+    },
+    {
+      "name": "School 113",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 71.18,
+        "closest_meters": 71.18
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-130",
+      "camera_locations": "Huntingwood Dr. West of Mollard Rd."
+    },
+    {
+      "name": "School 391",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 147.99,
+        "closest_meters": 147.99
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-12",
+      "camera_locations": "The East Mall South of Capri Rd."
+    },
+    {
+      "name": "School 528",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 111.79,
+        "closest_meters": 111.79
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-196",
+      "camera_locations": "Guildwood Pkwy. West of Chancery Lane"
+    },
+    {
+      "name": "School 494",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 70.84,
+        "closest_meters": 70.84
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-194",
+      "camera_locations": "Berner Trail Near Hatchet Place"
+    },
+    {
+      "name": "School 170",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 126.8,
+        "closest_meters": 126.8
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-151",
+      "camera_locations": "Renforth Dr. North of Tabard Gate"
+    },
+    {
+      "name": "School 159",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 139.52,
+        "closest_meters": 139.52
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-16",
+      "camera_locations": "Martin Grove Rd. South of Eglinton Ave. W. "
+    },
+    {
+      "name": "School 235",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 43.2,
+        "closest_meters": 43.2
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-13",
+      "camera_locations": "Mill Rd. Near 411 Mill Rd."
+    },
+    {
+      "name": "School 245",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 125.03,
+        "closest_meters": 125.03
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-140",
+      "camera_locations": "Markham Rd. South of Greencedar Circuit"
+    },
+    {
+      "name": "School 425",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 87.06,
+        "closest_meters": 87.06
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-154",
+      "camera_locations": "Lansdowne Ave. North of Seaforth Ave."
+    },
+    {
+      "name": "School 556",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 103.89,
+        "closest_meters": 103.89
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-189",
+      "camera_locations": "Midland Ave. North of Wolfe Ave."
+    },
+    {
+      "name": "School 393",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 70.83,
+        "closest_meters": 70.83
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-50",
+      "camera_locations": "Lawrence Ave. W. West of Varna Dr."
+    },
+    {
+      "name": "School 563",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 103.89,
+        "closest_meters": 103.89
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-189",
+      "camera_locations": "Midland Ave. North of Wolfe Ave."
+    },
+    {
+      "name": "School 305",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 99.28,
+        "closest_meters": 99.28
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-102",
+      "camera_locations": "Hilda Ave. Near Crossen Dr."
+    },
+    {
+      "name": "School 572",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 103.89,
+        "closest_meters": 103.89
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-189",
+      "camera_locations": "Midland Ave. North of Wolfe Ave."
+    },
+    {
+      "name": "School 142",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 63.32,
+        "closest_meters": 63.32
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-43",
+      "camera_locations": "Grandravine Dr. Opposite #310 Grandravine Dr."
+    },
+    {
+      "name": "School 39",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 130.07,
+        "closest_meters": 130.07
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-33",
+      "camera_locations": "Keele St. Near Nashville Ave."
+    },
+    {
+      "name": "School 578",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 111.79,
+        "closest_meters": 111.79
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-196",
+      "camera_locations": "Guildwood Pkwy. West of Chancery Lane"
+    },
+    {
+      "name": "School 582",
+      "type": "Unknown",
+      "cameras_nearby": 1,
+      "distance_stats": {
+        "average_meters": 80.92,
+        "closest_meters": 80.92
+      },
+      "enforcement_stats": {
+        "total_tickets": 0,
+        "total_fines": 0
+      },
+      "cameras": "ASE-59",
+      "camera_locations": "Dundas St. W. Near Casimir St."
+    }
+  ]
+}

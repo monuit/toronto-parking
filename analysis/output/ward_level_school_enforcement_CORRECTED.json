@@ -1,0 +1,895 @@
+{
+  "total_network": {
+    "cameras": 593,
+    "tickets": 2054677,
+    "fines": "102733850.00"
+  },
+  "school_focus_by_ward": [
+    {
+      "ward": "10.0",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "59559",
+      "percentage_of_total_network": "2.90",
+      "avg_distance_m": "87.97",
+      "closest_camera_m": "42.05",
+      "camera_codes": "A069, A070, A120, A333, A334"
+    },
+    {
+      "ward": "Scarborough",
+      "unique_cameras_near_schools": 14,
+      "tickets_from_cameras_near_schools": "32540",
+      "percentage_of_total_network": "1.58",
+      "avg_distance_m": "97.12",
+      "closest_camera_m": "50.55",
+      "camera_codes": "A049, A100, A147, A422, A476, A477, A478, A479, A522, A523, ASE-140, ASE-147, ASE-196, ASE-197"
+    },
+    {
+      "ward": "Don Valley West",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "24869",
+      "percentage_of_total_network": "1.21",
+      "avg_distance_m": "79.18",
+      "closest_camera_m": "57.06",
+      "camera_codes": "A030, A227, A228, A498, ASE-77"
+    },
+    {
+      "ward": "Parkdale",
+      "unique_cameras_near_schools": 6,
+      "tickets_from_cameras_near_schools": "22003",
+      "percentage_of_total_network": "1.07",
+      "avg_distance_m": "95.00",
+      "closest_camera_m": "80.98",
+      "camera_codes": "A007, A108, A208, A485, ASE-154, ASE-25"
+    },
+    {
+      "ward": "University",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "19994",
+      "percentage_of_total_network": "0.97",
+      "avg_distance_m": "63.32",
+      "closest_camera_m": "13.07",
+      "camera_codes": "A171, A220, A448, ASE-168"
+    },
+    {
+      "ward": "Eglinton",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "19313",
+      "percentage_of_total_network": "0.94",
+      "avg_distance_m": "106.04",
+      "closest_camera_m": "70.83",
+      "camera_codes": "A065, A216, ASE-162, ASE-50"
+    },
+    {
+      "ward": "Etobicoke North",
+      "unique_cameras_near_schools": 3,
+      "tickets_from_cameras_near_schools": "18589",
+      "percentage_of_total_network": "0.90",
+      "avg_distance_m": "122.72",
+      "closest_camera_m": "110.30",
+      "camera_codes": "A051, A435, A482"
+    },
+    {
+      "ward": "19.0",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "17961",
+      "percentage_of_total_network": "0.87",
+      "avg_distance_m": "87.32",
+      "closest_camera_m": "22.58",
+      "camera_codes": "A038, A137, A138, A187, A351"
+    },
+    {
+      "ward": "24.0",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "17702",
+      "percentage_of_total_network": "0.86",
+      "avg_distance_m": "114.96",
+      "closest_camera_m": "97.42",
+      "camera_codes": "A098, A360, A361, A428"
+    },
+    {
+      "ward": "18.0",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "15607",
+      "percentage_of_total_network": "0.76",
+      "avg_distance_m": "130.60",
+      "closest_camera_m": "102.22",
+      "camera_codes": "A036, A085, A311, A414, A460"
+    },
+    {
+      "ward": "16.0",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "15498",
+      "percentage_of_total_network": "0.75",
+      "avg_distance_m": "85.30",
+      "closest_camera_m": "44.73",
+      "camera_codes": "A081, A082, A229, A309, A345"
+    },
+    {
+      "ward": "York South",
+      "unique_cameras_near_schools": 3,
+      "tickets_from_cameras_near_schools": "14696",
+      "percentage_of_total_network": "0.72",
+      "avg_distance_m": "118.95",
+      "closest_camera_m": "105.05",
+      "camera_codes": "A210, A391, ASE-33"
+    },
+    {
+      "ward": "Davenport",
+      "unique_cameras_near_schools": 3,
+      "tickets_from_cameras_near_schools": "14590",
+      "percentage_of_total_network": "0.71",
+      "avg_distance_m": "46.51",
+      "closest_camera_m": "28.15",
+      "camera_codes": "A017, A118, A168"
+    },
+    {
+      "ward": "5.0",
+      "unique_cameras_near_schools": 6,
+      "tickets_from_cameras_near_schools": "13887",
+      "percentage_of_total_network": "0.68",
+      "avg_distance_m": "105.04",
+      "closest_camera_m": "60.89",
+      "camera_codes": "A009, A110, A160, A325, A367, A390"
+    },
+    {
+      "ward": "4.0",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "13717",
+      "percentage_of_total_network": "0.67",
+      "avg_distance_m": "66.53",
+      "closest_camera_m": "3.63",
+      "camera_codes": "A057, A058, A107, A324"
+    },
+    {
+      "ward": "Don Valley North",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "13685",
+      "percentage_of_total_network": "0.67",
+      "avg_distance_m": "113.44",
+      "closest_camera_m": "75.65",
+      "camera_codes": "A231, A458, A459, A502, ASE-181"
+    },
+    {
+      "ward": "Scarborough Southwest",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "12739",
+      "percentage_of_total_network": "0.62",
+      "avg_distance_m": "95.12",
+      "closest_camera_m": "58.14",
+      "camera_codes": "A140, A286, A466, A507"
+    },
+    {
+      "ward": "Etobicoke",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "12145",
+      "percentage_of_total_network": "0.59",
+      "avg_distance_m": "80.89",
+      "closest_camera_m": "30.98",
+      "camera_codes": "A055, A155, A439, ASE-19, ASE-20"
+    },
+    {
+      "ward": "Willowdale",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "10878",
+      "percentage_of_total_network": "0.53",
+      "avg_distance_m": "70.52",
+      "closest_camera_m": "44.71",
+      "camera_codes": "A086, A184, A462, ASE-102, ASE-99"
+    },
+    {
+      "ward": "23.0",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "9842",
+      "percentage_of_total_network": "0.48",
+      "avg_distance_m": "114.55",
+      "closest_camera_m": "83.19",
+      "camera_codes": "A045, A096, A244, A292, A379"
+    },
+    {
+      "ward": "25.0",
+      "unique_cameras_near_schools": 8,
+      "tickets_from_cameras_near_schools": "9551",
+      "percentage_of_total_network": "0.46",
+      "avg_distance_m": "93.66",
+      "closest_camera_m": "51.37",
+      "camera_codes": "A099, A150, A317, A363, A381, A429, A431, A524"
+    },
+    {
+      "ward": "14.0",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "8845",
+      "percentage_of_total_network": "0.43",
+      "avg_distance_m": "92.66",
+      "closest_camera_m": "61.34",
+      "camera_codes": "A177, A340, A341, A408, A454"
+    },
+    {
+      "ward": "12.0",
+      "unique_cameras_near_schools": 3,
+      "tickets_from_cameras_near_schools": "7753",
+      "percentage_of_total_network": "0.38",
+      "avg_distance_m": "82.97",
+      "closest_camera_m": "60.22",
+      "camera_codes": "A023, A073, A337"
+    },
+    {
+      "ward": "Beaches",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "6800",
+      "percentage_of_total_network": "0.33",
+      "avg_distance_m": "88.35",
+      "closest_camera_m": "76.06",
+      "camera_codes": "A037, A235"
+    },
+    {
+      "ward": "8.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "6355",
+      "percentage_of_total_network": "0.31",
+      "avg_distance_m": "99.26",
+      "closest_camera_m": "78.82",
+      "camera_codes": "A016, A265"
+    },
+    {
+      "ward": "Toronto",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "6286",
+      "percentage_of_total_network": "0.31",
+      "avg_distance_m": "70.12",
+      "closest_camera_m": "38.53",
+      "camera_codes": "A128, A226, ASE-174, ASE-71"
+    },
+    {
+      "ward": "3.0",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "6197",
+      "percentage_of_total_network": "0.30",
+      "avg_distance_m": "87.80",
+      "closest_camera_m": "66.84",
+      "camera_codes": "A106, A255, A322, A440"
+    },
+    {
+      "ward": "6.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "5533",
+      "percentage_of_total_network": "0.27",
+      "avg_distance_m": "110.15",
+      "closest_camera_m": "100.58",
+      "camera_codes": "A012, A328"
+    },
+    {
+      "ward": "Etobicoke Centre",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "5301",
+      "percentage_of_total_network": "0.26",
+      "avg_distance_m": "110.19",
+      "closest_camera_m": "43.20",
+      "camera_codes": "A153, ASE-12, ASE-13, ASE-151, ASE-16"
+    },
+    {
+      "ward": "Scarborough Centre",
+      "unique_cameras_near_schools": 3,
+      "tickets_from_cameras_near_schools": "4779",
+      "percentage_of_total_network": "0.23",
+      "avg_distance_m": "101.54",
+      "closest_camera_m": "58.09",
+      "camera_codes": "A469, A509, ASE-189"
+    },
+    {
+      "ward": "Toronto Centre",
+      "unique_cameras_near_schools": 1,
+      "tickets_from_cameras_near_schools": "4667",
+      "percentage_of_total_network": "0.23",
+      "avg_distance_m": "34.26",
+      "closest_camera_m": "34.26",
+      "camera_codes": "A126"
+    },
+    {
+      "ward": "York Centre",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "4326",
+      "percentage_of_total_network": "0.21",
+      "avg_distance_m": "97.33",
+      "closest_camera_m": "80.74",
+      "camera_codes": "A212, A443"
+    },
+    {
+      "ward": "9.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "3475",
+      "percentage_of_total_network": "0.17",
+      "avg_distance_m": "95.50",
+      "closest_camera_m": "82.39",
+      "camera_codes": "A068, A266"
+    },
+    {
+      "ward": "2.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "3084",
+      "percentage_of_total_network": "0.15",
+      "avg_distance_m": "118.60",
+      "closest_camera_m": "93.85",
+      "camera_codes": "A154, A484"
+    },
+    {
+      "ward": "11.0",
+      "unique_cameras_near_schools": 3,
+      "tickets_from_cameras_near_schools": "2783",
+      "percentage_of_total_network": "0.14",
+      "avg_distance_m": "85.78",
+      "closest_camera_m": "50.66",
+      "camera_codes": "A021, A071, A404"
+    },
+    {
+      "ward": "15.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "2583",
+      "percentage_of_total_network": "0.13",
+      "avg_distance_m": "115.90",
+      "closest_camera_m": "92.25",
+      "camera_codes": "A178, A342"
+    },
+    {
+      "ward": "21.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "2319",
+      "percentage_of_total_network": "0.11",
+      "avg_distance_m": "116.12",
+      "closest_camera_m": "94.64",
+      "camera_codes": "A239, A355"
+    },
+    {
+      "ward": "17.0",
+      "unique_cameras_near_schools": 3,
+      "tickets_from_cameras_near_schools": "2008",
+      "percentage_of_total_network": "0.10",
+      "avg_distance_m": "90.02",
+      "closest_camera_m": "66.67",
+      "camera_codes": "A033, A133, A183"
+    },
+    {
+      "ward": "20.0",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "1233",
+      "percentage_of_total_network": "0.06",
+      "avg_distance_m": "99.27",
+      "closest_camera_m": "47.70",
+      "camera_codes": "A039, A090, A287, A376"
+    },
+    {
+      "ward": "1.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "902",
+      "percentage_of_total_network": "0.04",
+      "avg_distance_m": "69.72",
+      "closest_camera_m": "40.23",
+      "camera_codes": "A002, A298"
+    },
+    {
+      "ward": "Spadina",
+      "unique_cameras_near_schools": 5,
+      "tickets_from_cameras_near_schools": "522",
+      "percentage_of_total_network": "0.03",
+      "avg_distance_m": "62.59",
+      "closest_camera_m": "33.00",
+      "camera_codes": "A020, ASE-166, ASE-57, ASE-58, ASE-59"
+    },
+    {
+      "ward": "7.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "182",
+      "percentage_of_total_network": "0.01",
+      "avg_distance_m": "117.52",
+      "closest_camera_m": "90.53",
+      "camera_codes": "A013, A064"
+    },
+    {
+      "ward": "13.0",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "158",
+      "percentage_of_total_network": "0.01",
+      "avg_distance_m": "95.42",
+      "closest_camera_m": "54.86",
+      "camera_codes": "A025, A026, A076, A125"
+    },
+    {
+      "ward": "Scarborough North",
+      "unique_cameras_near_schools": 4,
+      "tickets_from_cameras_near_schools": "126",
+      "percentage_of_total_network": "0.01",
+      "avg_distance_m": "83.22",
+      "closest_camera_m": "53.39",
+      "camera_codes": "A516, ASE-130, ASE-193, ASE-194"
+    },
+    {
+      "ward": "22.0",
+      "unique_cameras_near_schools": 2,
+      "tickets_from_cameras_near_schools": "105",
+      "percentage_of_total_network": "0.01",
+      "avg_distance_m": "117.96",
+      "closest_camera_m": "94.53",
+      "camera_codes": "A043, A094"
+    },
+    {
+      "ward": "Humber River",
+      "unique_cameras_near_schools": 1,
+      "tickets_from_cameras_near_schools": "0",
+      "percentage_of_total_network": "0.00",
+      "avg_distance_m": "63.32",
+      "closest_camera_m": "63.32",
+      "camera_codes": "ASE-43"
+    }
+  ],
+  "network_comparison_by_ward": [
+    {
+      "ward": "Parkdale",
+      "total_cameras": 8,
+      "cameras_near_schools": 6,
+      "pct_cameras_near_schools": 75.0,
+      "total_tickets": 90863,
+      "tickets_near_schools": 22003,
+      "pct_tickets_near_schools": "24.22",
+      "total_fines": "4543150.00"
+    },
+    {
+      "ward": "Toronto",
+      "total_cameras": 15,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 26.7,
+      "total_tickets": 86722,
+      "tickets_near_schools": 6286,
+      "pct_tickets_near_schools": "7.25",
+      "total_fines": "4336100.00"
+    },
+    {
+      "ward": "16.0",
+      "total_cameras": 20,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 25.0,
+      "total_tickets": 81345,
+      "tickets_near_schools": 15498,
+      "pct_tickets_near_schools": "19.05",
+      "total_fines": "4067250.00"
+    },
+    {
+      "ward": "2.0",
+      "total_cameras": 17,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 11.8,
+      "total_tickets": 74223,
+      "tickets_near_schools": 3084,
+      "pct_tickets_near_schools": "4.16",
+      "total_fines": "3711150.00"
+    },
+    {
+      "ward": "17.0",
+      "total_cameras": 16,
+      "cameras_near_schools": 3,
+      "pct_cameras_near_schools": 18.8,
+      "total_tickets": 73695,
+      "tickets_near_schools": 2008,
+      "pct_tickets_near_schools": "2.72",
+      "total_fines": "3684750.00"
+    },
+    {
+      "ward": "Scarborough",
+      "total_cameras": 26,
+      "cameras_near_schools": 14,
+      "pct_cameras_near_schools": 53.8,
+      "total_tickets": 73677,
+      "tickets_near_schools": 32540,
+      "pct_tickets_near_schools": "44.17",
+      "total_fines": "3683850.00"
+    },
+    {
+      "ward": "21.0",
+      "total_cameras": 23,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 8.7,
+      "total_tickets": 70259,
+      "tickets_near_schools": 2319,
+      "pct_tickets_near_schools": "3.30",
+      "total_fines": "3512950.00"
+    },
+    {
+      "ward": "10.0",
+      "total_cameras": 10,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 50.0,
+      "total_tickets": 68270,
+      "tickets_near_schools": 59559,
+      "pct_tickets_near_schools": "87.24",
+      "total_fines": "3413500.00"
+    },
+    {
+      "ward": "12.0",
+      "total_cameras": 15,
+      "cameras_near_schools": 3,
+      "pct_cameras_near_schools": 20.0,
+      "total_tickets": 68220,
+      "tickets_near_schools": 7753,
+      "pct_tickets_near_schools": "11.36",
+      "total_fines": "3411000.00"
+    },
+    {
+      "ward": "15.0",
+      "total_cameras": 16,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 12.5,
+      "total_tickets": 63573,
+      "tickets_near_schools": 2583,
+      "pct_tickets_near_schools": "4.06",
+      "total_fines": "3178650.00"
+    },
+    {
+      "ward": "23.0",
+      "total_cameras": 20,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 25.0,
+      "total_tickets": 61244,
+      "tickets_near_schools": 9842,
+      "pct_tickets_near_schools": "16.07",
+      "total_fines": "3062200.00"
+    },
+    {
+      "ward": "5.0",
+      "total_cameras": 18,
+      "cameras_near_schools": 6,
+      "pct_cameras_near_schools": 33.3,
+      "total_tickets": 58078,
+      "tickets_near_schools": 13887,
+      "pct_tickets_near_schools": "23.91",
+      "total_fines": "2903900.00"
+    },
+    {
+      "ward": "18.0",
+      "total_cameras": 15,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 33.3,
+      "total_tickets": 57566,
+      "tickets_near_schools": 15607,
+      "pct_tickets_near_schools": "27.11",
+      "total_fines": "2878300.00"
+    },
+    {
+      "ward": "24.0",
+      "total_cameras": 17,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 23.5,
+      "total_tickets": 55180,
+      "tickets_near_schools": 17702,
+      "pct_tickets_near_schools": "32.08",
+      "total_fines": "2759000.00"
+    },
+    {
+      "ward": "6.0",
+      "total_cameras": 17,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 11.8,
+      "total_tickets": 54149,
+      "tickets_near_schools": 5533,
+      "pct_tickets_near_schools": "10.22",
+      "total_fines": "2707450.00"
+    },
+    {
+      "ward": "Etobicoke",
+      "total_cameras": 8,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 62.5,
+      "total_tickets": 54029,
+      "tickets_near_schools": 12145,
+      "pct_tickets_near_schools": "22.48",
+      "total_fines": "2701450.00"
+    },
+    {
+      "ward": "8.0",
+      "total_cameras": 13,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 15.4,
+      "total_tickets": 53346,
+      "tickets_near_schools": 6355,
+      "pct_tickets_near_schools": "11.91",
+      "total_fines": "2667300.00"
+    },
+    {
+      "ward": "1.0",
+      "total_cameras": 18,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 11.1,
+      "total_tickets": 51146,
+      "tickets_near_schools": 902,
+      "pct_tickets_near_schools": "1.76",
+      "total_fines": "2557300.00"
+    },
+    {
+      "ward": "Etobicoke Centre",
+      "total_cameras": 10,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 50.0,
+      "total_tickets": 50641,
+      "tickets_near_schools": 5301,
+      "pct_tickets_near_schools": "10.47",
+      "total_fines": "2532050.00"
+    },
+    {
+      "ward": "11.0",
+      "total_cameras": 16,
+      "cameras_near_schools": 3,
+      "pct_cameras_near_schools": 18.8,
+      "total_tickets": 48143,
+      "tickets_near_schools": 2783,
+      "pct_tickets_near_schools": "5.78",
+      "total_fines": "2407150.00"
+    },
+    {
+      "ward": "7.0",
+      "total_cameras": 18,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 11.1,
+      "total_tickets": 46536,
+      "tickets_near_schools": 182,
+      "pct_tickets_near_schools": "0.39",
+      "total_fines": "2326800.00"
+    },
+    {
+      "ward": "14.0",
+      "total_cameras": 17,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 29.4,
+      "total_tickets": 45986,
+      "tickets_near_schools": 8845,
+      "pct_tickets_near_schools": "19.23",
+      "total_fines": "2299300.00"
+    },
+    {
+      "ward": "Etobicoke North",
+      "total_cameras": 10,
+      "cameras_near_schools": 3,
+      "pct_cameras_near_schools": 30.0,
+      "total_tickets": 45457,
+      "tickets_near_schools": 18589,
+      "pct_tickets_near_schools": "40.89",
+      "total_fines": "2272850.00"
+    },
+    {
+      "ward": "3.0",
+      "total_cameras": 13,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 30.8,
+      "total_tickets": 45137,
+      "tickets_near_schools": 6197,
+      "pct_tickets_near_schools": "13.73",
+      "total_fines": "2256850.00"
+    },
+    {
+      "ward": "19.0",
+      "total_cameras": 13,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 38.5,
+      "total_tickets": 44602,
+      "tickets_near_schools": 17961,
+      "pct_tickets_near_schools": "40.27",
+      "total_fines": "2230100.00"
+    },
+    {
+      "ward": "University",
+      "total_cameras": 5,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 80.0,
+      "total_tickets": 43685,
+      "tickets_near_schools": 19994,
+      "pct_tickets_near_schools": "45.77",
+      "total_fines": "2184250.00"
+    },
+    {
+      "ward": "22.0",
+      "total_cameras": 17,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 11.8,
+      "total_tickets": 42917,
+      "tickets_near_schools": 105,
+      "pct_tickets_near_schools": "0.24",
+      "total_fines": "2145850.00"
+    },
+    {
+      "ward": "Scarborough North",
+      "total_cameras": 10,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 40.0,
+      "total_tickets": 35918,
+      "tickets_near_schools": 126,
+      "pct_tickets_near_schools": "0.35",
+      "total_fines": "1795900.00"
+    },
+    {
+      "ward": "Davenport",
+      "total_cameras": 6,
+      "cameras_near_schools": 3,
+      "pct_cameras_near_schools": 50.0,
+      "total_tickets": 35155,
+      "tickets_near_schools": 14590,
+      "pct_tickets_near_schools": "41.50",
+      "total_fines": "1757750.00"
+    },
+    {
+      "ward": "Eglinton",
+      "total_cameras": 8,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 50.0,
+      "total_tickets": 32594,
+      "tickets_near_schools": 19313,
+      "pct_tickets_near_schools": "59.25",
+      "total_fines": "1629700.00"
+    },
+    {
+      "ward": "20.0",
+      "total_cameras": 17,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 23.5,
+      "total_tickets": 31244,
+      "tickets_near_schools": 1233,
+      "pct_tickets_near_schools": "3.95",
+      "total_fines": "1562200.00"
+    },
+    {
+      "ward": "13.0",
+      "total_cameras": 13,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 30.8,
+      "total_tickets": 30743,
+      "tickets_near_schools": 158,
+      "pct_tickets_near_schools": "0.51",
+      "total_fines": "1537150.00"
+    },
+    {
+      "ward": "York Centre",
+      "total_cameras": 7,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 28.6,
+      "total_tickets": 26192,
+      "tickets_near_schools": 4326,
+      "pct_tickets_near_schools": "16.52",
+      "total_fines": "1309600.00"
+    },
+    {
+      "ward": "4.0",
+      "total_cameras": 10,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 40.0,
+      "total_tickets": 25770,
+      "tickets_near_schools": 13717,
+      "pct_tickets_near_schools": "53.23",
+      "total_fines": "1288500.00"
+    },
+    {
+      "ward": "Don Valley West",
+      "total_cameras": 9,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 55.6,
+      "total_tickets": 25674,
+      "tickets_near_schools": 24869,
+      "pct_tickets_near_schools": "96.86",
+      "total_fines": "1283700.00"
+    },
+    {
+      "ward": "9.0",
+      "total_cameras": 9,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 22.2,
+      "total_tickets": 25447,
+      "tickets_near_schools": 3475,
+      "pct_tickets_near_schools": "13.66",
+      "total_fines": "1272350.00"
+    },
+    {
+      "ward": "25.0",
+      "total_cameras": 18,
+      "cameras_near_schools": 8,
+      "pct_cameras_near_schools": 44.4,
+      "total_tickets": 25086,
+      "tickets_near_schools": 9551,
+      "pct_tickets_near_schools": "38.07",
+      "total_fines": "1254300.00"
+    },
+    {
+      "ward": "Toronto Centre",
+      "total_cameras": 5,
+      "cameras_near_schools": 1,
+      "pct_cameras_near_schools": 20.0,
+      "total_tickets": 24393,
+      "tickets_near_schools": 4667,
+      "pct_tickets_near_schools": "19.13",
+      "total_fines": "1219650.00"
+    },
+    {
+      "ward": "York South",
+      "total_cameras": 9,
+      "cameras_near_schools": 3,
+      "pct_cameras_near_schools": 33.3,
+      "total_tickets": 24347,
+      "tickets_near_schools": 14696,
+      "pct_tickets_near_schools": "60.36",
+      "total_fines": "1217350.00"
+    },
+    {
+      "ward": "Willowdale",
+      "total_cameras": 10,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 50.0,
+      "total_tickets": 18038,
+      "tickets_near_schools": 10878,
+      "pct_tickets_near_schools": "60.31",
+      "total_fines": "901900.00"
+    },
+    {
+      "ward": "Scarborough Southwest",
+      "total_cameras": 8,
+      "cameras_near_schools": 4,
+      "pct_cameras_near_schools": 50.0,
+      "total_tickets": 17679,
+      "tickets_near_schools": 12739,
+      "pct_tickets_near_schools": "72.06",
+      "total_fines": "883950.00"
+    },
+    {
+      "ward": "Don Valley East",
+      "total_cameras": 7,
+      "cameras_near_schools": 0,
+      "pct_cameras_near_schools": 0.0,
+      "total_tickets": 15486,
+      "tickets_near_schools": 0,
+      "pct_tickets_near_schools": "0.00",
+      "total_fines": "774300.00"
+    },
+    {
+      "ward": "Don Valley North",
+      "total_cameras": 8,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 62.5,
+      "total_tickets": 14246,
+      "tickets_near_schools": 13685,
+      "pct_tickets_near_schools": "96.06",
+      "total_fines": "712300.00"
+    },
+    {
+      "ward": "Scarborough Centre",
+      "total_cameras": 9,
+      "cameras_near_schools": 3,
+      "pct_cameras_near_schools": 33.3,
+      "total_tickets": 13878,
+      "tickets_near_schools": 4779,
+      "pct_tickets_near_schools": "34.44",
+      "total_fines": "693900.00"
+    },
+    {
+      "ward": "Beaches",
+      "total_cameras": 6,
+      "cameras_near_schools": 2,
+      "pct_cameras_near_schools": 33.3,
+      "total_tickets": 12700,
+      "tickets_near_schools": 6800,
+      "pct_tickets_near_schools": "53.54",
+      "total_fines": "635000.00"
+    },
+    {
+      "ward": "Humber River",
+      "total_cameras": 8,
+      "cameras_near_schools": 1,
+      "pct_cameras_near_schools": 12.5,
+      "total_tickets": 10876,
+      "tickets_near_schools": 0,
+      "pct_tickets_near_schools": "0.00",
+      "total_fines": "543800.00"
+    },
+    {
+      "ward": "Spadina",
+      "total_cameras": 5,
+      "cameras_near_schools": 5,
+      "pct_cameras_near_schools": 100.0,
+      "total_tickets": 522,
+      "tickets_near_schools": 522,
+      "pct_tickets_near_schools": "100.00",
+      "total_fines": "26100.00"
+    }
+  ]
+}
