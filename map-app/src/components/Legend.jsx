@@ -139,6 +139,61 @@ export function Legend({ visible = true, dataset = 'parking_tickets' }) {
             </div>
           )}
 
+          <div className="legend-section">
+            <div className="legend-title">Enforcement Cameras & Schools</div>
+            <p className="legend-intro">
+              Schools and enforcement cameras shown in different colors by type and status.
+            </p>
+            <div className="legend-item">
+              <div
+                className="legend-color circle"
+                style={{ backgroundColor: '#FFA500' }}
+              />
+              <span>School</span>
+            </div>
+            <div className="legend-subsection">
+              <span className="legend-subsection-title">ASE Cameras</span>
+              <div className="legend-item">
+                <div
+                  className="legend-color circle"
+                  style={{ backgroundColor: '#FF0000' }}
+                />
+                <span>Active</span>
+              </div>
+              <div className="legend-item">
+                <div
+                  className="legend-color circle"
+                  style={{ backgroundColor: '#FFFF00', border: '1px solid #999' }}
+                />
+                <span>Planned</span>
+              </div>
+              <div className="legend-item">
+                <div
+                  className="legend-color circle"
+                  style={{ backgroundColor: '#CCCCCC', opacity: 0.5 }}
+                />
+                <span>Historical</span>
+              </div>
+            </div>
+            <div className="legend-subsection">
+              <span className="legend-subsection-title">Red Light Cameras</span>
+              <div className="legend-item">
+                <div
+                  className="legend-color circle"
+                  style={{ backgroundColor: '#00FF00' }}
+                />
+                <span>Active</span>
+              </div>
+              <div className="legend-item">
+                <div
+                  className="legend-color circle"
+                  style={{ backgroundColor: '#AAAAAA', opacity: 0.4 }}
+                />
+                <span>Decommissioned</span>
+              </div>
+            </div>
+          </div>
+
           <div className="attribution">
             <small>
               Data: City of Toronto Open Data Portal<br/>

@@ -368,6 +368,22 @@
   margin-bottom: 6px;
 }
 
+.legend-subsection {
+  margin: 8px 0 8px 0;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.legend-subsection-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: block;
+  margin-bottom: 4px;
+}
+
 .legend-item {
   display: flex;
   align-items: center;
