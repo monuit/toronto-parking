@@ -8,6 +8,7 @@ const TABS = [
   { id: 'parking', label: 'Parking Tickets' },
   { id: 'red_light', label: 'Red Light Cameras' },
   { id: 'ase', label: 'Automated Speed Enforcement' },
+  { id: 'schools', label: 'Schools Geography' },
 ];
 
 const KOFI_URL = 'https://ko-fi.com/Z8Z51MBSO5';
@@ -44,6 +45,43 @@ export function HowItWorks() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'schools':
+        return (
+          <div className="modal-section">
+            <h3>🏫 Schools Geography</h3>
+            <p>
+              Toronto has <strong>585 schools</strong> across the city. This map overlays school locations alongside enforcement cameras to help you visualize proximity relationships.
+            </p>
+            <p>
+              Schools are marked in <strong>bright orange</strong> and include boundaries within 150 meters, so you can see which streets have cameras operating near educational institutions.
+            </p>
+            <p><strong>How this works:</strong></p>
+            <ol>
+              <li>School locations are sourced from Toronto&apos;s Open Data Portal and geocoded with precise coordinates.</li>
+              <li>Automated Speed Enforcement (ASE) and Red Light Cameras are spatially indexed against school points.</li>
+              <li>The <strong>150-meter proximity buffer</strong> highlights cameras that may operate near schools.</li>
+              <li>Cameras are color-coded by status:</li>
+              <ul>
+                <li><strong style={{ color: '#FF0000' }}>Red (ASE-Active)</strong>: Currently enforcing speed violations</li>
+                <li><strong style={{ color: '#FFFF00' }}>Yellow (ASE-Planned)</strong>: Deployment planned but not yet active</li>
+                <li><strong style={{ color: '#CCCCCC' }}>Gray (ASE-Historical)</strong>: Previously operated, now inactive</li>
+                <li><strong style={{ color: '#00FF00' }}>Green (Red Light-Active)</strong>: Currently enforcing red light violations</li>
+                <li><strong style={{ color: '#AAAAAA' }}>Light Gray (Red Light-Decommissioned)</strong>: No longer in service</li>
+              </ul>
+            </ol>
+            <p>
+              This visualization helps answer questions like: &quot;Are there speed cameras on streets near schools?&quot; and &quot;Where do the most active enforcement zones overlap with school zones?&quot;
+            </p>
+            <p>
+              Questions or suggestions? Reach out on <a href="https://x.com/moevals" target="_blank" rel="noreferrer">X</a> or email
+              {' '}<a href="mailto:hi@monuit.dev">hi@monuit.dev</a>.
+            </p>
+            <p>
+              By <a href="https://monuit.dev" target="_blank" rel="noreferrer">Moe</a>. Not affiliated with the Toronto city government.
+            </p>
+            <KofiButton active={activeTab === 'schools'} />
+          </div>
+        );
       case 'red_light':
         return (
           <div className="modal-section">
