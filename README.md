@@ -18,12 +18,13 @@ PostGIS, Redis, and PMTiles keep tiles snappy across the GTA.
 2. [Architecture](#architecture)
 3. [Run it locally](#run-it-locally)
 4. [Environment](#environment)
-5. [Data pipeline](#data-pipeline)
-6. [Deployment](#deployment)
-7. [Project structure](#project-structure)
-8. [Contribution guide](#contribution-guide)
-9. [Attribution](#attribution)
-10. [Next steps](#next-steps)
+5. [Analysis & Visualizations](#analysis--visualizations)
+6. [Data pipeline](#data-pipeline)
+7. [Deployment](#deployment)
+8. [Project structure](#project-structure)
+9. [Contribution guide](#contribution-guide)
+10. [Attribution](#attribution)
+11. [Next steps](#next-steps)
 
 ## Why it matters
 
@@ -100,6 +101,55 @@ Fill in Postgres, Redis, MapTiler, and MinIO credentials.
 - `MAPLIBRE_API_KEY` stays server-side when `MAPTILER_PROXY_MODE=proxy`.
 - `PMTILES_*` values control shard location and CDN base URLs.
 - Client vars (`VITE_*`) mirror backend paths for the browser bundle.
+
+## Analysis & Visualizations
+
+Toronto parking data reveals fascinating enforcement rhythms. We've analyzed 37+ million tickets (2008–2024) to uncover patterns:
+
+### Key Findings
+
+- **Daily Patterns**: Tuesday peaks at 5.8M tickets (+10% above average). Sundays drop 27% below average. **Weekends show 22% fewer tickets.**
+- **Seasonal Trends**: March averages 209k tickets/month; February bottoms at 167k. **25% seasonal variance.**
+- **Long-term Decline**: Enforcement dropped 21% from 2008 (217k/month) to 2024 (167k/month).
+- **Holiday Impact**: Major holidays like Christmas show **50–72% reductions** (systematic policy).
+- **Fine Escalation**: Average fines rose **95%** from ~$35 (2008) to ~$77 (2024).
+
+### Visualization Gallery
+
+![Daily Enforcement Patterns](docs/analysis/daily-patterns.png)  
+*Weekday dominance: Tuesday is the busiest enforcement day; weekends are 22% lower.*
+
+![Seasonal Enforcement Patterns](docs/analysis/seasonal-patterns.png)  
+*Spring peaks and winter valleys show consistent 25% seasonal variance across 17 years.*
+
+![Enforcement Anomalies](docs/analysis/anomalies.png)  
+*Z-score analysis reveals 20+ special events—Christmas 2022 was the most severe anomaly (−72%).*
+
+![Enforcement Intensity Heatmap](docs/analysis/intensity-heatmap.png)  
+*Year-by-month heatmap shows the 2008 peak, COVID-19 dip (April–June 2020), and recovery.*
+
+![Average Fine Amounts by Day](docs/analysis/fine-amounts.png)  
+*Weekday fines average 10% higher than weekends; consistent pattern across 17 years.*
+
+### How to Regenerate Analysis
+
+The analysis scripts live in `map-app/scripts/`:
+
+```bash
+# Generate raw data (37+ million records aggregated)
+node map-app/scripts/enforce_rhythm_analyzer.mjs
+
+# Process insights and create summaries
+node map-app/scripts/analyze_enforcement_insights.mjs
+
+# Rebuild visualizations
+node generate_visualizations.mjs
+```
+
+Results are saved to:
+- `output/enforcement_rhythms_report.json` — Raw aggregations
+- `ENFORCEMENT_RHYTHMS_2008_2024.md` — Full report with recommendations
+- `docs/analysis/*.png` — PNG charts
 
 ## Data pipeline
 
