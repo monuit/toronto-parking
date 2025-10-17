@@ -131,25 +131,6 @@ Toronto parking data reveals fascinating enforcement rhythms. We've analyzed 37+
 ![Average Fine Amounts by Day](docs/analysis/fine-amounts.png)  
 *Weekday fines average 10% higher than weekends; consistent pattern across 17 years.*
 
-### How to Regenerate Analysis
-
-The analysis scripts live in `map-app/scripts/`:
-
-```bash
-# Generate raw data (37+ million records aggregated)
-node map-app/scripts/enforce_rhythm_analyzer.mjs
-
-# Process insights and create summaries
-node map-app/scripts/analyze_enforcement_insights.mjs
-
-# Rebuild visualizations
-node generate_visualizations.mjs
-```
-
-Results are saved to:
-- `output/enforcement_rhythms_report.json` — Raw aggregations
-- `ENFORCEMENT_RHYTHMS_2008_2024.md` — Full report with recommendations
-- `docs/analysis/*.png` — PNG charts
 
 ## Data pipeline
 
