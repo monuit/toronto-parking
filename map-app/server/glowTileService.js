@@ -63,7 +63,7 @@ class GlowTileService {
           /* ignore */
         });
       }
-      this.pool = new Pool({ connectionString: dbConfig.connectionString, ssl: dbConfig.ssl });
+      this.pool = new Pool({ connectionString: dbConfig.connectionString, ssl: dbConfig.ssl, max: 4 });
       this.poolSignature = dbConfig.connectionString;
     }
     this.dbAvailable = Boolean(this.pool);
