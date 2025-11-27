@@ -1,0 +1,2637 @@
+{
+  "total_distinct": 658,
+  "infractions": [
+    {
+      "code": "1",
+      "description": "PARK AT EXPIRED METER"
+    },
+    {
+      "code": "1",
+      "description": "PARK FAIL TO DEP FEE IN METER"
+    },
+    {
+      "code": "1",
+      "description": "PARK FAIL TO DEPOSIT FEE METER"
+    },
+    {
+      "code": "1",
+      "description": "PARK-FAIL TO DEPOSIT FEE METER"
+    },
+    {
+      "code": "10",
+      "description": "PARK DESIGNATED HANDICAP SPACE"
+    },
+    {
+      "code": "10",
+      "description": "PARK UNATH VEH IN DES PARK SPC"
+    },
+    {
+      "code": "10",
+      "description": "PARK UNAUTH VEH DES PARK AREA"
+    },
+    {
+      "code": "10",
+      "description": "PARK UNAUTH VEH IN DESIG SPACE"
+    },
+    {
+      "code": "10",
+      "description": "PARK UNAUTH VEH IN HDCPD SPACE"
+    },
+    {
+      "code": "106",
+      "description": "PARK ON SIDE PROH DAY TO SIGN"
+    },
+    {
+      "code": "11",
+      "description": "PARK/STOP MORE 30CM FROM CURB"
+    },
+    {
+      "code": "11",
+      "description": "PARK/STOP MORE THAN 30 CM CURB"
+    },
+    {
+      "code": "11",
+      "description": "PARK/STOP MORE THAN 3O CM CURB"
+    },
+    {
+      "code": "11",
+      "description": "PARK/STOP OVER 30 CM FROM CURB"
+    },
+    {
+      "code": "11",
+      "description": "PARK/STOP OVER 30CM FROM CURB"
+    },
+    {
+      "code": "11",
+      "description": "PARK/STOP RGHT WHLS > 30CM CRB"
+    },
+    {
+      "code": "115",
+      "description": "PARK METERED SPACE PARK LOT"
+    },
+    {
+      "code": "12",
+      "description": "PARK VEHICLE - FOR SALE"
+    },
+    {
+      "code": "12",
+      "description": "PARK VEHICLE - FOR SALE "
+    },
+    {
+      "code": "12",
+      "description": "PARK VEHICLE -FOR SALE"
+    },
+    {
+      "code": "12",
+      "description": "PARK VEHICLE FOR SALE"
+    },
+    {
+      "code": "12",
+      "description": "PARK VEHICLE-FOR SALE"
+    },
+    {
+      "code": "122",
+      "description": "PARK METERED ZONE NOT CLOSE AS"
+    },
+    {
+      "code": "129",
+      "description": "STOP PROH TIME MAITLAND ST."
+    },
+    {
+      "code": "13",
+      "description": "PARK TO WASH/GREASE/REPAIR"
+    },
+    {
+      "code": "13",
+      "description": "PARK VEH TO WASH GREASE REPAIR"
+    },
+    {
+      "code": "13",
+      "description": "PARK VEH TO WASH/GREASE/REPAIR"
+    },
+    {
+      "code": "13",
+      "description": "PARK VEH-TO WASH/GREASE/REPAIR"
+    },
+    {
+      "code": "13",
+      "description": "PARK VEH WASH GREASE REPAIR"
+    },
+    {
+      "code": "13",
+      "description": "PARK VEH.-WASH/GREASE/REPAIR"
+    },
+    {
+      "code": "130",
+      "description": "STOP PROH TIME MUTUAL STREET"
+    },
+    {
+      "code": "131",
+      "description": "STOP PROH TIME MUTUAL STREET"
+    },
+    {
+      "code": "132",
+      "description": "STOP-MORE THAN 1H AT LOC VEND"
+    },
+    {
+      "code": "132",
+      "description": "STOP VEH TO VEND OVER 1 HR 1AR"
+    },
+    {
+      "code": "133",
+      "description": "STOP-MORE THAN 3H ON HWY VEND"
+    },
+    {
+      "code": "134",
+      "description": "PARK IN PUBLIC LANE"
+    },
+    {
+      "code": "134",
+      "description": "PARK-SIGNED HWY-PUBLIC LANE"
+    },
+    {
+      "code": "135",
+      "description": "PARK NORTH SIDE FARNHAM AVENUE"
+    },
+    {
+      "code": "137",
+      "description": "PARK PROH TIME SCOLLARD ST"
+    },
+    {
+      "code": "139",
+      "description": "PARK-PROH TIME ORIOLE ROAD"
+    },
+    {
+      "code": "14",
+      "description": "PARK-OBS DRIVEWAY/LANEWAY/RAMP"
+    },
+    {
+      "code": "14",
+      "description": "PARK OBSTRUCT DRIVE/LANE"
+    },
+    {
+      "code": "14",
+      "description": "PARK - OBSTRUCT DRIVEWAY/LANE"
+    },
+    {
+      "code": "14",
+      "description": "PARK OBSTRUCT DRIVEWAY/LANEWAY"
+    },
+    {
+      "code": "14",
+      "description": "PARK-OBSTRUCT DRIVEWAY/LANEWAY"
+    },
+    {
+      "code": "14",
+      "description": "PARK-OBSTRUCT (DRWAY/LANEWAY)"
+    },
+    {
+      "code": "140",
+      "description": "STOP/PARK/LEAVE/STAND CLSD ST"
+    },
+    {
+      "code": "142",
+      "description": "PARK PROHIBITED DAY/TIME"
+    },
+    {
+      "code": "143",
+      "description": "PARK-OVER TIME LIMIT"
+    },
+    {
+      "code": "144",
+      "description": "PARK/STOP/STAND FOR VENDING"
+    },
+    {
+      "code": "147",
+      "description": "STOP/STAND/PARK - NO VEND ZONE"
+    },
+    {
+      "code": "148",
+      "description": "STOP/STAND/PARK VEND CONT ZONE"
+    },
+    {
+      "code": "148",
+      "description": "STOP UNAUTH VEHICLE VEND AREA"
+    },
+    {
+      "code": "149",
+      "description": "STOP/STAND/PARK DESIGNATE AREA"
+    },
+    {
+      "code": "15",
+      "description": "PARK - 3 M OF FIRE HYDRANT"
+    },
+    {
+      "code": "15",
+      "description": "PARK 3 M OF FIRE HYDRANT"
+    },
+    {
+      "code": "15",
+      "description": "PARK - 3M OF FIRE HYDRANT"
+    },
+    {
+      "code": "15",
+      "description": "PARK 3M OF FIRE HYDRANT"
+    },
+    {
+      "code": "15",
+      "description": "PARK-3M OF FIRE HYDRANT"
+    },
+    {
+      "code": "15",
+      "description": "PARK-WITHIN 3M OF FIRE HYDRANT"
+    },
+    {
+      "code": "150",
+      "description": "PARK VEH BEYOND DESIG AREA"
+    },
+    {
+      "code": "151",
+      "description": "PARK VEH BEYOND DESIG AREA"
+    },
+    {
+      "code": "152",
+      "description": "PARK VEHICLE/MOTORCYCLE .3M S"
+    },
+    {
+      "code": "153",
+      "description": "PARK VEHICLE MOTOROCYCLE WITHI"
+    },
+    {
+      "code": "154",
+      "description": "PARK VEHICLE/MOTORCYCLE WITHIN"
+    },
+    {
+      "code": "155",
+      "description": "PARK VEHICLE/MOTORCYCLE WITHIN"
+    },
+    {
+      "code": "156",
+      "description": "PARK VEHICLE/MOTORCYCLE .3M WL"
+    },
+    {
+      "code": "157",
+      "description": "STAND VEHICLE UNATTENDED"
+    },
+    {
+      "code": "158",
+      "description": "PARK VEHICLE IN CITY PARK"
+    },
+    {
+      "code": "16",
+      "description": "PARK 9M OF INTERSCTING HIGHWAY"
+    },
+    {
+      "code": "16",
+      "description": "PARK 9 M OF INTERSECTING HWY"
+    },
+    {
+      "code": "16",
+      "description": "PARK - 9M OF INTERSECTING HWY"
+    },
+    {
+      "code": "16",
+      "description": "PARK 9M OF INTERSECTING HWY"
+    },
+    {
+      "code": "16",
+      "description": "PARK-9M OF INTERSECTING HWY"
+    },
+    {
+      "code": "16",
+      "description": "PARK-WITHIN 9M INTERSECT ROAD"
+    },
+    {
+      "code": "166",
+      "description": "PARK ON TRINITY DRIVE"
+    },
+    {
+      "code": "17",
+      "description": "PARK 15M OF INTERSECTING HWY"
+    },
+    {
+      "code": "17",
+      "description": "PARK HWY 15 M OF INTERSECTION"
+    },
+    {
+      "code": "17",
+      "description": "PARK HWY 15M OF INTERSECTION"
+    },
+    {
+      "code": "17",
+      "description": "PARK-HWY-15M OF INTERSECTION"
+    },
+    {
+      "code": "17",
+      "description": "PARK-SIGNED HWY-15M INTERSECTN"
+    },
+    {
+      "code": "18",
+      "description": "PARK-30.5M SIGNALIZED INTERSCT"
+    },
+    {
+      "code": "18",
+      "description": "PARK 30.5M SIGNLD INTERSECTION"
+    },
+    {
+      "code": "18",
+      "description": "PARK HWY 30.5M OF INTERSECTION"
+    },
+    {
+      "code": "18",
+      "description": "PARK HWY 30.5 M OF SIGNAL INT"
+    },
+    {
+      "code": "18",
+      "description": "PARK HWY 30.5M OF SIGNL INTERS"
+    },
+    {
+      "code": "18",
+      "description": "PARK-HWY-30.5M SGNLZD INTRSCTN"
+    },
+    {
+      "code": "18",
+      "description": "PARK-HWY-30.5M SIGNLZD INTERSC"
+    },
+    {
+      "code": "18",
+      "description": "PARK HWY 30.5 OF SIGNAL INTER"
+    },
+    {
+      "code": "182",
+      "description": "PARK - NO FEE FOR PERIOD USED"
+    },
+    {
+      "code": "184",
+      "description": "PARK-NOT WITHIN PERIOD"
+    },
+    {
+      "code": "189",
+      "description": "PARK IN DESIG. LOADING ZONE"
+    },
+    {
+      "code": "19",
+      "description": "PARK ENTER/EXIT OF BUILDING"
+    },
+    {
+      "code": "19",
+      "description": "PARK-FRONT OF BLDG ENTRY/EXIT"
+    },
+    {
+      "code": "19",
+      "description": "PARK HWY ENTER/EXIT BLD ENCL"
+    },
+    {
+      "code": "19",
+      "description": "PARK-HWY-ENTR/EXIT-BLD ENCLSD"
+    },
+    {
+      "code": "19",
+      "description": "PARK-HWY-ENTR/EXIT BLDG ENCLSD"
+    },
+    {
+      "code": "19",
+      "description": "PARK HWY IN/OUT BLDG SPACE"
+    },
+    {
+      "code": "192",
+      "description": "STAND SIGNED TRANSIT STOP"
+    },
+    {
+      "code": "193",
+      "description": "STOP PROHIBITED TIME - WOOD ST"
+    },
+    {
+      "code": "197",
+      "description": "PARK NOT WITHIN PERMITTED TIME"
+    },
+    {
+      "code": "198",
+      "description": "PARK VEH - MTHA PROP - NO CONS"
+    },
+    {
+      "code": "2",
+      "description": "PARK - LONGER THAN 3 HOURS"
+    },
+    {
+      "code": "2",
+      "description": "PARK - LONGER THAN 3 HOURS "
+    },
+    {
+      "code": "2",
+      "description": "PARK LONGER THAN 3 HOURS"
+    },
+    {
+      "code": "2",
+      "description": "PARK-LONGER THAN 3 HOURS"
+    },
+    {
+      "code": "2",
+      "description": "PARK OVER 3 HOURS"
+    },
+    {
+      "code": "20",
+      "description": "PARK-7.5M FIRE HALL SAME SIDE"
+    },
+    {
+      "code": "20",
+      "description": "PARK 7.5M OF FIRE HALL"
+    },
+    {
+      "code": "20",
+      "description": "PARK HWY 7.5M FIREHALL SIDE"
+    },
+    {
+      "code": "20",
+      "description": "PARK HWY 7.5M FIRE HALL SM SDE"
+    },
+    {
+      "code": "20",
+      "description": "PARK-HWY-7.5M FRHALL SAME SIDE"
+    },
+    {
+      "code": "20",
+      "description": "PARK-HWY-7.5M FRHALL-SM SIDE"
+    },
+    {
+      "code": "20",
+      "description": "PARK HWY 7.5M OF FIREHALL SAME"
+    },
+    {
+      "code": "20",
+      "description": "STOP-7.5M FIRE HALL SAME SIDE"
+    },
+    {
+      "code": "200",
+      "description": "PARK ON-STREET HANDICAP SPACE"
+    },
+    {
+      "code": "201",
+      "description": "STAND ON-STREET HANDICAP SPACE"
+    },
+    {
+      "code": "202",
+      "description": "PARK HANDICAP LOADING ZONE"
+    },
+    {
+      "code": "203",
+      "description": "STAND HANDICAP LOADING ZONE"
+    },
+    {
+      "code": "205",
+      "description": "STOP/STAND/PARK VEND NO PERMIT"
+    },
+    {
+      "code": "206",
+      "description": "STOP/STAND/PARK NOT DESIG AREA"
+    },
+    {
+      "code": "207",
+      "description": "PARK FAIL TO DEP. FEE MACHINE"
+    },
+    {
+      "code": "207",
+      "description": "PARK MACHINE-REQD FEE NOT PAID"
+    },
+    {
+      "code": "208",
+      "description": "MOBILE ZONE - REQ FEE NOT PAID"
+    },
+    {
+      "code": "208",
+      "description": "PARK FAIL TO ACTIVATE MACHINE"
+    },
+    {
+      "code": "208",
+      "description": "PARK FAIL TO ATIVATE MACHINE"
+    },
+    {
+      "code": "208",
+      "description": "PARK MACHINE-FAIL TO ACTIVATE"
+    },
+    {
+      "code": "209",
+      "description": "PARK MACHINE-NOT IN PERMITD TM"
+    },
+    {
+      "code": "209",
+      "description": "PARK NOT WITHIN PERMITTED TIME"
+    },
+    {
+      "code": "21",
+      "description": "PARK-30.5M FIRE HALL OPP SIDE"
+    },
+    {
+      "code": "21",
+      "description": "PARK 30.5M OF FIRE HALL"
+    },
+    {
+      "code": "21",
+      "description": "PARK HWY 30.5 FIREHALL OPP SDE"
+    },
+    {
+      "code": "21",
+      "description": "PARK HWY 30.5M FIREHALL OPP SD"
+    },
+    {
+      "code": "21",
+      "description": "PARK-HWY-30.5M FRHALL OPP SIDE"
+    },
+    {
+      "code": "21",
+      "description": "PARK-HWY-30.5M FRHALL-OPP SIDE"
+    },
+    {
+      "code": "21",
+      "description": "STOP-30.5M FIRE HALL OPP SIDE"
+    },
+    {
+      "code": "210",
+      "description": "PARK FAIL TO DISPLAY RECEIPT"
+    },
+    {
+      "code": "211",
+      "description": "PARK OTHER THAN METERED SPACE"
+    },
+    {
+      "code": "212",
+      "description": "PARK EXCEEDS MAXIMUM TIME"
+    },
+    {
+      "code": "216",
+      "description": "PARK LOCATION PERMIT NOT VALID"
+    },
+    {
+      "code": "219",
+      "description": "STAND IN DESIG LOADING ZONE"
+    },
+    {
+      "code": "22",
+      "description": "PARK-15M FAR SIDE OF CROSSWALK"
+    },
+    {
+      "code": "22",
+      "description": "PARK 15M PAST SIGNL CROSSWALK"
+    },
+    {
+      "code": "22",
+      "description": "PARK SIGNALZD XWALK 15M SM SDE"
+    },
+    {
+      "code": "22",
+      "description": "PARK-WTHN 15M PAST SGNLZ XWALK"
+    },
+    {
+      "code": "220",
+      "description": "PARK ON TRACK ON SNOW ROUTE"
+    },
+    {
+      "code": "220",
+      "description": "PARK VEH.-STRTCAR TRK SNOW RT"
+    },
+    {
+      "code": "222",
+      "description": "PARK-BLOCK STREETCAR-SNOW RTE"
+    },
+    {
+      "code": "222",
+      "description": "PARK VEH.-BLOCK STCAR SNOW RT"
+    },
+    {
+      "code": "223",
+      "description": "STAND VEH.-BLOCK STCAR SNOW RT"
+    },
+    {
+      "code": "224",
+      "description": "PARK VEH.-PROHIBITED AREA SNOW"
+    },
+    {
+      "code": "23",
+      "description": "PARK-30.5M APPROACH TO CRSSWLK"
+    },
+    {
+      "code": "23",
+      "description": "PARK 30.5M BEFORE SIGNL CROSS"
+    },
+    {
+      "code": "23",
+      "description": "PARK 30.5M OF SIGNAL CROSSWALK"
+    },
+    {
+      "code": "23",
+      "description": "PARK 30.5M XWALK OPPOSITE SIDE"
+    },
+    {
+      "code": "23",
+      "description": "PARK IN 30.5M SIGNAL X WALK"
+    },
+    {
+      "code": "23",
+      "description": "PARK-WTHN 30.5M BFR SGNLZ XWLK"
+    },
+    {
+      "code": "24",
+      "description": "PARK HIRED CAB UNAUTH LOCATION"
+    },
+    {
+      "code": "24",
+      "description": "PARK TAXI FOR HIRE UNATH LOCAT"
+    },
+    {
+      "code": "24",
+      "description": "PARK TAXI FOR HIRE UNAUTH LOC"
+    },
+    {
+      "code": "24",
+      "description": "PARK TAXI FOR HIRE UNAUTH LOCA"
+    },
+    {
+      "code": "24",
+      "description": "PARK TAXI-FOR HR-UNATH LOCATN"
+    },
+    {
+      "code": "248",
+      "description": "PARK VEHICLE WHILE NOT IN PARK"
+    },
+    {
+      "code": "249",
+      "description": "PARK VEHICLE LONGER THAN 24HR"
+    },
+    {
+      "code": "25",
+      "description": "PARK - SIGNED TAXICAB STAND"
+    },
+    {
+      "code": "25",
+      "description": "PARK SIGNED TAXICAB STAND"
+    },
+    {
+      "code": "25",
+      "description": "PARK-SIGNED TAXICAB STAND"
+    },
+    {
+      "code": "25",
+      "description": "STAND SIGNED TAXI CAB STAND"
+    },
+    {
+      "code": "25",
+      "description": "STAND SIGNED TAXICAB STAND"
+    },
+    {
+      "code": "250",
+      "description": "PARK IN PARK NOT IN DESIG AREA"
+    },
+    {
+      "code": "251",
+      "description": "LEAVE IN PARK NOT DESIG AREA"
+    },
+    {
+      "code": "252",
+      "description": "PARK IN PARK - PROHIBITED AREA"
+    },
+    {
+      "code": "255",
+      "description": "PARK OVERNIGHT NO PERMIT"
+    },
+    {
+      "code": "256",
+      "description": "LEAVE OVERNIGHT WITHOUT PERMIT"
+    },
+    {
+      "code": "257",
+      "description": "PARK CONTRARY POSTED CONDITION"
+    },
+    {
+      "code": "258",
+      "description": "STOP CONTRARY POSTED CONDITION"
+    },
+    {
+      "code": "259",
+      "description": "PARK ACC NO PERMIT"
+    },
+    {
+      "code": "259",
+      "description": "STOP/PARK DIS SPACE NO PERMIT"
+    },
+    {
+      "code": "26",
+      "description": "PARK ON BLVD NO PERMISSION"
+    },
+    {
+      "code": "26",
+      "description": "PARK - ON BOULEVARD"
+    },
+    {
+      "code": "26",
+      "description": "PARK ON BOULEVARD"
+    },
+    {
+      "code": "26",
+      "description": "PARK VEHICLE ON BOULEVARD"
+    },
+    {
+      "code": "260",
+      "description": "STOP ACC NO PERMIT"
+    },
+    {
+      "code": "260",
+      "description": "STOP/PARK DIS SPACE NO PERMIT"
+    },
+    {
+      "code": "261",
+      "description": "PARK MTR REC VE NOT DESIG AREA"
+    },
+    {
+      "code": "262",
+      "description": "STAND VEHICLE WHERE PROHIBITED"
+    },
+    {
+      "code": "263",
+      "description": "PARK VEHICLE - PROHIBITED TIME"
+    },
+    {
+      "code": "263",
+      "description": "PARK VEH LNGR THAN 20 MIN"
+    },
+    {
+      "code": "264",
+      "description": "STAND VEH - PROHIBITED TIME"
+    },
+    {
+      "code": "265",
+      "description": "PARK VEHICLE ON ROADWAY"
+    },
+    {
+      "code": "266",
+      "description": "PARK VEHICLE PROHIBITED TIME"
+    },
+    {
+      "code": "267",
+      "description": "STOP VEH - PROHIBITED TIME"
+    },
+    {
+      "code": "28",
+      "description": "PARK-N.YORK 2AM-6AM DEC1-MAR31"
+    },
+    {
+      "code": "28",
+      "description": "PARK ON   2AM-6AM DEC 1-MAR 31"
+    },
+    {
+      "code": "29",
+      "description": "Park Prohibited Area No Permit"
+    },
+    {
+      "code": "29",
+      "description": "PARK PROHIBITED TIME NO PERMIT"
+    },
+    {
+      "code": "29",
+      "description": "PARK-SIGNED HWY-PROHIBIT DY/TM"
+    },
+    {
+      "code": "29",
+      "description": "PARK/STAND/STOP NO PERMIT"
+    },
+    {
+      "code": "29",
+      "description": "PARK VEH ON ST WITHOUT PERMIT"
+    },
+    {
+      "code": "3",
+      "description": "PARK/LEAVE ON PRIVATE PROPERTY"
+    },
+    {
+      "code": "3",
+      "description": "PARK - LONGER THAN 3 HOURS"
+    },
+    {
+      "code": "3",
+      "description": "PARK ON PRIVATE PROPERTY"
+    },
+    {
+      "code": "3",
+      "description": "PARK ON PRIV PROP NO CONSENT"
+    },
+    {
+      "code": "3",
+      "description": "PARK ON PRIV PROP WITHOUT CONS"
+    },
+    {
+      "code": "3",
+      "description": "PARK PRIVATE PROP NO CONSENT"
+    },
+    {
+      "code": "3",
+      "description": "PARK VEH PRIVATE PRO NO CONSEN"
+    },
+    {
+      "code": "30",
+      "description": "STOP ON/OVER SIDEWALK/FOOTPATH"
+    },
+    {
+      "code": "30",
+      "description": "STOP-ON/OVER SIDEWALK/FOOTPATH"
+    },
+    {
+      "code": "30",
+      "description": "STOP ON/OVER SIDEWALK/PATH"
+    },
+    {
+      "code": "30",
+      "description": "STOP-(ON/OVER) (SIDEWK/FTPATH)"
+    },
+    {
+      "code": "301",
+      "description": "PAR PARK - F TIRES NOT OPP MTR"
+    },
+    {
+      "code": "302",
+      "description": "PAR PARK-R OF VEH NOT OPP MTR"
+    },
+    {
+      "code": "303",
+      "description": "PARK-R OF VEH TOO FAR FROM MTR"
+    },
+    {
+      "code": "304",
+      "description": "PARK-FRONT OF VEH NOT OPP MTR"
+    },
+    {
+      "code": "305",
+      "description": "PARK-F OF VEH TOO FAR FROM MTR"
+    },
+    {
+      "code": "306",
+      "description": "ANGLE PARK-TOO FAR FROM METER"
+    },
+    {
+      "code": "306",
+      "description": "ANGLE PARK-TOO FAR FROM METER "
+    },
+    {
+      "code": "307",
+      "description": "PARK VEHICLE OUTSIDE OF SPACE"
+    },
+    {
+      "code": "307",
+      "description": "PARK VEHICLE OUTSIDE OF SPACE "
+    },
+    {
+      "code": "308",
+      "description": "PARK - 2 SPACES - NO FEE"
+    },
+    {
+      "code": "308",
+      "description": "PARK - 2 SPACES - NO FEE      "
+    },
+    {
+      "code": "309",
+      "description": "PARK-2 SPACES-NO FEE-MTR/MACH"
+    },
+    {
+      "code": "31",
+      "description": "STOP RDSDE STOPPED/PARKED VEH"
+    },
+    {
+      "code": "31",
+      "description": "STOP RDSD STOPPED/PARKED VEH"
+    },
+    {
+      "code": "31",
+      "description": "STOP RD SIDE STOP/PARKED VEH"
+    },
+    {
+      "code": "31",
+      "description": "STOP RD SIDE STOPPED/PARKED VE"
+    },
+    {
+      "code": "31",
+      "description": "STOP ROADSDE STOPPED/PARKED VE"
+    },
+    {
+      "code": "31",
+      "description": "STOP-ROAD SIDE-STOP/PARK VEH."
+    },
+    {
+      "code": "31",
+      "description": "STOP ROADSIDE STOPPED VEHICLE"
+    },
+    {
+      "code": "31",
+      "description": "STOP SIDE STOPPED/PARKED VEH"
+    },
+    {
+      "code": "310",
+      "description": "PARK - METER NOT USED"
+    },
+    {
+      "code": "310",
+      "description": "PARK - METER NOT USED         "
+    },
+    {
+      "code": "311",
+      "description": "PARK-FEE NOT PD FOR TIME USED"
+    },
+    {
+      "code": "311",
+      "description": "PARK-FEE NOT PD FOR TIME USED "
+    },
+    {
+      "code": "312",
+      "description": "PARKING MACH-NOT USED/NO FEE"
+    },
+    {
+      "code": "312",
+      "description": "PARKING MACH-NOT USED/NO FEE  "
+    },
+    {
+      "code": "313",
+      "description": "PARK-FAIL TO ACTIVATE MACHINE"
+    },
+    {
+      "code": "313",
+      "description": "PARK-FAIL TO ACTIVATE MACHINE "
+    },
+    {
+      "code": "314",
+      "description": "PARK - NOT WITHIN PERIOD"
+    },
+    {
+      "code": "314",
+      "description": "PARK - NOT WITHIN PERIOD  "
+    },
+    {
+      "code": "315",
+      "description": "PARK-ISSUED CARD NOT DISPLAYED"
+    },
+    {
+      "code": "316",
+      "description": "PARK - UNAUTHORIZED REPAIRS"
+    },
+    {
+      "code": "317",
+      "description": "PARK/LEAVE CONTRARY TO SIGN"
+    },
+    {
+      "code": "318",
+      "description": "PARK/LEAVE UNPD PARKING INV"
+    },
+    {
+      "code": "319",
+      "description": "PARK/LEAVE BUS CONTR. TO SIGN"
+    },
+    {
+      "code": "32",
+      "description": "STAND VEH HWY 15M PAST ST CAR"
+    },
+    {
+      "code": "32",
+      "description": "STAND VEHICLE-SIGNED HIGHWAY"
+    },
+    {
+      "code": "320",
+      "description": "PARK NON-BUS-BUS PK ZNE DY/TM"
+    },
+    {
+      "code": "322",
+      "description": "STOP NON-BUS - BUS LOAD ZONE"
+    },
+    {
+      "code": "323",
+      "description": "PARK NON-ELECTRIC VEHICLE"
+    },
+    {
+      "code": "324",
+      "description": "PARK ELECTRIC VEHICLE"
+    },
+    {
+      "code": "33",
+      "description": "STAND VEH HWY 24.5 M ST CAR"
+    },
+    {
+      "code": "33",
+      "description": "STAND VEHICLE-SIGNED HIGHWAY-3"
+    },
+    {
+      "code": "332",
+      "description": "PARK NON-BUS-BUS PK SPC/MCHINE"
+    },
+    {
+      "code": "333",
+      "description": "PARK BUS PK SPC/MCHINE-PR TIME"
+    },
+    {
+      "code": "334",
+      "description": "PARK BUS PK SPC/MCHINE-NOFEEPD"
+    },
+    {
+      "code": "335",
+      "description": "PARK MORE THAN 7DAYS NO PERMIT"
+    },
+    {
+      "code": "336",
+      "description": "PARK-FAIL TO DISPLAY PERMIT"
+    },
+    {
+      "code": "337",
+      "description": "PARK - ON BOULEVARD"
+    },
+    {
+      "code": "338",
+      "description": "PARK - BETWEEN ROAD & SIDEWALK"
+    },
+    {
+      "code": "339",
+      "description": "PARK - BOULEVD NO VALID PLATES"
+    },
+    {
+      "code": "34",
+      "description": "STAND VEHICLE SIGNED HIGHWAY 2"
+    },
+    {
+      "code": "34",
+      "description": "STAND VEHICLE-SIGNED HIGHWAY-W"
+    },
+    {
+      "code": "340",
+      "description": "PARK - ON FRONT YARD"
+    },
+    {
+      "code": "341",
+      "description": "PARK - FR YARD NO VALID PLATES"
+    },
+    {
+      "code": "342",
+      "description": "PARK LT 0.3M FROM SIDEWALK"
+    },
+    {
+      "code": "343",
+      "description": "PARK LT 0.3M FROM RES BLD DOOR"
+    },
+    {
+      "code": "344",
+      "description": "PARK LT 0.3M FROM BOTTOM STEP"
+    },
+    {
+      "code": "345",
+      "description": "PARK LT 0.3M FROM WINDOW"
+    },
+    {
+      "code": "346",
+      "description": "PARK LESS THAN 0.3M FROM WALL"
+    },
+    {
+      "code": "347",
+      "description": "PARK IN A FIRE ROUTE"
+    },
+    {
+      "code": "347",
+      "description": "PARK/LEAVE ON PRIVATE PROPERTY"
+    },
+    {
+      "code": "348",
+      "description": "PARK IN ACCESSIBLE NO PERMIT"
+    },
+    {
+      "code": "348",
+      "description": "PARK IN DISABLED NO PERMIT"
+    },
+    {
+      "code": "349",
+      "description": "PARK ACCESSIBLE NOT DROP OFF"
+    },
+    {
+      "code": "349",
+      "description": "PARK IN DISABLED NOT DROP OFF"
+    },
+    {
+      "code": "35",
+      "description": "STAND VEH HWY 18.5M PAST BUS"
+    },
+    {
+      "code": "35",
+      "description": "STAND VEH HWY 18.5M PAST BUS S"
+    },
+    {
+      "code": "35",
+      "description": "STAND VEH HWY 18.5 PAST BUS ST"
+    },
+    {
+      "code": "35",
+      "description": "STAND VEH-HWY-18.5 PST BSTP SM"
+    },
+    {
+      "code": "35",
+      "description": "STAND VEHICLE SIGNED HIGHWAY W"
+    },
+    {
+      "code": "35",
+      "description": "STAND VEHICLE-SIGNED HIGHWAY-W"
+    },
+    {
+      "code": "350",
+      "description": "PARK ACCESSIBLE LOAD NO PERMIT"
+    },
+    {
+      "code": "350",
+      "description": "PARK DISABLD LOADING NO PERMIT"
+    },
+    {
+      "code": "351",
+      "description": "PARK ACCESSIBLE LOAD NOT DRP/O"
+    },
+    {
+      "code": "351",
+      "description": "PARK DISABLD LDG NOT DROP OFF"
+    },
+    {
+      "code": "352",
+      "description": "PARK ONSTRT ACCESSIBLE NO PRMT"
+    },
+    {
+      "code": "352",
+      "description": "PARK ON-STRT DISABLD NO PERMIT"
+    },
+    {
+      "code": "353",
+      "description": "PARK ON-ST DISABLD LDG NO PRMT"
+    },
+    {
+      "code": "353",
+      "description": "PARK ONSTRT ACCESSIBLE NO PRMT"
+    },
+    {
+      "code": "354",
+      "description": "PARK ONSTRT ACCESSIBLE NOT D/O"
+    },
+    {
+      "code": "354",
+      "description": "PARK STR DISABLD LDG NO DROPOF"
+    },
+    {
+      "code": "355",
+      "description": "PARK IN ACCESSIBLE NO PERMIT"
+    },
+    {
+      "code": "355",
+      "description": "PARK IN DISABLED NO PERMIT"
+    },
+    {
+      "code": "356",
+      "description": "STAND IN ACCESSIBLE NO PERMIT"
+    },
+    {
+      "code": "356",
+      "description": "STAND IN DISABLED NO PERMIT"
+    },
+    {
+      "code": "357",
+      "description": "PARK ACCESSIBLE NOT DROP OFF"
+    },
+    {
+      "code": "357",
+      "description": "PARK IN DISABLED NOT DROP OFF"
+    },
+    {
+      "code": "358",
+      "description": "STAND ACCESSIBLE NOT DROP OFF"
+    },
+    {
+      "code": "358",
+      "description": "STAND IN DISABLED NOT DROP OFF"
+    },
+    {
+      "code": "359",
+      "description": "PARK ACCESSIBLE LOAD NO PERMIT"
+    },
+    {
+      "code": "359",
+      "description": "PARK DISABLD LOADING NO PERMIT"
+    },
+    {
+      "code": "36",
+      "description": "STAND VEH HWY 30.5 BEF BST OPP"
+    },
+    {
+      "code": "36",
+      "description": "STAND VEH HWY 30.5 BUS STOP"
+    },
+    {
+      "code": "36",
+      "description": "STAND VEH HWY 30.5M BEF BUS ST"
+    },
+    {
+      "code": "36",
+      "description": "STAND VEH HWY 30.5M BEFORE BUS"
+    },
+    {
+      "code": "360",
+      "description": "STAND DISABL LOADING NO PERMIT"
+    },
+    {
+      "code": "360",
+      "description": "STND ACCESSIBLE LOAD NO PERMIT"
+    },
+    {
+      "code": "361",
+      "description": "PARK ACCESSIBLE LOAD NOT DRP/O"
+    },
+    {
+      "code": "361",
+      "description": "PARK DISABLD LDG NOT DROP OFF"
+    },
+    {
+      "code": "362",
+      "description": "STAND DISABLD LDG NOT DROP OFF"
+    },
+    {
+      "code": "362",
+      "description": "STND ACCESSIBLE LOAD NOT DRP/O"
+    },
+    {
+      "code": "363",
+      "description": "PARK ONSTRT ACCESSIBLE NO PRMT"
+    },
+    {
+      "code": "363",
+      "description": "PARK ON-STRT DISABLD NO PERMIT"
+    },
+    {
+      "code": "364",
+      "description": "STAND ON-STRT DISABL NO PERMIT"
+    },
+    {
+      "code": "364",
+      "description": "STND ONSTRT ACCESSIBLE NO PRMT"
+    },
+    {
+      "code": "365",
+      "description": "STOP ONSTRT ACCESSIBLE NO PRMT"
+    },
+    {
+      "code": "365",
+      "description": "STOP ON-STRT DISABLD NO PERMIT"
+    },
+    {
+      "code": "366",
+      "description": "PARK ON-ST DISABLD LDG NO PRMT"
+    },
+    {
+      "code": "366",
+      "description": "PARK ONSTRT ACCESSIBLE NO PRMT"
+    },
+    {
+      "code": "367",
+      "description": "STAND ON-ST DISABL LDG NO PRMT"
+    },
+    {
+      "code": "367",
+      "description": "STND ONSTRT ACCESSIBLE NO PRMT"
+    },
+    {
+      "code": "368",
+      "description": "PARK ONSTRT ACCESSIBLE NOT D/O"
+    },
+    {
+      "code": "368",
+      "description": "PARK STR DISABLD LDG NO DROPOF"
+    },
+    {
+      "code": "369",
+      "description": "STAND STR DISABL LDG NO DROPOF"
+    },
+    {
+      "code": "369",
+      "description": "STND ONSTRT ACCESSIBLE NOT D/O"
+    },
+    {
+      "code": "37",
+      "description": "PARK HEAVY TRUCK-SIGNED HIGHWA"
+    },
+    {
+      "code": "37",
+      "description": "PARK HEAVY (TRUCK/VEH.) TM/DY"
+    },
+    {
+      "code": "37",
+      "description": "PARK HVY TRK HWY PRO TIME/DAY"
+    },
+    {
+      "code": "37",
+      "description": "PARK HVY TRK HWY TIMES/DAYS"
+    },
+    {
+      "code": "37",
+      "description": "PARK HVY TRUCK DUR PRO TIME"
+    },
+    {
+      "code": "37",
+      "description": "PARK HVY TRU NOT PER  TIME/DAY"
+    },
+    {
+      "code": "37",
+      "description": "PARK TRUCK HWY NO PERM TIME/DA"
+    },
+    {
+      "code": "370",
+      "description": "PARK/STAND UNAUTH VEH. CAR SHR"
+    },
+    {
+      "code": "370",
+      "description": "PARK VEHICLE IN CAR-SHARE AREA"
+    },
+    {
+      "code": "370",
+      "description": "STAND UNAUTH VEH. CAR SHARE"
+    },
+    {
+      "code": "372",
+      "description": "PARK BUS PROHIBITED TIME"
+    },
+    {
+      "code": "372",
+      "description": "PARK BUS-SIGNED HWY-PROH DY/TM"
+    },
+    {
+      "code": "373",
+      "description": "STOP BUS PROHIBITED TIME"
+    },
+    {
+      "code": "373",
+      "description": "STOP BUS-SIGNED HWY-PROH DY/TM"
+    },
+    {
+      "code": "374",
+      "description": "STAND BUS PROHIBITED TIME"
+    },
+    {
+      "code": "374",
+      "description": "STND BUS-SIGNED HWY-PROH DY/TM"
+    },
+    {
+      "code": "38",
+      "description": "PARK OTHER THAN METERED SPACE"
+    },
+    {
+      "code": "38",
+      "description": "PARK-OTHER THAN METERED SPACE"
+    },
+    {
+      "code": "383",
+      "description": "STOP NON-BICYCLE IN CYCLE TRCK"
+    },
+    {
+      "code": "384",
+      "description": "STOP VEH OTR THN BCYCL-BYCL LN"
+    },
+    {
+      "code": "385",
+      "description": "PARK PRO VEH ON FOOTPATH"
+    },
+    {
+      "code": "386",
+      "description": "PARK PRO VEH ON PEDESTRIAN WAY"
+    },
+    {
+      "code": "387",
+      "description": "PARK PRO VEH ON BICYCLE PATH"
+    },
+    {
+      "code": "39",
+      "description": "PARK AT METER OVER MAX TIME PE"
+    },
+    {
+      "code": "39",
+      "description": "PARK EXCEEDS MAXIMUM TIME"
+    },
+    {
+      "code": "39",
+      "description": "PARK MTD SPACE OVER MAX PERIOD"
+    },
+    {
+      "code": "39",
+      "description": "PARK MTRD EXCEEDS MAXIMUM TIME"
+    },
+    {
+      "code": "39",
+      "description": "PARK-MTRD SPC BYD MAX PARK PER"
+    },
+    {
+      "code": "39",
+      "description": "PARK - TIME LONGER THAN ALLOWE"
+    },
+    {
+      "code": "4",
+      "description": "PARK/LEAVE ON MUNICIPAL PRPTY"
+    },
+    {
+      "code": "4",
+      "description": "PARK-MUNICIPAL PROPERTY"
+    },
+    {
+      "code": "4",
+      "description": "PARK MUN PROP NO CONSENT"
+    },
+    {
+      "code": "4",
+      "description": "PARK ON MUNICIPAL PROPERTY"
+    },
+    {
+      "code": "4",
+      "description": "PARK ON MUN PROP NO CONSENT"
+    },
+    {
+      "code": "4",
+      "description": "PARK ON MUN PROP WITHOUT CONSE"
+    },
+    {
+      "code": "4",
+      "description": "PARK VEH MUN PRO NO CONSENT"
+    },
+    {
+      "code": "40",
+      "description": "PARALLEL PARK-METERED SPACE-F"
+    },
+    {
+      "code": "40",
+      "description": "PARAL PRK-MTRD-FR WHLS NO OPP"
+    },
+    {
+      "code": "40",
+      "description": "PARA PARK MTD SPACE WHEELS OUT"
+    },
+    {
+      "code": "401",
+      "description": "PARK-SIGNED HWY-RUSH HOUR"
+    },
+    {
+      "code": "402",
+      "description": "STAND VEH.-SIGNED HWY-RUSH HR"
+    },
+    {
+      "code": "403",
+      "description": "STOP-SIGNED HIGHWAY-RUSH HOUR"
+    },
+    {
+      "code": "403",
+      "description": "STOP-SIGNED HWY-PROHIBIT TM/DY"
+    },
+    {
+      "code": "404",
+      "description": "STOP-9 M PEDESTRIAN X BEYOND"
+    },
+    {
+      "code": "405",
+      "description": "STOP-15M PEDESTRIAN X APPROACH"
+    },
+    {
+      "code": "406",
+      "description": "PARK-SIGNED HWY-PROHIBIT DY/TM"
+    },
+    {
+      "code": "406",
+      "description": "PARK-VEH. W/O VALID ONT PLATE"
+    },
+    {
+      "code": "407",
+      "description": "PARK-W/O VALID NON-ONT PLATE"
+    },
+    {
+      "code": "408",
+      "description": "PARK-15M MAILBOX SAME SIDE"
+    },
+    {
+      "code": "409",
+      "description": "STOP-WITHIN 9M OF SCHOOL CROSS"
+    },
+    {
+      "code": "41",
+      "description": "PARALLEL PARK METERED SPACE RE"
+    },
+    {
+      "code": "41",
+      "description": "PARALLEL PARK-METERED SPACE-RE"
+    },
+    {
+      "code": "410",
+      "description": "PARK/STAND CAR-SHARE VEH.-PERM"
+    },
+    {
+      "code": "410",
+      "description": "STAND CAR-SHARE VEH.-NO PERM"
+    },
+    {
+      "code": "411",
+      "description": "PARK UNAUTH. VEH IN E-VEH. STN"
+    },
+    {
+      "code": "413",
+      "description": "PARK E-VEH. IN EV SP EXCESS TM"
+    },
+    {
+      "code": "414",
+      "description": "PARK VEH.-COMMERCIAL LOAD ZONE"
+    },
+    {
+      "code": "415",
+      "description": "PARK COMMERC LOAD ZONE NOT LDG"
+    },
+    {
+      "code": "416",
+      "description": "STAND VEH.-PSGR LD ZN DAY TIME"
+    },
+    {
+      "code": "417",
+      "description": "STAND VEH.-PSGR LD ZN LD/UNLD"
+    },
+    {
+      "code": "418",
+      "description": "PARK TAXI FOR HIRE-UNAUTH LOC"
+    },
+    {
+      "code": "419",
+      "description": "STAND NON-TAXI IN SIGNED STAND"
+    },
+    {
+      "code": "42",
+      "description": "PARALLEL PARK METERED SPACE RE"
+    },
+    {
+      "code": "42",
+      "description": "PARALLEL PARK-METERED SPACE-RE"
+    },
+    {
+      "code": "420",
+      "description": "STAND TAXI-SIGNED STD-NOT HIRE"
+    },
+    {
+      "code": "421",
+      "description": "PARK MTRCYCLE ANGLE SP < 45DEG"
+    },
+    {
+      "code": "422",
+      "description": "PARK MTRCYCLE ANGLE SP > 60DEG"
+    },
+    {
+      "code": "423",
+      "description": "STOP VEH.RESRVD/DESIG LN TM/DY"
+    },
+    {
+      "code": "424",
+      "description": "PARK BUS-FAIL TO ACTIV MACHINE"
+    },
+    {
+      "code": "425",
+      "description": "PARK MOTORCYCLE-MCHNE LT 45DEG"
+    },
+    {
+      "code": "429",
+      "description": "PARK BUS-METER-PROHIBITED TIME"
+    },
+    {
+      "code": "43",
+      "description": "PARALLEL PARK-METERED SPACE-FR"
+    },
+    {
+      "code": "430",
+      "description": "PARK-FAIL TO ACTIVATE METER"
+    },
+    {
+      "code": "432",
+      "description": "PARK MOTORCYCLE-METER-GT 60DEG"
+    },
+    {
+      "code": "433",
+      "description": "PARK NON-BUS IN BUS SPACE-METR"
+    },
+    {
+      "code": "434",
+      "description": "PARK IN ELECTRIC VEHICLE SPACE"
+    },
+    {
+      "code": "434",
+      "description": "PARK UNAUTH VEH ELEC CHG STN"
+    },
+    {
+      "code": "435",
+      "description": "PARK ELECT. VEH. NOT CONNECTED"
+    },
+    {
+      "code": "435",
+      "description": "PARK ELEC VEH CHG NOT CONNECT"
+    },
+    {
+      "code": "436",
+      "description": "PARK ELECT. VEH. EXCEED MAX TM"
+    },
+    {
+      "code": "437",
+      "description": "PARK PRIVATE VEHICLE ON SITE"
+    },
+    {
+      "code": "439",
+      "description": "STOP - (ON/OVER)(BOULEVARD)"
+    },
+    {
+      "code": "44",
+      "description": "PARALLEL PARK METERED SPACE FR"
+    },
+    {
+      "code": "44",
+      "description": "PARALLEL PARK-METERED SPACE-FR"
+    },
+    {
+      "code": "440",
+      "description": "PRK CAR-SHR VEH. IN WAITL AREA"
+    },
+    {
+      "code": "443",
+      "description": "PRK FAIL TO DSPLY CAR-SHR PRMT"
+    },
+    {
+      "code": "444",
+      "description": "PRK NON-ELEC VEH. ON MUNI ELEC"
+    },
+    {
+      "code": "445",
+      "description": "PRK ELEC VEH. ON MUNI NT CNCTD"
+    },
+    {
+      "code": "446",
+      "description": "PRK NON-ELEC VEH. ON PVT ELEC"
+    },
+    {
+      "code": "447",
+      "description": "PRK ELEC VEH. ON PVT NT CNCTD"
+    },
+    {
+      "code": "45",
+      "description": "ANGLE PARK-METERED SPACE-FRONT"
+    },
+    {
+      "code": "46",
+      "description": "PARK-PART OF VEHICLE OUTSIDE D"
+    },
+    {
+      "code": "46",
+      "description": "PARK-PART OF VEH OTSD MTRD SPC"
+    },
+    {
+      "code": "46",
+      "description": "PARK-PART OF VEH OTSDMTRD SPC"
+    },
+    {
+      "code": "46",
+      "description": "PARK-PRT VEH OUTSD DESG MET SP"
+    },
+    {
+      "code": "46",
+      "description": "PARK VEH OUT DESIG METER SPACE"
+    },
+    {
+      "code": "48",
+      "description": "FAIL PARK/STOP PARALLEL CURB"
+    },
+    {
+      "code": "48",
+      "description": "FAIL TO PARK/STOP PARALL. CURB"
+    },
+    {
+      "code": "48",
+      "description": "FAIL TO PARK/STOP PARALLEL CUR"
+    },
+    {
+      "code": "48",
+      "description": "FAIL TO PARK/STOP PARA TO CURB"
+    },
+    {
+      "code": "48",
+      "description": "FAIL TO PARK/STOP PAR TO CURB"
+    },
+    {
+      "code": "49",
+      "description": "FAIL PARK/STOP PAR RH LTD HWY"
+    },
+    {
+      "code": "49",
+      "description": "FAIL PARK/STOP PAR RT HAND LTD"
+    },
+    {
+      "code": "49",
+      "description": "FAIL TO PARK/STOP PARALLEL RIG"
+    },
+    {
+      "code": "49",
+      "description": "FAIL TO PARK/STOP PARALLEL-RIG"
+    },
+    {
+      "code": "49",
+      "description": "FAIL TO PARK/STOP PARALL. RGHT"
+    },
+    {
+      "code": "49",
+      "description": "FAIL TO PARK/STOP PARA RGT LMT"
+    },
+    {
+      "code": "49",
+      "description": "FAIL TO PARK/STOP PARA RH HWY"
+    },
+    {
+      "code": "49",
+      "description": "FAIL TO PARK/STOP PARA RTHD HW"
+    },
+    {
+      "code": "5",
+      "description": "PARK HWY AT PROHIB TIME/DAY"
+    },
+    {
+      "code": "5",
+      "description": "PARK-HWY DRNG PROH TIMES/DAYS"
+    },
+    {
+      "code": "5",
+      "description": "PARK HWY PROHIBED TIME/DAY"
+    },
+    {
+      "code": "5",
+      "description": "PARK HWY PROHIBITED TIMES/DAYS"
+    },
+    {
+      "code": "5",
+      "description": "PARK-HWY PROHIB TIMES/DAYS"
+    },
+    {
+      "code": "5",
+      "description": "PARK HWY PRO TIMES/DAYS"
+    },
+    {
+      "code": "5",
+      "description": "PARK-SIGNED HWY-PROHIBIT DY/TM"
+    },
+    {
+      "code": "5",
+      "description": "PARK SIGNED HWY PRO TIMES/DAYS"
+    },
+    {
+      "code": "50",
+      "description": "FAIL PARK/STOP CLOSE AS PRACT"
+    },
+    {
+      "code": "50",
+      "description": "FAIL PARK/STOP RH LIMIT OF HWY"
+    },
+    {
+      "code": "50",
+      "description": "FAIL PARK/STOP RT HAND LTD HWY"
+    },
+    {
+      "code": "50",
+      "description": "FAIL PARK/STP NEAR RIGHT LIMIT"
+    },
+    {
+      "code": "50",
+      "description": "FAIL TO PARK/STOP AS NEAR AS P"
+    },
+    {
+      "code": "50",
+      "description": "FAIL TO PARK/STOP NR RGHD HWY"
+    },
+    {
+      "code": "50",
+      "description": "FAIL TO PARK/STOP RH LIMIT HWY"
+    },
+    {
+      "code": "51",
+      "description": "FAIL ANGLE PARK/STOP AT 45 DEG"
+    },
+    {
+      "code": "51",
+      "description": "FAIL PARK/STOP 45 DEGRESS CURB"
+    },
+    {
+      "code": "51",
+      "description": "FAIL TO PARK/STOP 45 DEG ANGLE"
+    },
+    {
+      "code": "51",
+      "description": "FAIL TO PARK/STOP AT 45 DG CRB"
+    },
+    {
+      "code": "52",
+      "description": "FAIL ANGLE PARK/STOP DESG SPC"
+    },
+    {
+      "code": "52",
+      "description": "FAIL ANGLE PARK/STOP-DSGNTD SP"
+    },
+    {
+      "code": "52",
+      "description": "FAIL TO ANGLE DESIG SPACE"
+    },
+    {
+      "code": "52",
+      "description": "FAIL TO ANGLE PARK/STOP DES SP"
+    },
+    {
+      "code": "52",
+      "description": "FAIL TO ANG PARK/STOP DES SPAC"
+    },
+    {
+      "code": "52",
+      "description": "FAIL TO (PARK/STOP) ANGLE SPCE"
+    },
+    {
+      "code": "53",
+      "description": "FAIL PARK/STOP PAR CURB LEFT S"
+    },
+    {
+      "code": "53",
+      "description": "FAIL PARK/STOP PAR CURB LF SID"
+    },
+    {
+      "code": "53",
+      "description": "FAIL TO PARK PARA LEFT CURB"
+    },
+    {
+      "code": "53",
+      "description": "FAIL TO PARK/STOP PARALLEL TO"
+    },
+    {
+      "code": "53",
+      "description": "FAIL TO PK/ST PARA CURB LS HWY"
+    },
+    {
+      "code": "54",
+      "description": "PARK/STOP 30CM CURB LT SIDE ON"
+    },
+    {
+      "code": "54",
+      "description": "PARK/STOP LEFT WHLS > 30CM LFT"
+    },
+    {
+      "code": "54",
+      "description": "PARK/STOP MORE THAN 30 CM FROM"
+    },
+    {
+      "code": "54",
+      "description": "PARK/STOP OVER 30 CM FROM CURB"
+    },
+    {
+      "code": "54",
+      "description": "PARK/STOP OVER 30CM FROM CURB"
+    },
+    {
+      "code": "55",
+      "description": "FAIL TO PARK/STOP AS CLOSE AS"
+    },
+    {
+      "code": "55",
+      "description": "FAIL TO PK/ST CLOSE LH LIM HWY"
+    },
+    {
+      "code": "55",
+      "description": "PRK/STP LEFT WHLS CLSE TO LEFT"
+    },
+    {
+      "code": "56",
+      "description": "FAIL PARK/STOP PARA LFT LMT HW"
+    },
+    {
+      "code": "56",
+      "description": "FAIL PARK/STOP PAR LEFT HAND"
+    },
+    {
+      "code": "56",
+      "description": "FAIL PARK/STP LEFT WHLS PARALL"
+    },
+    {
+      "code": "56",
+      "description": "FAIL TO PARK/STOP PARALLEL -LF"
+    },
+    {
+      "code": "56",
+      "description": "FAIL TO PK/ST PARA LH LIM HWY"
+    },
+    {
+      "code": "57",
+      "description": "STOP IN INTERSEC/CROSSWALK"
+    },
+    {
+      "code": "57",
+      "description": "STOP IN INTERSECTION/CROSSWALK"
+    },
+    {
+      "code": "57",
+      "description": "STOP-WITHIN (INTERSCTN/PED X)"
+    },
+    {
+      "code": "57",
+      "description": "STOP WITHIN INTERSECTION/XWALK"
+    },
+    {
+      "code": "57",
+      "description": "STOP-WITHIN INTERSECTION/XWALK"
+    },
+    {
+      "code": "57",
+      "description": "STOP-WITHIN INTERSENTION/XWALK"
+    },
+    {
+      "code": "58",
+      "description": "STOP IN 9.0 M OF CROSSWALK"
+    },
+    {
+      "code": "58",
+      "description": "STOP WITHIN 9.0 M OF CROSSWALK"
+    },
+    {
+      "code": "58",
+      "description": "STOP-WITHIN 9.0M OF CROSSWALK"
+    },
+    {
+      "code": "58",
+      "description": "STOP - WITHIN 9.0M OF XWALK"
+    },
+    {
+      "code": "58",
+      "description": "STOP WITHIN 9M OF CROSSWALK"
+    },
+    {
+      "code": "59",
+      "description": "STOP - BESIDE SAFETY ZONE"
+    },
+    {
+      "code": "59",
+      "description": "STOP BESIDE SAFETY ZONE"
+    },
+    {
+      "code": "59",
+      "description": "STOP-BESIDE SAFETY ZONE"
+    },
+    {
+      "code": "6",
+      "description": "PARK HWY EXCESS OF PERM TIME"
+    },
+    {
+      "code": "6",
+      "description": "PARK-HWY-EXCESS PERMITTED TIME"
+    },
+    {
+      "code": "6",
+      "description": "PARK-HWY EXCESS PERMTD TIME"
+    },
+    {
+      "code": "6",
+      "description": "PARK HWY IN EXCESS PRMTD TIME"
+    },
+    {
+      "code": "6",
+      "description": "PARK HWY OVER PERMITTED TIME"
+    },
+    {
+      "code": "6",
+      "description": "PARK SIGNED HWY EXCESS OF TIME"
+    },
+    {
+      "code": "6",
+      "description": "PARK-SIGNED HWY-EXC PERMT TIME"
+    },
+    {
+      "code": "6",
+      "description": "STOP-SIGNED HWY-PROHIBIT TM/DY"
+    },
+    {
+      "code": "60",
+      "description": "STOP IN 15.0 M OF SAFETY ZONE"
+    },
+    {
+      "code": "60",
+      "description": "STOP WITHIN 15.0M OF SAFETY ZN"
+    },
+    {
+      "code": "60",
+      "description": "STOP-WITHIN 15.0M OF SAFETY ZN"
+    },
+    {
+      "code": "60",
+      "description": "STOP WITHIN 15M OF SAFETY ZONE"
+    },
+    {
+      "code": "60",
+      "description": "STOP-WITHIN 15M OF SAFETY ZONE"
+    },
+    {
+      "code": "61",
+      "description": "STOP-ALONGSIDE EXCAV./OBSTR."
+    },
+    {
+      "code": "61",
+      "description": "STOP BESIDE EXCAVATION"
+    },
+    {
+      "code": "61",
+      "description": "STOP-BSD EXCA IN RDWY-IMPEDE T"
+    },
+    {
+      "code": "61",
+      "description": "STOP BSD EXCAVA IMPEDE TRAFFIC"
+    },
+    {
+      "code": "61",
+      "description": "STOP-BSD EXCAV RDWY-IMPEDE TRF"
+    },
+    {
+      "code": "61",
+      "description": "STOP BY EXCAV IN RD IMPEDE TRA"
+    },
+    {
+      "code": "62",
+      "description": "STOP-ACR EXCAV RDWY-IMPEDE TRF"
+    },
+    {
+      "code": "62",
+      "description": "STOP-ACROS EXCAV RDWY-IMPEDE T"
+    },
+    {
+      "code": "62",
+      "description": "STOP-ACRS EXCAV RDWY-IMPEDE TR"
+    },
+    {
+      "code": "62",
+      "description": "STOP FROM EXCAV RD IMPEDE TRAF"
+    },
+    {
+      "code": "63",
+      "description": "STOP-ACROSS FROM EXCAV./OBSTR."
+    },
+    {
+      "code": "63",
+      "description": "STOP BESIDE OBSTRUCTION"
+    },
+    {
+      "code": "63",
+      "description": "STOP BSD OBSTR RDWY-IMPEDE TRF"
+    },
+    {
+      "code": "63",
+      "description": "STOP-BSD OBSTR RDWY-IMPEDE TRF"
+    },
+    {
+      "code": "63",
+      "description": "STOP=BSD OBSTR RDWY-IMPEDE TRF"
+    },
+    {
+      "code": "63",
+      "description": "STOP BSD OBSTRUC IMPEDE TRAFF"
+    },
+    {
+      "code": "63",
+      "description": "STOP BY OBST IN RD IMPEDE TRAF"
+    },
+    {
+      "code": "63",
+      "description": "STOP BY OBST RDWY IMPEDE TRAFF"
+    },
+    {
+      "code": "64",
+      "description": "STOP-ACR OBSTR RDWY-IMPEDE TRF"
+    },
+    {
+      "code": "64",
+      "description": "STOP ACROSS OBSTRUC IMPEDE TRA"
+    },
+    {
+      "code": "64",
+      "description": "STOP ACRS OBSTR RDWY IMPED TRF"
+    },
+    {
+      "code": "64",
+      "description": "STOP BY OBST IN RDWY IMPEDE TR"
+    },
+    {
+      "code": "65",
+      "description": "STOP - ON BRIDGE"
+    },
+    {
+      "code": "65",
+      "description": "STOP - ON BRIDGE "
+    },
+    {
+      "code": "65",
+      "description": "STOP ON BRIDGE"
+    },
+    {
+      "code": "65",
+      "description": "STOP-ON BRIDGE"
+    },
+    {
+      "code": "66",
+      "description": "STOP - ON ELEVATED STRUCTURE"
+    },
+    {
+      "code": "66",
+      "description": "STOP-ON ELEVATED STRUCTURE"
+    },
+    {
+      "code": "67",
+      "description": "STOP - IN TUNNEL"
+    },
+    {
+      "code": "67",
+      "description": "STOP - IN TUNNEL "
+    },
+    {
+      "code": "67",
+      "description": "STOP IN TUNNEL"
+    },
+    {
+      "code": "68",
+      "description": "STOP - IN UNDERPASS"
+    },
+    {
+      "code": "68",
+      "description": "STOP - IN UNDERPASS "
+    },
+    {
+      "code": "68",
+      "description": "STOP IN UNDERPASS"
+    },
+    {
+      "code": "69",
+      "description": "STOP - 0N CENTRE BOULEVARD"
+    },
+    {
+      "code": "69",
+      "description": "STOP - ON CENTRE BOULEVARD"
+    },
+    {
+      "code": "69",
+      "description": "STOP ON CENTRE BOULEVARD"
+    },
+    {
+      "code": "69",
+      "description": "STOP - ON MIDDLE BOULEVARD"
+    },
+    {
+      "code": "69",
+      "description": "STOP - ON MIDDLE BOULEVARD "
+    },
+    {
+      "code": "7",
+      "description": "PARK - FIRE ROUTE"
+    },
+    {
+      "code": "7",
+      "description": "PARK IN DESIGNATED FIRE ROUTE"
+    },
+    {
+      "code": "7",
+      "description": "PARK IN DESIGNATED FIRE ROUTES"
+    },
+    {
+      "code": "7",
+      "description": "PARK/LEAVE-FIRE ROUTE"
+    },
+    {
+      "code": "70",
+      "description": "STOP - ON CENTRE STRIP"
+    },
+    {
+      "code": "70",
+      "description": "STOP ON CENTRE STRIP"
+    },
+    {
+      "code": "71",
+      "description": "STOP-ADJACENT MID. BOUL. SIDE"
+    },
+    {
+      "code": "71",
+      "description": "STOP ADJACENT TO CENTRE BLVD"
+    },
+    {
+      "code": "71",
+      "description": "STOP ADJACENT TO CENTRE BLVD."
+    },
+    {
+      "code": "71",
+      "description": "STOP ADJCNT TO CENTRE BLVD."
+    },
+    {
+      "code": "71",
+      "description": "STOP ADJ TO CENTRE BOULEVARD"
+    },
+    {
+      "code": "71",
+      "description": "STOP-ADJ TO CNTR BLVD."
+    },
+    {
+      "code": "72",
+      "description": "STOP-ADJACENT MID. BOUL. END"
+    },
+    {
+      "code": "72",
+      "description": "STOP ADJACENT TO CENT BLVD END"
+    },
+    {
+      "code": "72",
+      "description": "STOP ADJ TO CENTRE BLVD END"
+    },
+    {
+      "code": "72",
+      "description": "STOP ADJ TO CTR BLVD-END"
+    },
+    {
+      "code": "72",
+      "description": "STOP-ADJ TO CTRE BLVD-END"
+    },
+    {
+      "code": "72",
+      "description": "STOP AJD TO CENTRE BLVD END"
+    },
+    {
+      "code": "73",
+      "description": "STOP-ADJACENT CNTRE STRIP SIDE"
+    },
+    {
+      "code": "73",
+      "description": "STOP ADJACENT TO CENTRE STRIP"
+    },
+    {
+      "code": "73",
+      "description": "STOP-ADJACENT TO CENTRE STRIP"
+    },
+    {
+      "code": "73",
+      "description": "STOP ADJ TO CENTRE STRIP"
+    },
+    {
+      "code": "73",
+      "description": "STOP-ADJ TO CENTRE STRIP"
+    },
+    {
+      "code": "74",
+      "description": "STOP-ADJACENT CENTRE STRIP END"
+    },
+    {
+      "code": "74",
+      "description": "STOP ADJ TO END OF CENTRE STRI"
+    },
+    {
+      "code": "74",
+      "description": "STOP-ADJ TO END OF CENTR STRIP"
+    },
+    {
+      "code": "76",
+      "description": "STOP VEH VEND OVER 10 MIN"
+    },
+    {
+      "code": "77",
+      "description": "PARK-60CM DRIVE/LANE/RAMP"
+    },
+    {
+      "code": "77",
+      "description": "PARK 60CM OF DRIVE/LANE"
+    },
+    {
+      "code": "77",
+      "description": "PARK 60 CM OF DRIVEWAY/LANEWAY"
+    },
+    {
+      "code": "77",
+      "description": "PARK 60CM OF DRIVEWAY/LANEWAY"
+    },
+    {
+      "code": "77",
+      "description": "PARK-60CM OF DRIVEWAY/LANEWAY"
+    },
+    {
+      "code": "77",
+      "description": "PARK-(FRNT/60 CM) DRWAY/LANEWY"
+    },
+    {
+      "code": "78",
+      "description": "PARK 15M OF LEVEL RAILWAY CROS"
+    },
+    {
+      "code": "78",
+      "description": "PARK 15M OF LEVEL RAILWY CRSNG"
+    },
+    {
+      "code": "78",
+      "description": "PARK-15M OF RAILWAY TRK/X'ING"
+    },
+    {
+      "code": "79",
+      "description": "PARK ON HIGHWAY UNDER 6M WIDE"
+    },
+    {
+      "code": "79",
+      "description": "PARK-ON HIGHWAY UNDER 6M WIDE"
+    },
+    {
+      "code": "79",
+      "description": "PARK ON HWY UNDER 6M WIDE"
+    },
+    {
+      "code": "79",
+      "description": "PARK-ON HWY UNDER 6M WIDE"
+    },
+    {
+      "code": "79",
+      "description": "PARK-SIGNED HWY-LESS THAN 6M W"
+    },
+    {
+      "code": "8",
+      "description": "PARK-SIGNED HWY-PROHIBIT DY/TM"
+    },
+    {
+      "code": "8",
+      "description": "STAND SIGN HWY PRO TIMES/DAYS"
+    },
+    {
+      "code": "8",
+      "description": "STAND VEH HWY PROHIB TIME/DAY"
+    },
+    {
+      "code": "8",
+      "description": "STAND VEH-HWY-PROH TIME/DAYS"
+    },
+    {
+      "code": "8",
+      "description": "STAND VEH-HWY-PROH TIMES/DAYS"
+    },
+    {
+      "code": "8",
+      "description": "STAND VEH HWY PRO TIME/DAY"
+    },
+    {
+      "code": "8",
+      "description": "STAND VEH HWY PRO TIMES/DAYS"
+    },
+    {
+      "code": "8",
+      "description": "STAND VEH.-PROHIBIT TIME/DAY"
+    },
+    {
+      "code": "8",
+      "description": "STD VEH HWY PROHIB TIME/DAY"
+    },
+    {
+      "code": "80",
+      "description": "PARK ALONG RAILWAY TRACKS"
+    },
+    {
+      "code": "80",
+      "description": "PARK-ALONGSIDE (RAILWAY/CROSS)"
+    },
+    {
+      "code": "80",
+      "description": "PARK ALONGSIDE RAILWAY TRACKS"
+    },
+    {
+      "code": "80",
+      "description": "PARK-ALONGSIDE RAILWAY TRACKS"
+    },
+    {
+      "code": "81",
+      "description": "PARK PREVENT REMOVAL OF VEHICL"
+    },
+    {
+      "code": "81",
+      "description": "PARK PREVENT REMOVAL VEHICLE"
+    },
+    {
+      "code": "81",
+      "description": "PARK PREVENT REMOVE PRE PARK V"
+    },
+    {
+      "code": "81",
+      "description": "PARK-PREVENT VEHICLE REMOVAL"
+    },
+    {
+      "code": "81",
+      "description": "PARK-PRVNT REM PREV PARKED VEH"
+    },
+    {
+      "code": "81",
+      "description": "PARK STOP REMOVAL OF PRE PARK"
+    },
+    {
+      "code": "82",
+      "description": "PARK LOADING ZONE NO PERM TIME"
+    },
+    {
+      "code": "82",
+      "description": "PARK PASSENGER/FREIGHT LOADING"
+    },
+    {
+      "code": "82",
+      "description": "PARK-PASSENGER/FREIGHT LOADING"
+    },
+    {
+      "code": "82",
+      "description": "PARK PASSENGER/FREIGHT LOAD ZO"
+    },
+    {
+      "code": "82",
+      "description": "PARK-PASSNG/FREIGHT LOADING ZN"
+    },
+    {
+      "code": "83",
+      "description": "PARK HWY IN TURNING BASIN"
+    },
+    {
+      "code": "83",
+      "description": "PARK-HWY WITHIN TURING BASIN"
+    },
+    {
+      "code": "83",
+      "description": "PARK HWY WITHIN TURNING BASIN"
+    },
+    {
+      "code": "83",
+      "description": "PARK-HWY WITH TURNING BASIN"
+    },
+    {
+      "code": "83",
+      "description": "PARK SIGNED HWY BY TURNING BAS"
+    },
+    {
+      "code": "83",
+      "description": "PARK-SIGNED HWY-TURNING BASIN"
+    },
+    {
+      "code": "83",
+      "description": "PARK-SIGNED HWY WITHN TURN BAS"
+    },
+    {
+      "code": "83",
+      "description": "PARK WITHIN TURNING BASIN"
+    },
+    {
+      "code": "84",
+      "description": "PARK HWY INTERFERE FUNERAL PRO"
+    },
+    {
+      "code": "84",
+      "description": "PARK-HWY-INTF OF FUNERAL PROC"
+    },
+    {
+      "code": "84",
+      "description": "PARK-HWY-INTFR FORM FUNRL PROC"
+    },
+    {
+      "code": "84",
+      "description": "PARK-INTERF W FUNERAL PROCESS."
+    },
+    {
+      "code": "85",
+      "description": "PARK-15M OF DEAD END STREET"
+    },
+    {
+      "code": "85",
+      "description": "PARK-15M OF TERM DEAND END ST"
+    },
+    {
+      "code": "85",
+      "description": "PARK HWY 15M END OF D-END ST"
+    },
+    {
+      "code": "85",
+      "description": "PARK HWY 15 M OF TERM DEAD END"
+    },
+    {
+      "code": "85",
+      "description": "PARK HWY 15M OF TERM DEAD END"
+    },
+    {
+      "code": "85",
+      "description": "PARK-HWY-15M TERM DEAD END ST"
+    },
+    {
+      "code": "85",
+      "description": "PARK-HWY 15M TRM DEAD END ST."
+    },
+    {
+      "code": "86",
+      "description": "PARK HWY IN T-TYPE INTERSEC"
+    },
+    {
+      "code": "86",
+      "description": "PARK HWY IN T-TYPE INTERSECTIO"
+    },
+    {
+      "code": "86",
+      "description": "PARK HWY WITHIN T-TYPE INTERS"
+    },
+    {
+      "code": "86",
+      "description": "PARK-HWY-WITHIN T-TYPE INTERSC"
+    },
+    {
+      "code": "86",
+      "description": "PARK-HWY-WITHIN T-TYPE INTRSCT"
+    },
+    {
+      "code": "86",
+      "description": "PARK HWY WITHN T-TYPE INTERSCT"
+    },
+    {
+      "code": "86",
+      "description": "PARK-SIGNED HWY-\"T\" INTERSECTN"
+    },
+    {
+      "code": "86",
+      "description": "PARK WITHIN A T-TYPE INTERSECT"
+    },
+    {
+      "code": "87",
+      "description": "PARK MOTORCYCLE - AT ANGLE"
+    },
+    {
+      "code": "87",
+      "description": "PARK MOTORCYCLE-METER-LT 45DEG"
+    },
+    {
+      "code": "89",
+      "description": "PARK MOTORCYCLE - IN SPACE"
+    },
+    {
+      "code": "9",
+      "description": "STOP HWY PROHIBITED TIME/DAY"
+    },
+    {
+      "code": "9",
+      "description": "STOP HWY PROHIBITED TIMES/DAYS"
+    },
+    {
+      "code": "9",
+      "description": "STOP-HWY-PROHIBITED TIMES/DAYS"
+    },
+    {
+      "code": "9",
+      "description": "STOP HWY PROHIB TIME/DAY"
+    },
+    {
+      "code": "9",
+      "description": "STOP HWY PRO TIME/DAYS"
+    },
+    {
+      "code": "9",
+      "description": "STOP-SIGNED HWY-PROHIBIT TM/DY"
+    },
+    {
+      "code": "9",
+      "description": "STOP SIGNED HWY PRO TIMES/DAYS"
+    },
+    {
+      "code": "90",
+      "description": "PARK AUTOMOBILE - IN SPACE"
+    },
+    {
+      "code": "90",
+      "description": "PARK NON-MTRCYCLE IN MTRCYC SP"
+    },
+    {
+      "code": "94",
+      "description": "PARK SNOW ROUTE"
+    },
+    {
+      "code": "94",
+      "description": "PARK VEHICLE - SNOW ROUTE"
+    },
+    {
+      "code": "95",
+      "description": "STAND SNOW ROUTE"
+    },
+    {
+      "code": "95",
+      "description": "STAND VEHICLE - SNOW ROUTE"
+    },
+    {
+      "code": "99",
+      "description": "STOP IN SCHOOL LOADING ZONE"
+    },
+    {
+      "code": "99",
+      "description": "STOP-NON-SCHL BUS IN SCHL LDZN"
+    },
+    {
+      "code": "99",
+      "description": "STOP SCHOOL BUS LOADING ZONE"
+    },
+    {
+      "code": "99",
+      "description": "STOP-WITHIN SCHOOL BUS LOAD ZN"
+    },
+    {
+      "code": null,
+      "description": "PARK IN ACCESSIBLE NO PERMIT"
+    },
+    {
+      "code": null,
+      "description": "PARK ON PRIVATE PROPERTY"
+    }
+  ]
+}
