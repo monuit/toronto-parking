@@ -49,10 +49,11 @@ const TILE_REDIS_GUARD_INTERVAL_MS = Number.parseInt(
   process.env.MAP_TILE_REDIS_GUARD_INTERVAL_MS || '',
   10,
 ) || 15 * 60 * 1000;
+// Memory optimization: Reduced from 6 hours to 2 hours
 const TILE_REDIS_STALE_TTL_SECONDS = Number.parseInt(
   process.env.MAP_TILE_REDIS_STALE_SECONDS || '',
   10,
-) || 6 * 60 * 60;
+) || 2 * 60 * 60;
 const TILE_REDIS_LOCK_TTL_SECONDS = Number.parseInt(
   process.env.MAP_TILE_REDIS_LOCK_SECONDS || '',
   10,
@@ -84,7 +85,8 @@ const GTA_BOUNDS = {
   east: Number.parseFloat(process.env.TILE_PREWARM_EAST ?? '-79.1169'),
   north: Number.parseFloat(process.env.TILE_PREWARM_NORTH ?? '43.8554'),
 };
-const TILE_PREWARM_ZOOMS = [8, 9, 10, 11, 12, 13, 14];
+// Memory optimization: Reduced max zoom from 14 to 12 to lower compute/memory
+const TILE_PREWARM_ZOOMS = [8, 9, 10, 11, 12];
 const PARKING_TILE_SNAPSHOT_DIR = process.env.PARKING_TILE_SNAPSHOT_DIR
   || path.resolve(process.cwd(), 'map-app/.cache/parking-tile-snapshots');
 // Memory optimization: Reduced from 256 to 64
@@ -97,12 +99,13 @@ const BROTLI_LEGACY_REWRITE_KEYS = new Set();
 
 const TILE_HARD_TIMEOUT_MS = Number.parseInt(process.env.TILE_HARD_MS || '', 10)
   || 450;
+// Memory optimization: Reduced from 6 to 4 for lower concurrent memory
 const MAX_ACTIVE_RENDERS = (() => {
   const parsed = Number.parseInt(process.env.MAX_ACTIVE_RENDERS || '', 10);
   if (Number.isFinite(parsed) && parsed > 0) {
     return parsed;
   }
-  return 6;
+  return 4;
 })();
 const TILE_REVALIDATE_DELAY_MS = Number.parseInt(process.env.TILE_REVALIDATE_DELAY_MS || '', 10)
   || 25;
