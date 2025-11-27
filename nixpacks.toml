@@ -21,4 +21,4 @@ cmd = "node scripts/start-app-with-worker.mjs"
 
 [variables]
 MAP_APP_MAX_HEAP_MB = "3072"
-NODE_OPTIONS = "--optimize-for-size"
+NODE_OPTIONS = "--optimize-for-size --expose-gc"
