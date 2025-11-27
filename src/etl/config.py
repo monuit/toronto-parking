@@ -41,7 +41,9 @@ class DatabaseConfig:
     schema: str = "public"
     application_name: str = "toronto-parking-etl"
     connect_timeout: int = 10
-    statement_timeout_ms: int | None = 600_000
+    # Memory optimization: Reduced from 600000ms (10min) to 60000ms (1min)
+    # Long-running queries were accumulating memory on Railway
+    statement_timeout_ms: int | None = 60_000
 
     @classmethod
     def from_env(cls) -> "DatabaseConfig":
@@ -57,7 +59,8 @@ class DatabaseConfig:
             raise RuntimeError("DATABASE_URL (or PG_DSN) must be set in the environment")
         dsn = _normalise_postgres_dsn(dsn)
         schema = os.getenv("POSTGRES_SCHEMA", "public")
-        timeout = int(os.getenv("PG_STATEMENT_TIMEOUT_MS", "600000"))
+        # Memory optimization: Default reduced to 60000ms (1 minute)
+        timeout = int(os.getenv("PG_STATEMENT_TIMEOUT_MS", "60000"))
         return cls(dsn=dsn, schema=schema, statement_timeout_ms=timeout)
 
 

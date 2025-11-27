@@ -13,3 +13,9 @@ cmds = ['cd map-app && npm run build:ssr']
 
 [start]
 cmd = 'cd map-app && npm start'
+
+# Memory optimization: Set default heap limit via environment variable
+# Can be overridden in Railway dashboard with MAP_APP_MAX_HEAP_MB
+[variables]
+MAP_APP_MAX_HEAP_MB = '3072'
+NODE_OPTIONS = '--optimize-for-size'

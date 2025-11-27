@@ -3,7 +3,9 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
-const DEFAULT_HEAP_MB = 12288;
+// Memory optimization: Reduced from 12GB to 3GB to lower Railway costs
+// Railway was charging $55+/month for 241GB RAM due to unbounded heap
+const DEFAULT_HEAP_MB = 3072;
 
 function resolveHeapLimit() {
   const raw = process.env.MAP_APP_MAX_HEAP_MB;
@@ -35,7 +37,17 @@ async function main() {
   }
 
   const heapLimit = resolveHeapLimit();
-  const nodeArgs = [`--max-old-space-size=${heapLimit}`, target.entry, ...target.args];
+  // Memory optimization flags:
+  // --optimize-for-size: Prioritize memory over speed
+  // --gc-interval=100: More frequent garbage collection
+  // --expose-gc: Allow manual GC calls if needed
+  const nodeArgs = [
+    `--max-old-space-size=${heapLimit}`,
+    '--optimize-for-size',
+    '--gc-interval=100',
+    target.entry,
+    ...target.args,
+  ];
 
   const child = spawn(process.execPath, nodeArgs, {
     stdio: 'inherit',

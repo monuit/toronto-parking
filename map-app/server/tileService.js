@@ -10,6 +10,7 @@ import geojsonvt from 'geojson-vt';
 import vtpbf from 'vt-pbf';
 import Flatbush from 'flatbush';
 import { createClient } from 'redis';
+import { LRUCache } from 'lru-cache';
 import { normalizeStreetName } from '../shared/streetUtils.js';
 import {
   RAW_POINT_ZOOM_THRESHOLD,
@@ -27,7 +28,9 @@ import {
 import { getParkingLocationYearMap } from './yearlyMetricsService.js';
 import { getRedisConfig, getTileDbConfig, getTileCacheConfig } from './runtimeConfig.js';
 
-const TILE_CACHE_LIMIT = 512;
+// Memory optimization: Reduced from 512 to 128 to lower memory footprint
+// Redis is primary cache; this is just a small in-memory buffer
+const TILE_CACHE_LIMIT = 128;
 const SUMMARY_LIMIT = 5;
 const YEARS_LIMIT = 32;
 const MONTHS_LIMIT = 24;
@@ -84,10 +87,11 @@ const GTA_BOUNDS = {
 const TILE_PREWARM_ZOOMS = [8, 9, 10, 11, 12, 13, 14];
 const PARKING_TILE_SNAPSHOT_DIR = process.env.PARKING_TILE_SNAPSHOT_DIR
   || path.resolve(process.cwd(), 'map-app/.cache/parking-tile-snapshots');
+// Memory optimization: Reduced from 256 to 64
 const PARKING_TILE_SNAPSHOT_LIMIT = Number.parseInt(
   process.env.PARKING_TILE_SNAPSHOT_LIMIT || '',
   10,
-) || 256;
+) || 64;
 
 const BROTLI_LEGACY_REWRITE_KEYS = new Set();
 
@@ -252,7 +256,13 @@ const renderSemaphore = MAX_ACTIVE_RENDERS > 0
 let tileRedisPromise = null;
 let tilePostgresPool = null;
 let tilePostgresSignature = null;
-const parkingTileSnapshotCache = new Map();
+// Memory optimization: Using LRU cache with size-based eviction
+const parkingTileSnapshotCache = new LRUCache({
+  max: PARKING_TILE_SNAPSHOT_LIMIT,
+  // Estimate ~50KB avg per tile buffer
+  maxSize: PARKING_TILE_SNAPSHOT_LIMIT * 50 * 1024,
+  sizeCalculation: (value) => value?.buffer?.length || 1024,
+});
 
 const tileMetrics = {
   activeRenders: 0,
@@ -392,13 +402,7 @@ async function writeParkingTileSnapshot(z, x, y, buffer, version) {
   if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
     return;
   }
-  if (parkingTileSnapshotCache.size >= PARKING_TILE_SNAPSHOT_LIMIT
-    && !parkingTileSnapshotCache.has(getParkingSnapshotKey(z, x, y))) {
-    const oldestKey = parkingTileSnapshotCache.keys().next().value;
-    if (oldestKey) {
-      parkingTileSnapshotCache.delete(oldestKey);
-    }
-  }
+  // LRU cache handles eviction automatically - no manual size check needed
   try {
     await fs.mkdir(PARKING_TILE_SNAPSHOT_DIR, { recursive: true });
     const payload = {
@@ -877,10 +881,17 @@ const WARD_TILE_OPTIONS = {
   extent: 4096,
   buffer: 2,
 };
-const WARD_TILE_CACHE_LIMIT = 256;
+// Memory optimization: Reduced from 256 to 64
+const WARD_TILE_CACHE_LIMIT = 64;
 const wardTileIndexes = new Map();
 const wardTileVersions = new Map();
-const wardTileCache = new Map();
+// Memory optimization: Using LRU cache with size-based eviction
+const wardTileCache = new LRUCache({
+  max: WARD_TILE_CACHE_LIMIT,
+  // Estimate ~20KB avg per ward tile buffer
+  maxSize: WARD_TILE_CACHE_LIMIT * 20 * 1024,
+  sizeCalculation: (value) => value?.buffer?.length || 512,
+});
 const wardTilePromises = new Map();
 
 const WARD_SNAPSHOT_DIR = process.env.WARD_TILE_SNAPSHOT_DIR
@@ -932,7 +943,8 @@ async function hydrateWardCacheFromSnapshot(dataset, version) {
     }
     const buffer = Buffer.from(base64, 'base64');
     const cacheKey = getWardTileCacheKey(dataset, z, x, y);
-    if (!wardTileCache.has(cacheKey) && wardTileCache.size < WARD_TILE_CACHE_LIMIT) {
+    // LRU cache handles size limits automatically
+    if (!wardTileCache.has(cacheKey)) {
       wardTileCache.set(cacheKey, { buffer, version });
       hydrated += 1;
     }
@@ -977,7 +989,8 @@ async function ensureWardSnapshot(dataset, index, version) {
     };
     const buffer = vtpbf.fromGeojsonVt({ [layerName]: normalizedTile }, { extent: 4096, version: 2 });
     tiles[`${z}/${x}/${y}`] = buffer.toString('base64');
-    if (!wardTileCache.has(getWardTileCacheKey(dataset, z, x, y)) && wardTileCache.size < WARD_TILE_CACHE_LIMIT) {
+    // LRU cache handles size limits automatically
+    if (!wardTileCache.has(getWardTileCacheKey(dataset, z, x, y))) {
       wardTileCache.set(getWardTileCacheKey(dataset, z, x, y), { buffer, version });
     }
   }
@@ -1219,13 +1232,8 @@ export async function getWardTile(dataset, zValue, xValue, yValue) {
   const version = wardTileVersions.get(dataset) || null;
   if (!tile) {
     const payload = { buffer: null, version };
+    // LRU cache handles eviction automatically
     wardTileCache.set(cacheKey, payload);
-    if (wardTileCache.size > WARD_TILE_CACHE_LIMIT) {
-      const oldestKey = wardTileCache.keys().next().value;
-      if (oldestKey) {
-        wardTileCache.delete(oldestKey);
-      }
-    }
     return payload;
   }
 
@@ -1237,13 +1245,8 @@ export async function getWardTile(dataset, zValue, xValue, yValue) {
   };
   const buffer = vtpbf.fromGeojsonVt({ [layerName]: normalizedTile }, { extent: 4096, version: 2 });
   const payload = { buffer, version };
+  // LRU cache handles eviction automatically
   wardTileCache.set(cacheKey, payload);
-  if (wardTileCache.size > WARD_TILE_CACHE_LIMIT) {
-    const oldestKey = wardTileCache.keys().next().value;
-    if (oldestKey) {
-      wardTileCache.delete(oldestKey);
-    }
-  }
   return payload;
 }
 
@@ -1258,7 +1261,13 @@ class TileService {
     this.locationTable = [];
     this.streetTable = [];
     this.summaryTree = null;
-    this.tileCache = new Map();
+    // Memory optimization: Using LRU cache with size-based eviction
+    this.tileCache = new LRUCache({
+      max: TILE_CACHE_LIMIT,
+      // Estimate ~30KB avg per tile buffer
+      maxSize: TILE_CACHE_LIMIT * 30 * 1024,
+      sizeCalculation: (value) => value?.buffer?.length || 1024,
+    });
     this.locationYearCounts = null;
     this.inflightTiles = new Map();
     this.revalidateQueue = new Set();
@@ -1565,16 +1574,11 @@ class TileService {
     if (!payload) {
       return;
     }
+    // LRU cache handles eviction automatically
     this.tileCache.set(key, {
       buffer: payload.buffer,
       version: payload.version ?? null,
     });
-    if (this.tileCache.size > TILE_CACHE_LIMIT) {
-      const oldestKey = this.tileCache.keys().next().value;
-      if (oldestKey) {
-        this.tileCache.delete(oldestKey);
-      }
-    }
   }
 
   queueTileRevalidate(z, x, y) {
