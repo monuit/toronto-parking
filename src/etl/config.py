@@ -56,7 +56,8 @@ class DatabaseConfig:
         ]
         dsn = next((value for value in candidates if value), None)
         if not dsn:
-            raise RuntimeError("DATABASE_URL (or PG_DSN) must be set in the environment")
+            raise RuntimeError(
+                "DATABASE_URL (or PG_DSN) must be set in the environment")
         dsn = _normalise_postgres_dsn(dsn)
         schema = os.getenv("POSTGRES_SCHEMA", "public")
         # Memory optimization: Default reduced to 60000ms (1 minute)
@@ -80,7 +81,8 @@ class RedisConfig:
             or os.getenv("REDIS_CONNECTION")
         )
         if not url:
-            raise RuntimeError("REDIS_URL (or REDIS_PUBLIC_URL) must be set in the environment")
+            raise RuntimeError(
+                "REDIS_URL (or REDIS_PUBLIC_URL) must be set in the environment")
         ttl = int(os.getenv("REDIS_DEFAULT_TTL", "3600"))
         namespace = os.getenv("REDIS_NAMESPACE", "toronto:tiles")
         return cls(url=url, default_ttl_seconds=ttl, namespace=namespace)
@@ -113,8 +115,10 @@ class DatasetConfig:
 class StorageConfig:
     """Local storage configuration for downloaded artifacts."""
 
-    raw_root: Path = field(default_factory=lambda: Path("output") / "etl" / "raw")
-    staging_root: Path = field(default_factory=lambda: Path("output") / "etl" / "staging")
+    raw_root: Path = field(
+        default_factory=lambda: Path("output") / "etl" / "raw")
+    staging_root: Path = field(
+        default_factory=lambda: Path("output") / "etl" / "staging")
 
     def ensure(self) -> None:
         self.raw_root.mkdir(parents=True, exist_ok=True)
@@ -152,7 +156,8 @@ class ETLConfig:
             mapped = {}
             overrides_for_dataset = overrides.get(slug, {})
             for name, config in resources.items():
-                resource_id = overrides_for_dataset.get(name, config.resource_id)
+                resource_id = overrides_for_dataset.get(
+                    name, config.resource_id)
                 mapped[name] = CKANResourceConfig(
                     resource_id=resource_id,
                     format_hint=config.format_hint,
@@ -184,7 +189,8 @@ class ETLConfig:
                 resources=apply_overrides(
                     "parking_tickets",
                     {
-                        name: CKANResourceConfig(resource_id=resource_id, format_hint="zip")
+                        name: CKANResourceConfig(
+                            resource_id=resource_id, format_hint="zip")
                         for name, resource_id in PARKING_TICKET_RESOURCES.items()
                     },
                 ),
