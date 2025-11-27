@@ -1,5 +1,6 @@
 {
   "$schema": "https://schema.railpack.com",
+  "caches": false,
   "packages": {
     "node": "22",
     "python": "3.13"
@@ -7,14 +8,14 @@
   "steps": {
     "install": {
       "commands": [
-        "npm ci --include=dev --prefix /app/map-app"
+        "cd /app/map-app && npm ci --include=dev"
       ]
     },
     "build": {
       "inputs": [{ "step": "install" }],
       "commands": [
-        "npm run build:ssr --prefix /app/map-app",
-        "npm ci --prefix /app/tools/pmtiles"
+        "cd /app/map-app && npm run build:ssr",
+        "cd /app/tools/pmtiles && npm ci"
       ]
     }
   },
