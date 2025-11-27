@@ -10,7 +10,7 @@ import { TICKET_TILE_MIN_ZOOM } from '../shared/mapConstants.js';
 const DEFAULT_MEMORY_CACHE_LIMIT = Number.parseInt(
   process.env.POSTGIS_TILE_MEMORY_CACHE_LIMIT || '',
   10,
-) || 512;
+) || 128;
 
 const tileCacheConfig = getTileCacheConfig();
 
@@ -26,7 +26,7 @@ const DEFAULT_CACHE_RULES = [
 ];
 
 const PREFETCH_ENABLED = process.env.POSTGIS_TILE_PREFETCH !== '0';
-const PREFETCH_MAX_QUEUE = Number.parseInt(process.env.POSTGIS_TILE_PREFETCH_MAX || '', 10) || 48;
+const PREFETCH_MAX_QUEUE = Number.parseInt(process.env.POSTGIS_TILE_PREFETCH_MAX || '', 10) || 16;
 const PREFETCH_BATCH_SIZE = Number.parseInt(process.env.POSTGIS_TILE_PREFETCH_BATCH || '', 10) || 6;
 const PREFETCH_MAX_ZOOM = Number.parseInt(process.env.POSTGIS_TILE_PREFETCH_MAX_ZOOM || '', 10) || 13;
 const PREFETCH_DELAY_MS = Number.parseInt(process.env.POSTGIS_TILE_PREFETCH_DELAY_MS || '', 10) || 35;

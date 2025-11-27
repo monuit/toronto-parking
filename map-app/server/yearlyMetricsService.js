@@ -22,6 +22,7 @@ function ensurePool() {
     pool = new Pool({
       connectionString,
       ssl: config.ssl,
+      max: 4,
       application_name: 'yearly-metrics-service',
     });
     pool.on('error', (error) => {

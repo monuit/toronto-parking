@@ -63,6 +63,7 @@ function ensurePool() {
     pool = new Pool({
       connectionString: config.connectionString,
       ssl: config.ssl,
+      max: 4,
       application_name: 'dataset-totals-node',
     });
     pool.on('error', (error) => {
