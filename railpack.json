@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "packages": {
+    "node": "22",
+    "python": "3.13"
+  },
+  "steps": {
+    "install": {
+      "commands": [
+        "cd map-app && npm ci --include=dev"
+      ]
+    },
+    "build": {
+      "inputs": [{ "step": "install" }],
+      "commands": [
+        "cd map-app && npm run build:ssr",
+        "cd tools/pmtiles && npm ci"
+      ]
+    }
+  },
+  "deploy": {
+    "startCommand": "node scripts/start-app-with-worker.mjs",
+    "variables": {
+      "MAP_APP_MAX_HEAP_MB": "3072",
+      "NODE_OPTIONS": "--optimize-for-size --expose-gc"
+    }
+  }
+}
