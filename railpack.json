@@ -8,15 +8,14 @@
   "steps": {
     "install": {
       "commands": [
-        "python -m venv .venv",
-        "pip install -r requirements.txt",
-        "cd map-app && npm ci --include=dev",
-        "cd tools/pmtiles && npm ci"
+        "...",
+        "python -m venv /app/.venv",
+        ". /app/.venv/bin/activate && pip install -r /app/requirements.txt"
       ]
     },
     "build": {
       "commands": [
-        "cd map-app && npm run build:ssr"
+        "cd /app/map-app && npm run build:ssr"
       ]
     }
   },
