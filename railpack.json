@@ -1,5 +1,6 @@
 {
   "$schema": "https://schema.railpack.com",
+  "provider": "node",
   "packages": {
     "node": "22",
     "python": "3.13"
@@ -7,14 +8,14 @@
   "steps": {
     "install": {
       "commands": [
-        "...",
+        "python -m venv .venv",
+        "pip install -r requirements.txt",
         "cd map-app && npm ci --include=dev",
         "cd tools/pmtiles && npm ci"
       ]
     },
     "build": {
       "commands": [
-        "...",
         "cd map-app && npm run build:ssr"
       ]
     }
