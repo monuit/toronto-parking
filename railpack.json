@@ -16,7 +16,7 @@
     },
     "build": {
       "commands": [
-        "cd /app/map-app && npm rebuild",
+        "cd /app/map-app && npm install @rollup/rollup-linux-x64-gnu --save-optional",
         "cd /app/map-app && npm run build:ssr"
       ]
     }
