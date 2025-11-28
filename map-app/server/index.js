@@ -2979,28 +2979,6 @@ async function createProdServer() {
     res.status(404).json({ error: 'React DevTools source map unavailable in prod' });
   });
 
-  try {
-    console.time('app-data:warmup');
-    await createAppData({ bypassCache: true });
-    console.timeEnd('app-data:warmup');
-  } catch (error) {
-    console.warn('Unable to warm app data cache:', error.message);
-  }
-
-  try {
-    console.time('tile-service:warmup');
-    await tileService.ensureLoaded();
-    console.timeEnd('tile-service:warmup');
-  } catch (error) {
-    console.warn('Unable to warm tile cache:', error.message);
-  }
-
-  try {
-    await warmInitialTiles('prod-startup');
-  } catch (error) {
-    console.warn('[warmup] production tile warmup failed:', error?.message || error);
-  }
-
   app.use('*', async (req, res) => {
     const url = req.originalUrl;
     const requestStarted = performance.now();
@@ -3049,12 +3027,37 @@ async function createProdServer() {
     }
   });
 
+  // Start listening FIRST so healthcheck can respond, then do warmup tasks
   const port = Number.parseInt(process.env.PORT ?? '8080', 10);
   const host = process.env.HOST || '0.0.0.0';
-  app.listen(port, host, () => {
+  app.listen(port, host, async () => {
     startupState.listening = true;
     startupState.readyAt = Date.now();
     console.log(`\nSSR production server running at http://${host}:${port}`);
+
+    // Warmup tasks run after server is listening (non-blocking)
+    try {
+      console.time('app-data:warmup');
+      await createAppData({ bypassCache: true });
+      console.timeEnd('app-data:warmup');
+    } catch (error) {
+      console.warn('Unable to warm app data cache:', error.message);
+    }
+
+    try {
+      console.time('tile-service:warmup');
+      await tileService.ensureLoaded();
+      console.timeEnd('tile-service:warmup');
+    } catch (error) {
+      console.warn('Unable to warm tile cache:', error.message);
+    }
+
+    try {
+      await warmInitialTiles('prod-startup');
+    } catch (error) {
+      console.warn('[warmup] production tile warmup failed:', error?.message || error);
+    }
+
     scheduleProductionWarmup();
   });
 }
