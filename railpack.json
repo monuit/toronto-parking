@@ -9,8 +9,9 @@
     "install": {
       "commands": [
         "...",
+        { "src": "requirements.txt", "dest": "requirements.txt" },
         "python -m venv /app/.venv",
-        ". /app/.venv/bin/activate && pip install -r /app/requirements.txt"
+        ". /app/.venv/bin/activate && pip install -r requirements.txt"
       ]
     },
     "build": {
