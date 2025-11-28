@@ -6,20 +6,21 @@
   },
   "steps": {
     "install": {
+      "inputs": [{ "local": true }],
       "commands": [
-        "cd /app/map-app && npm ci --include=dev"
+        "cd map-app && npm ci --include=dev"
       ]
     },
     "build": {
       "inputs": [{ "step": "install" }],
       "commands": [
-        "cd /app/map-app && npm run build:ssr",
-        "cd /app/tools/pmtiles && npm ci"
+        "cd map-app && npm run build:ssr",
+        "cd tools/pmtiles && npm ci"
       ]
     }
   },
   "deploy": {
-    "startCommand": "node /app/scripts/start-app-with-worker.mjs",
+    "startCommand": "node scripts/start-app-with-worker.mjs",
     "variables": {
       "MAP_APP_MAX_HEAP_MB": "3072",
       "NODE_OPTIONS": "--optimize-for-size --expose-gc"
