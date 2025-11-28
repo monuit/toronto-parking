@@ -1,0 +1,18 @@
+{
+  "name": "toronto-parking",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Toronto Parking Ticket Analysis Platform",
+  "type": "module",
+  "workspaces": [
+    "map-app",
+    "tools/pmtiles"
+  ],
+  "scripts": {
+    "build": "cd map-app && npm run build:ssr",
+    "start": "node scripts/start-app-with-worker.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
