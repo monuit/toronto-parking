@@ -22,7 +22,7 @@
     }
   },
   "deploy": {
-    "startCommand": "node scripts/start-app-with-worker.mjs",
+    "startCommand": "cd /app/map-app && node scripts/run-with-heap.mjs server/index.js",
     "variables": {
       "NODE_ENV": "production",
       "MAP_APP_MAX_HEAP_MB": "3072",
