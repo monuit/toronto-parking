@@ -6,16 +6,16 @@
   },
   "steps": {
     "install": {
-      "inputs": [{ "local": true }],
       "commands": [
-        "cd map-app && npm ci --include=dev"
+        "...",
+        "cd map-app && npm ci --include=dev",
+        "cd tools/pmtiles && npm ci"
       ]
     },
     "build": {
-      "inputs": [{ "step": "install" }],
       "commands": [
-        "cd map-app && npm run build:ssr",
-        "cd tools/pmtiles && npm ci"
+        "...",
+        "cd map-app && npm run build:ssr"
       ]
     }
   },
