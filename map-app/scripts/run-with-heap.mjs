@@ -3,10 +3,9 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
-// Memory optimization: 4GB heap allows headroom for tile generation
-// With PostGIS functions, memory usage should be much lower
-// but we need buffer for GeoJSON fallback scenarios
-const DEFAULT_HEAP_MB = 4096;
+// Memory: Use 0 to let Node.js use all available container memory
+// This prevents artificial OOM crashes from heap limits
+const DEFAULT_HEAP_MB = 0;
 
 function resolveHeapLimit() {
   const raw = process.env.MAP_APP_MAX_HEAP_MB;
@@ -14,7 +13,7 @@ function resolveHeapLimit() {
     return DEFAULT_HEAP_MB;
   }
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HEAP_MB;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_HEAP_MB;
 }
 
 function resolveTarget([entry, ...rest]) {
@@ -40,10 +39,9 @@ async function main() {
   const heapLimit = resolveHeapLimit();
   // Memory optimization flags:
   // --gc-interval=100: More frequent garbage collection
-  // --expose-gc: Allow manual GC calls if needed
-  // Note: --optimize-for-size removed - not supported in Node 22
+  // When heapLimit is 0, skip --max-old-space-size to use all available memory
   const nodeArgs = [
-    `--max-old-space-size=${heapLimit}`,
+    ...(heapLimit > 0 ? [`--max-old-space-size=${heapLimit}`] : []),
     '--gc-interval=100',
     target.entry,
     ...target.args,
