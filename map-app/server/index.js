@@ -1430,14 +1430,21 @@ function scheduleProductionWarmup() {
 
       setWarmupStatus('tileService', 'running');
       try {
-        const label = 'tile-service:warmup';
-        console.time(label);
-        try {
-          await tileService.ensureLoaded();
-        } finally {
-          console.timeEnd(label);
+        // Skip GeoJSON tile service when PostGIS handles parking_tickets tiles
+        // Loading the 132MB GeoJSON causes OOM on memory-constrained Railway containers
+        if (postgisTileService.isDatasetEnabled('parking_tickets')) {
+          console.log('[warmup] skipping GeoJSON tile service - PostGIS enabled for parking_tickets');
+          setWarmupStatus('tileService', 'skipped', null);
+        } else {
+          const label = 'tile-service:warmup';
+          console.time(label);
+          try {
+            await tileService.ensureLoaded();
+          } finally {
+            console.timeEnd(label);
+          }
+          setWarmupStatus('tileService', 'complete', null);
         }
-        setWarmupStatus('tileService', 'complete', null);
       } catch (error) {
         console.warn('Unable to warm tile cache:', error.message);
         setWarmupStatus('tileService', 'failed', error?.message || String(error));
@@ -1501,7 +1508,10 @@ async function bootstrapStartup() {
       createSnapshot: () => createAppData({ bypassCache: true }),
       onAfterRefresh: async () => {
         try {
-          await tileService.ensureLoaded();
+          // Skip GeoJSON tile service when PostGIS handles parking_tickets tiles
+          if (!postgisTileService.isDatasetEnabled('parking_tickets')) {
+            await tileService.ensureLoaded();
+          }
           await Promise.all([...WARD_DATASETS].map((dataset) => prewarmWardTiles(dataset)));
           await warmInitialTiles('background-refresh');
         } catch (error) {
@@ -3044,12 +3054,18 @@ async function createProdServer() {
       console.warn('Unable to warm app data cache:', error.message);
     }
 
-    try {
-      console.time('tile-service:warmup');
-      await tileService.ensureLoaded();
-      console.timeEnd('tile-service:warmup');
-    } catch (error) {
-      console.warn('Unable to warm tile cache:', error.message);
+    // Skip GeoJSON tile service when PostGIS handles parking_tickets tiles
+    // Loading the 132MB GeoJSON causes OOM on memory-constrained Railway containers
+    if (!postgisTileService.isDatasetEnabled('parking_tickets')) {
+      try {
+        console.time('tile-service:warmup');
+        await tileService.ensureLoaded();
+        console.timeEnd('tile-service:warmup');
+      } catch (error) {
+        console.warn('Unable to warm tile cache:', error.message);
+      }
+    } else {
+      console.log('[warmup] skipping GeoJSON tile service - PostGIS enabled for parking_tickets');
     }
 
     try {
