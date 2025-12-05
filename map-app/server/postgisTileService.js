@@ -767,7 +767,7 @@ class PostgisTileService {
     try {
       if (this.statementTimeoutMs > 0) {
         const timeout = Math.max(0, Math.floor(this.statementTimeoutMs));
-        await client.query(`SET LOCAL statement_timeout = ${timeout}`);
+        await client.query(`SET SESSION statement_timeout = ${timeout}`);
       }
 
       const query = {
@@ -905,7 +905,7 @@ class PostgisTileService {
       const start = performance.now();
       if (this.statementTimeoutMs > 0) {
         const timeout = Math.max(0, Math.floor(this.statementTimeoutMs));
-        await client.query(`SET LOCAL statement_timeout = ${timeout}`);
+        await client.query(`SET SESSION statement_timeout = ${timeout}`);
       }
       let payload = null;
 

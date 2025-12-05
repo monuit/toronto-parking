@@ -11,6 +11,7 @@ import { once } from 'node:events';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ensureTicketsFileFromRedis, storeTicketsRaw, TICKETS_FILE } from './ticketsDataStore.js';
+import { getTileDbConfig } from './runtimeConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +24,13 @@ const CHUNK_PATTERN = /^tickets_aggregated_part\d+\.geojson$/;
  * Merge split GeoJSON files into a single file
  */
 export async function mergeGeoJSONChunks() {
+  // Skip merge when PostGIS is enabled - GeoJSON not needed for tile generation
+  const dbConfig = getTileDbConfig();
+  if (dbConfig?.enabled && dbConfig.connectionString) {
+    console.log('[merge-geojson] Skipping GeoJSON merge - PostGIS tile database is enabled');
+    return null;
+  }
+  
   console.log('🔗 Merging GeoJSON chunks...');
 
   // Check if merged file already exists or can be restored from Redis

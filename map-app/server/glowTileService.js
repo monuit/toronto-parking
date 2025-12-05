@@ -24,6 +24,11 @@ const EMPTY_TILE_RAW = Buffer.alloc(0);
 const EMPTY_TILE_GZIP = gzipSync(EMPTY_TILE_RAW);
 const VECTOR_LAYER_NAME = 'glow_lines';
 
+// DB recovery settings - exponential backoff + periodic health check
+const DB_RETRY_BASE_MS = 5000; // Start at 5 seconds
+const DB_RETRY_MAX_MS = 60000; // Max 60 seconds
+const DB_HEALTH_CHECK_INTERVAL_MS = 30000; // Check health every 30 seconds
+
 const DATASET_FILE_MAP = {
   parking_tickets: path.resolve(process.cwd(), 'public/data/tickets_glow_lines.geojson'),
   red_light_locations: path.resolve(process.cwd(), 'public/data/red_light_glow_lines.geojson'),
@@ -49,6 +54,10 @@ class GlowTileService {
     this.redisSupported = false;
     this.dbAvailable = false;
     this.fallbackWarned = false;
+    // DB recovery tracking
+    this.dbRetryCount = 0;
+    this.dbRetryAfter = 0; // Timestamp when retry is allowed
+    this.healthCheckTimer = null;
     this.setup();
   }
 
@@ -67,6 +76,11 @@ class GlowTileService {
       this.poolSignature = dbConfig.connectionString;
     }
     this.dbAvailable = Boolean(this.pool);
+    
+    // Start periodic health check if DB is configured
+    if (this.pool && !this.healthCheckTimer) {
+      this.startHealthCheck();
+    }
 
     const redisConfig = getRedisConfig();
     this.redisSupported = Boolean(redisConfig.enabled && redisConfig.url);
@@ -239,13 +253,28 @@ class GlowTileService {
     }
 
     let tile;
-    if (this.dbAvailable && this.pool) {
+    const canRetryDb = this.pool && (this.dbAvailable || Date.now() >= this.dbRetryAfter);
+    
+    if (canRetryDb) {
       try {
         tile = await this.fetchFromDatabase(dataset, z, x, y, signal);
+        // Success - reset retry state if we were in recovery
+        if (!this.dbAvailable) {
+          console.log('[glow-tiles] Database connection recovered successfully');
+          this.dbAvailable = true;
+          this.dbRetryCount = 0;
+          this.dbRetryAfter = 0;
+          this.fallbackWarned = false;
+        }
       } catch (error) {
+        // Mark DB as unavailable with exponential backoff
         this.dbAvailable = false;
+        this.dbRetryCount++;
+        const backoffMs = Math.min(DB_RETRY_BASE_MS * Math.pow(2, this.dbRetryCount - 1), DB_RETRY_MAX_MS);
+        this.dbRetryAfter = Date.now() + backoffMs;
+        
         if (!this.fallbackWarned) {
-          console.warn('[glow-tiles] Database glow tiles unavailable, falling back to GeoJSON tiling:', error?.message || error);
+          console.warn(`[glow-tiles] Database glow tiles unavailable, falling back to GeoJSON. Will retry in ${backoffMs}ms. Error:`, error?.message || error);
           this.fallbackWarned = true;
         }
         tile = await this.fetchFromGeoJson(dataset, z, x, y);
@@ -266,6 +295,40 @@ class GlowTileService {
       durationMs: performance.now() - startedAt,
       size: tile.compressed.length,
     };
+  }
+}
+
+  // MARK: - Health Check
+  
+  startHealthCheck() {
+    if (this.healthCheckTimer) {
+      return;
+    }
+    this.healthCheckTimer = setInterval(() => this.performHealthCheck(), DB_HEALTH_CHECK_INTERVAL_MS);
+    // Don't prevent process exit
+    this.healthCheckTimer.unref();
+  }
+  
+  async performHealthCheck() {
+    if (!this.pool || this.dbAvailable) {
+      return;
+    }
+    
+    try {
+      const client = await this.pool.connect();
+      try {
+        await client.query('SELECT 1');
+        console.log('[glow-tiles] Health check passed - database connection recovered');
+        this.dbAvailable = true;
+        this.dbRetryCount = 0;
+        this.dbRetryAfter = 0;
+        this.fallbackWarned = false;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      // Still unavailable, will retry next interval
+    }
   }
 }
 
