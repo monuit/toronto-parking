@@ -26,7 +26,7 @@
     "variables": {
       "NODE_ENV": "production",
       "MAP_APP_MAX_HEAP_MB": "3072",
-      "NODE_OPTIONS": "--optimize-for-size --expose-gc"
+      "NODE_OPTIONS": "--expose-gc"
     }
   }
 }
