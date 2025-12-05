@@ -3,9 +3,10 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
-// Memory optimization: Reduced from 12GB to 3GB to lower Railway costs
-// Railway was charging $55+/month for 241GB RAM due to unbounded heap
-const DEFAULT_HEAP_MB = 3072;
+// Memory optimization: 4GB heap allows headroom for tile generation
+// With PostGIS functions, memory usage should be much lower
+// but we need buffer for GeoJSON fallback scenarios
+const DEFAULT_HEAP_MB = 4096;
 
 function resolveHeapLimit() {
   const raw = process.env.MAP_APP_MAX_HEAP_MB;
@@ -38,12 +39,11 @@ async function main() {
 
   const heapLimit = resolveHeapLimit();
   // Memory optimization flags:
-  // --optimize-for-size: Prioritize memory over speed
   // --gc-interval=100: More frequent garbage collection
   // --expose-gc: Allow manual GC calls if needed
+  // Note: --optimize-for-size removed - not supported in Node 22
   const nodeArgs = [
     `--max-old-space-size=${heapLimit}`,
-    '--optimize-for-size',
     '--gc-interval=100',
     target.entry,
     ...target.args,
