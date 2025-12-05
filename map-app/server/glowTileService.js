@@ -296,7 +296,6 @@ class GlowTileService {
       size: tile.compressed.length,
     };
   }
-}
 
   // MARK: - Health Check
   
