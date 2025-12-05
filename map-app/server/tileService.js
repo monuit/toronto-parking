@@ -688,6 +688,13 @@ function scheduleTilePrewarm(tileService) {
   if (!TILE_REDIS_ENABLED || !TILE_PREWARM_ENABLED) {
     return;
   }
+  // Skip GeoJSON tile prewarm when PostGIS handles parking_tickets tiles
+  // Loading the 229MB GeoJSON causes OOM on memory-constrained Railway containers
+  const pgConfig = getTileDbConfig();
+  if (pgConfig.enabled) {
+    console.log('[tile-service] skipping GeoJSON tile prewarm - PostGIS enabled');
+    return;
+  }
   let running = false;
   const run = async () => {
     if (running) {
