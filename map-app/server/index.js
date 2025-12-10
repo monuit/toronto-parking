@@ -86,12 +86,16 @@ function getMaptilerProxyPrefix(baseUrl = '') {
 }
 const MAPTILER_PROXY_ROUTE = `${MAPTILER_PROXY_BASE}/:path(*)`;
 
-const TILE_WARMUP_ENABLED = process.env.TILE_WARMUP_ENABLED !== '0';
-const TILE_WARMUP_ZOOMS = (process.env.TILE_WARMUP_ZOOMS || '8,9,10,11')
+// Memory optimization: Warmup disabled by default to prevent OOM on startup
+// Enable with TILE_WARMUP_ENABLED=1 if needed
+const TILE_WARMUP_ENABLED = process.env.TILE_WARMUP_ENABLED === '1';
+// Memory optimization: Reduced from 8,9,10,11 to just 8 (much fewer tiles)
+const TILE_WARMUP_ZOOMS = (process.env.TILE_WARMUP_ZOOMS || '8')
   .split(',')
   .map((entry) => Number.parseInt(entry, 10))
   .filter((value) => Number.isInteger(value) && value >= 0 && value <= 16);
-const TILE_WARMUP_DATASETS = (process.env.TILE_WARMUP_DATASETS || 'parking_tickets,red_light_locations,ase_locations')
+// Memory optimization: Only warm parking_tickets by default (largest dataset)
+const TILE_WARMUP_DATASETS = (process.env.TILE_WARMUP_DATASETS || 'parking_tickets')
   .split(',')
   .map((entry) => entry.trim())
   .filter((entry) => entry.length > 0);
@@ -562,6 +566,10 @@ async function warmInitialTiles(reason = 'startup') {
 
   const startedAt = Date.now();
   let warmed = 0;
+  // Memory optimization: Add delay between tiles to allow GC and reduce memory spikes
+  const WARMUP_DELAY_MS = Number.parseInt(process.env.TILE_WARMUP_DELAY_MS || '', 10) || 100;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
   for (const dataset of targetDatasets) {
     for (const zoom of TILE_WARMUP_ZOOMS) {
       const coords = enumerateTilesForBounds(bounds, zoom);
@@ -570,6 +578,10 @@ async function warmInitialTiles(reason = 'startup') {
           const tile = await postgisTileService.getTile(dataset, coord.z, coord.x, coord.y, { prefetch: true });
           if (tile?.buffer?.length) {
             warmed += 1;
+          }
+          // Memory optimization: Pause between requests to reduce memory pressure
+          if (WARMUP_DELAY_MS > 0) {
+            await sleep(WARMUP_DELAY_MS);
           }
         } catch (error) {
           console.warn(
