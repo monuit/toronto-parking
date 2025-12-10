@@ -30,7 +30,7 @@ export async function mergeGeoJSONChunks() {
     console.log('[merge-geojson] Skipping GeoJSON merge - PostGIS tile database is enabled');
     return null;
   }
-  
+
   console.log('🔗 Merging GeoJSON chunks...');
 
   // Check if merged file already exists or can be restored from Redis

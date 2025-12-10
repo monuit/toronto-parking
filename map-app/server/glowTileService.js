@@ -12,6 +12,17 @@ import vtpbf from 'vt-pbf';
 
 import { getTileDbConfig, getRedisConfig } from './runtimeConfig.js';
 
+// Memory optimization: Trigger GC if available (requires --expose-gc)
+function tryGC() {
+  if (typeof globalThis.gc === 'function') {
+    try {
+      globalThis.gc();
+    } catch {
+      // Ignore GC errors
+    }
+  }
+}
+
 const ALLOWED_DATASETS = new Set(['parking_tickets', 'red_light_locations', 'ase_locations']);
 const CACHE_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
 const CACHE_VERSION = process.env.GLOW_TILE_CACHE_VERSION || 'v1';
@@ -19,6 +30,12 @@ const CACHE_PREFIX = `${CACHE_NAMESPACE}:glow:tiles:${CACHE_VERSION}`;
 const CACHE_TTL_SECONDS = Number.parseInt(process.env.GLOW_TILE_CACHE_TTL || '', 10) || 24 * 60 * 60;
 const EMPTY_CACHE_TTL_SECONDS = Number.parseInt(process.env.GLOW_TILE_CACHE_EMPTY_TTL || '', 10) || 60 * 60;
 const MAX_CACHE_BYTES = Number.parseInt(process.env.GLOW_TILE_CACHE_MAX_BYTES || '', 10) || 1_000_000;
+
+// Memory optimization: Clear geojson index cache after this many minutes
+const GEOJSON_INDEX_CACHE_TTL_MS = Number.parseInt(
+  process.env.GLOW_GEOJSON_CACHE_TTL_MINUTES || '',
+  10,
+) * 60 * 1000 || 30 * 60 * 1000; // Default 30 minutes
 
 const EMPTY_TILE_RAW = Buffer.alloc(0);
 const EMPTY_TILE_GZIP = gzipSync(EMPTY_TILE_RAW);
@@ -37,6 +54,18 @@ const DATASET_FILE_MAP = {
 
 const geojsonIndexCache = new Map();
 const geojsonIndexPromises = new Map();
+let geojsonIndexCacheTimestamp = Date.now();
+
+// Memory optimization: Clear geojson index cache periodically
+function clearGeojsonIndexCacheIfStale() {
+  const now = Date.now();
+  if (now - geojsonIndexCacheTimestamp > GEOJSON_INDEX_CACHE_TTL_MS && geojsonIndexCache.size > 0) {
+    console.log('[glow-tiles] Clearing stale geojson index cache to free memory');
+    geojsonIndexCache.clear();
+    geojsonIndexCacheTimestamp = now;
+    tryGC();
+  }
+}
 
 function buildCacheKey(dataset, z, x, y) {
   return `${CACHE_PREFIX}:${dataset}:${z}:${x}:${y}`;
@@ -76,7 +105,7 @@ class GlowTileService {
       this.poolSignature = dbConfig.connectionString;
     }
     this.dbAvailable = Boolean(this.pool);
-    
+
     // Start periodic health check if DB is configured
     if (this.pool && !this.healthCheckTimer) {
       this.startHealthCheck();
@@ -228,6 +257,9 @@ class GlowTileService {
   }
 
   async getTile({ dataset, z, x, y, signal }) {
+    // Memory optimization: Clear stale cache periodically
+    clearGeojsonIndexCacheIfStale();
+
     if (!ALLOWED_DATASETS.has(dataset)) {
       const allowed = Array.from(ALLOWED_DATASETS).join(', ');
       throw new Error(`Unsupported glow dataset "${dataset}" (allowed: ${allowed})`);
@@ -254,7 +286,7 @@ class GlowTileService {
 
     let tile;
     const canRetryDb = this.pool && (this.dbAvailable || Date.now() >= this.dbRetryAfter);
-    
+
     if (canRetryDb) {
       try {
         tile = await this.fetchFromDatabase(dataset, z, x, y, signal);
@@ -272,7 +304,7 @@ class GlowTileService {
         this.dbRetryCount++;
         const backoffMs = Math.min(DB_RETRY_BASE_MS * Math.pow(2, this.dbRetryCount - 1), DB_RETRY_MAX_MS);
         this.dbRetryAfter = Date.now() + backoffMs;
-        
+
         if (!this.fallbackWarned) {
           console.warn(`[glow-tiles] Database glow tiles unavailable, falling back to GeoJSON. Will retry in ${backoffMs}ms. Error:`, error?.message || error);
           this.fallbackWarned = true;
@@ -298,7 +330,7 @@ class GlowTileService {
   }
 
   // MARK: - Health Check
-  
+
   startHealthCheck() {
     if (this.healthCheckTimer) {
       return;
@@ -307,12 +339,12 @@ class GlowTileService {
     // Don't prevent process exit
     this.healthCheckTimer.unref();
   }
-  
+
   async performHealthCheck() {
     if (!this.pool || this.dbAvailable) {
       return;
     }
-    
+
     try {
       const client = await this.pool.connect();
       try {

@@ -7,10 +7,22 @@ import vtpbf from 'vt-pbf';
 import { getTileDbConfig, getTileCacheConfig } from './runtimeConfig.js';
 import { TICKET_TILE_MIN_ZOOM } from '../shared/mapConstants.js';
 
+// Memory optimization: Trigger GC if available (requires --expose-gc)
+function tryGC() {
+  if (typeof globalThis.gc === 'function') {
+    try {
+      globalThis.gc();
+    } catch {
+      // Ignore GC errors
+    }
+  }
+}
+
+// Memory optimization: Reduced from 128 to 64 to lower memory footprint
 const DEFAULT_MEMORY_CACHE_LIMIT = Number.parseInt(
   process.env.POSTGIS_TILE_MEMORY_CACHE_LIMIT || '',
   10,
-) || 128;
+) || 64;
 
 const tileCacheConfig = getTileCacheConfig();
 
@@ -418,6 +430,7 @@ class MemoryTileCache {
   constructor(limit) {
     this.limit = Number.isFinite(limit) && limit > 0 ? limit : DEFAULT_MEMORY_CACHE_LIMIT;
     this.map = new Map();
+    this.evictCount = 0;
   }
 
   get(key) {
@@ -473,6 +486,23 @@ class MemoryTileCache {
         this.map.delete(target[0]);
       }
     }
+    // Memory optimization: Trigger GC every 50 evictions
+    this.evictCount += overflow;
+    if (this.evictCount >= 50) {
+      this.evictCount = 0;
+      tryGC();
+    }
+  }
+
+  // Memory optimization: Clear all entries and trigger GC
+  clear() {
+    this.map.clear();
+    tryGC();
+  }
+
+  // Memory optimization: Get current memory pressure estimate
+  get size() {
+    return this.map.size;
   }
 }
 

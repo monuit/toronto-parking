@@ -28,6 +28,19 @@ import {
 import { getParkingLocationYearMap } from './yearlyMetricsService.js';
 import { getRedisConfig, getTileDbConfig, getTileCacheConfig } from './runtimeConfig.js';
 
+// Memory optimization: Trigger GC if available (requires --expose-gc)
+let gcTriggerCount = 0;
+const GC_TRIGGER_INTERVAL = 100; // Trigger GC every N tile renders
+function tryGC() {
+  if (typeof globalThis.gc === 'function') {
+    try {
+      globalThis.gc();
+    } catch {
+      // Ignore GC errors
+    }
+  }
+}
+
 // Memory optimization: Reduced from 512 to 128 to lower memory footprint
 // Redis is primary cache; this is just a small in-memory buffer
 const TILE_CACHE_LIMIT = 128;
@@ -1694,6 +1707,13 @@ class TileService {
           }
         }
         this.inflightTiles.delete(key);
+
+        // Memory optimization: Trigger GC periodically to free memory
+        gcTriggerCount++;
+        if (gcTriggerCount >= GC_TRIGGER_INTERVAL) {
+          gcTriggerCount = 0;
+          tryGC();
+        }
       }
     })();
 
