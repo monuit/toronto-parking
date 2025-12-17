@@ -701,13 +701,17 @@ async function resetRedisNamespaceOnBoot() {
     for await (const key of client.scanIterator({ MATCH: matchPattern, COUNT: 1000 })) {
       batch.push(key);
       if (batch.length >= 512) {
-        const removed = await client.del(...batch);
-        deleted += Number(removed) || 0;
+        // node-redis DEL requires at least one key; check before calling
+        if (batch.length > 0) {
+          const removed = await client.del(batch);
+          deleted += Number(removed) || 0;
+        }
         batch = [];
       }
     }
+    // Flush remaining keys - DEL requires at least one key argument
     if (batch.length > 0) {
-      const removed = await client.del(...batch);
+      const removed = await client.del(batch);
       deleted += Number(removed) || 0;
     }
     if (deleted > 0) {
@@ -1491,8 +1495,8 @@ async function bootstrapStartup() {
     const wakeResults = await wakeRemoteServices();
     console.log(
       `   Redis: ${wakeResults.redis.enabled ? (wakeResults.redis.awake ? 'awake' : 'sleeping') : 'disabled'} | ` +
-        `Core DB: ${wakeResults.coreDb.enabled ? (wakeResults.coreDb.awake ? 'awake' : 'sleeping') : 'disabled'} | ` +
-        `Tile DB: ${wakeResults.tileDb.enabled ? (wakeResults.tileDb.awake ? 'awake' : 'sleeping') : 'disabled'}`,
+      `Core DB: ${wakeResults.coreDb.enabled ? (wakeResults.coreDb.awake ? 'awake' : 'sleeping') : 'disabled'} | ` +
+      `Tile DB: ${wakeResults.tileDb.enabled ? (wakeResults.tileDb.awake ? 'awake' : 'sleeping') : 'disabled'}`,
     );
     markDependencyStatus(
       'redis',
