@@ -36,14 +36,14 @@ function resolveTarget([entry, ...rest]) {
 
 function startMemoryWatchdog(heapLimitMB) {
   if (heapLimitMB <= 0) return null;
-  
+
   const thresholdBytes = heapLimitMB * 1024 * 1024 * (MEMORY_THRESHOLD_PERCENT / 100);
-  
+
   const timer = setInterval(() => {
     const usage = process.memoryUsage();
     const heapUsedMB = Math.round(usage.heapUsed / 1024 / 1024);
     const rssMB = Math.round(usage.rss / 1024 / 1024);
-    
+
     if (usage.heapUsed > thresholdBytes) {
       console.warn(
         `[memory-watchdog] ⚠️ High memory: heap ${heapUsedMB}MB/${heapLimitMB}MB ` +
@@ -51,7 +51,7 @@ function startMemoryWatchdog(heapLimitMB) {
       );
     }
   }, MEMORY_LOG_INTERVAL_MS);
-  
+
   timer.unref();
   return timer;
 }
@@ -63,10 +63,10 @@ async function main() {
   }
 
   const heapLimit = resolveHeapLimit();
-  
+
   // Log memory configuration at startup
   console.log(`[run-with-heap] Heap limit: ${heapLimit > 0 ? `${heapLimit}MB` : 'unlimited'}`);
-  
+
   // Memory optimization flags:
   // --gc-interval=100: More frequent garbage collection
   // --expose-gc: Allow manual GC triggering (combined with NODE_OPTIONS)
@@ -82,7 +82,7 @@ async function main() {
     stdio: 'inherit',
     env: process.env,
   });
-  
+
   // Start memory watchdog in parent process
   startMemoryWatchdog(heapLimit);
 

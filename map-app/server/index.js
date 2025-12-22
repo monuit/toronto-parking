@@ -1535,9 +1535,9 @@ async function bootstrapStartup() {
         }
       },
     });
-    if (backgroundRefresh && isProd) {
-      backgroundRefresh.triggerNow();
-    }
+    // Don't trigger background refresh immediately - the main warmup handles initial data
+    // This prevents duplicate parallel warmups that double memory usage at startup
+    void backgroundRefresh;
 
     const preloadTimer = setTimeout(() => {
       Promise.all(
