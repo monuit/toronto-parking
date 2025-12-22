@@ -701,17 +701,17 @@ async function resetRedisNamespaceOnBoot() {
     for await (const key of client.scanIterator({ MATCH: matchPattern, COUNT: 1000 })) {
       batch.push(key);
       if (batch.length >= 512) {
-        // node-redis DEL requires at least one key; check before calling
+        // redis v5+ DEL requires spread arguments, not array
         if (batch.length > 0) {
-          const removed = await client.del(batch);
+          const removed = await client.del(...batch);
           deleted += Number(removed) || 0;
         }
         batch = [];
       }
     }
-    // Flush remaining keys - DEL requires at least one key argument
+    // Flush remaining keys - redis v5+ DEL requires spread arguments
     if (batch.length > 0) {
-      const removed = await client.del(batch);
+      const removed = await client.del(...batch);
       deleted += Number(removed) || 0;
     }
     if (deleted > 0) {

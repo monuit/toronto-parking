@@ -25,11 +25,12 @@
     "startCommand": "cd /app/map-app && node scripts/run-with-heap.mjs server/index.js",
     "variables": {
       "NODE_ENV": "production",
-      "MAP_APP_MAX_HEAP_MB": "2048",
+      "MAP_APP_MAX_HEAP_MB": "1536",
       "NODE_OPTIONS": "--expose-gc --max-semi-space-size=32",
       "UV_THREADPOOL_SIZE": "2",
       "TILE_WARMUP_ENABLED": "0",
-      "POSTGIS_TILE_POOL_SIZE": "3"
+      "POSTGIS_TILE_POOL_SIZE": "3",
+      "RESET_CACHE_ON_BOOT": "0"
     }
   }
 }
