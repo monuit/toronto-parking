@@ -29,7 +29,7 @@
     "variables": {
       "NODE_ENV": "production",
       "MAP_APP_MAX_HEAP_MB": "1200",
-      "NODE_OPTIONS": "--expose-gc --max-semi-space-size=16 --optimize-for-size",
+      "NODE_OPTIONS": "--expose-gc",
       "UV_THREADPOOL_SIZE": "2",
       "TILE_WARMUP_ENABLED": "0",
       "POSTGIS_TILE_POOL_SIZE": "3",

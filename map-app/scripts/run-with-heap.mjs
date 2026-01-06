@@ -76,6 +76,7 @@ async function main() {
     ...(heapLimit > 0 ? [`--max-old-space-size=${heapLimit}`] : []),
     '--gc-interval=50',
     '--optimize-for-size',
+    '--max-semi-space-size=16',
     target.entry,
     ...target.args,
   ];
