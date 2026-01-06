@@ -29,9 +29,11 @@ def get_all_services_status():
     }
     """
     result = graphql_query(query, {"id": ENVIRONMENT_ID})
-    
-    if result and result.get("data", {}).get("environment"):
-        return result["data"]["environment"]["serviceInstances"]["edges"]
+
+    data = (result or {}).get("data") or {}
+    environment = data.get("environment")
+    if environment:
+        return environment["serviceInstances"]["edges"]
     return []
 
 

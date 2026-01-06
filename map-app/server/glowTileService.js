@@ -11,17 +11,7 @@ import geojsonvt from 'geojson-vt';
 import vtpbf from 'vt-pbf';
 
 import { getTileDbConfig, getRedisConfig } from './runtimeConfig.js';
-
-// Memory optimization: Trigger GC if available (requires --expose-gc)
-function tryGC() {
-  if (typeof globalThis.gc === 'function') {
-    try {
-      globalThis.gc();
-    } catch {
-      // Ignore GC errors
-    }
-  }
-}
+import { isUnderMemoryPressure, forceGC as memoryGuardGC } from './memoryGuard.js';
 
 const ALLOWED_DATASETS = new Set(['parking_tickets', 'red_light_locations', 'ase_locations']);
 const CACHE_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
@@ -32,10 +22,11 @@ const EMPTY_CACHE_TTL_SECONDS = Number.parseInt(process.env.GLOW_TILE_CACHE_EMPT
 const MAX_CACHE_BYTES = Number.parseInt(process.env.GLOW_TILE_CACHE_MAX_BYTES || '', 10) || 1_000_000;
 
 // Memory optimization: Clear geojson index cache after this many minutes
+// Reduced from 30 to 10 minutes for Railway memory constraints
 const GEOJSON_INDEX_CACHE_TTL_MS = Number.parseInt(
   process.env.GLOW_GEOJSON_CACHE_TTL_MINUTES || '',
   10,
-) * 60 * 1000 || 30 * 60 * 1000; // Default 30 minutes
+) * 60 * 1000 || 10 * 60 * 1000; // Default 10 minutes (reduced from 30)
 
 const EMPTY_TILE_RAW = Buffer.alloc(0);
 const EMPTY_TILE_GZIP = gzipSync(EMPTY_TILE_RAW);
@@ -56,14 +47,21 @@ const geojsonIndexCache = new Map();
 const geojsonIndexPromises = new Map();
 let geojsonIndexCacheTimestamp = Date.now();
 
-// Memory optimization: Clear geojson index cache periodically
+// Memory optimization: Clear geojson index cache periodically or under memory pressure
 function clearGeojsonIndexCacheIfStale() {
   const now = Date.now();
-  if (now - geojsonIndexCacheTimestamp > GEOJSON_INDEX_CACHE_TTL_MS && geojsonIndexCache.size > 0) {
-    console.log('[glow-tiles] Clearing stale geojson index cache to free memory');
+  const isStale = now - geojsonIndexCacheTimestamp > GEOJSON_INDEX_CACHE_TTL_MS;
+  const underPressure = isUnderMemoryPressure();
+
+  if ((isStale || underPressure) && geojsonIndexCache.size > 0) {
+    if (underPressure) {
+      console.log('[glow-tiles] Clearing geojson index cache due to memory pressure');
+    } else {
+      console.log('[glow-tiles] Clearing stale geojson index cache to free memory');
+    }
     geojsonIndexCache.clear();
     geojsonIndexCacheTimestamp = now;
-    tryGC();
+    memoryGuardGC();
   }
 }
 
@@ -357,7 +355,7 @@ class GlowTileService {
       } finally {
         client.release();
       }
-    } catch (error) {
+    } catch {
       // Still unavailable, will retry next interval
     }
   }

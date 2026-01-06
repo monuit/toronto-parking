@@ -32,9 +32,11 @@ def get_all_active_deployments():
     }
     """
     result = graphql_query(query, {"id": ENVIRONMENT_ID})
-    
-    if result and result.get("data", {}).get("environment"):
-        return result["data"]["environment"]["serviceInstances"]["edges"]
+
+    data = (result or {}).get("data") or {}
+    environment = data.get("environment")
+    if environment:
+        return environment["serviceInstances"]["edges"]
     return []
 
 
@@ -74,7 +76,7 @@ def main():
     services = get_all_active_deployments()
     
     if not services:
-        print("❌ Failed to get service list")
+        print("❌ Failed to get service list (auth/token may be invalid)")
         return
     
     stopped = []

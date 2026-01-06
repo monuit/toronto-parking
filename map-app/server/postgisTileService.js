@@ -18,11 +18,11 @@ function tryGC() {
   }
 }
 
-// Memory optimization: Reduced from 128 to 64 to lower memory footprint
+// Memory optimization: Reduced from 128 to 32 to lower memory footprint
 const DEFAULT_MEMORY_CACHE_LIMIT = Number.parseInt(
   process.env.POSTGIS_TILE_MEMORY_CACHE_LIMIT || '',
   10,
-) || 64;
+) || 32;
 
 const tileCacheConfig = getTileCacheConfig();
 

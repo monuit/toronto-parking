@@ -68,12 +68,14 @@ async function main() {
   console.log(`[run-with-heap] Heap limit: ${heapLimit > 0 ? `${heapLimit}MB` : 'unlimited'}`);
 
   // Memory optimization flags:
-  // --gc-interval=100: More frequent garbage collection
+  // --gc-interval=50: More frequent garbage collection (reduced from 100)
+  // --optimize-for-size: Prefer memory efficiency over speed
   // --expose-gc: Allow manual GC triggering (combined with NODE_OPTIONS)
   // When heapLimit is 0, skip --max-old-space-size to use all available memory
   const nodeArgs = [
     ...(heapLimit > 0 ? [`--max-old-space-size=${heapLimit}`] : []),
-    '--gc-interval=100',
+    '--gc-interval=50',
+    '--optimize-for-size',
     target.entry,
     ...target.args,
   ];

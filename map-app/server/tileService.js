@@ -30,7 +30,7 @@ import { getRedisConfig, getTileDbConfig, getTileCacheConfig } from './runtimeCo
 
 // Memory optimization: Trigger GC if available (requires --expose-gc)
 let gcTriggerCount = 0;
-const GC_TRIGGER_INTERVAL = 100; // Trigger GC every N tile renders
+const GC_TRIGGER_INTERVAL = 50; // Trigger GC every N tile renders (reduced from 100)
 function tryGC() {
   if (typeof globalThis.gc === 'function') {
     try {
@@ -41,9 +41,9 @@ function tryGC() {
   }
 }
 
-// Memory optimization: Reduced from 512 to 128 to lower memory footprint
+// Memory optimization: Reduced from 512 to 48 to lower memory footprint
 // Redis is primary cache; this is just a small in-memory buffer
-const TILE_CACHE_LIMIT = 128;
+const TILE_CACHE_LIMIT = 48;
 const SUMMARY_LIMIT = 5;
 const YEARS_LIMIT = 32;
 const MONTHS_LIMIT = 24;
@@ -102,23 +102,23 @@ const GTA_BOUNDS = {
 const TILE_PREWARM_ZOOMS = [8, 9, 10, 11, 12];
 const PARKING_TILE_SNAPSHOT_DIR = process.env.PARKING_TILE_SNAPSHOT_DIR
   || path.resolve(process.cwd(), 'map-app/.cache/parking-tile-snapshots');
-// Memory optimization: Reduced from 256 to 64
+// Memory optimization: Reduced from 256 to 32 for constrained containers
 const PARKING_TILE_SNAPSHOT_LIMIT = Number.parseInt(
   process.env.PARKING_TILE_SNAPSHOT_LIMIT || '',
   10,
-) || 64;
+) || 32;
 
 const BROTLI_LEGACY_REWRITE_KEYS = new Set();
 
 const TILE_HARD_TIMEOUT_MS = Number.parseInt(process.env.TILE_HARD_MS || '', 10)
   || 450;
-// Memory optimization: Reduced from 6 to 4 for lower concurrent memory
+// Memory optimization: Reduced from 6 to 3 for lower concurrent memory on Railway
 const MAX_ACTIVE_RENDERS = (() => {
   const parsed = Number.parseInt(process.env.MAX_ACTIVE_RENDERS || '', 10);
   if (Number.isFinite(parsed) && parsed > 0) {
     return parsed;
   }
-  return 4;
+  return 3;
 })();
 const TILE_REVALIDATE_DELAY_MS = Number.parseInt(process.env.TILE_REVALIDATE_DELAY_MS || '', 10)
   || 25;
@@ -218,7 +218,7 @@ class AsyncSemaphore {
 
   async acquire(signal) {
     if (this.limit <= 0) {
-      return () => {};
+      return () => { };
     }
     throwIfAborted(signal);
     if (this.active < this.limit) {

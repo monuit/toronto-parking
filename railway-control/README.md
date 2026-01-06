@@ -7,18 +7,21 @@ Scripts to manage Railway deployments - stop all services to save costs, restart
 ### Stop all services
 
 ```bash
+export RAILWAY_PROJECT_TOKEN="<your-project-token>"
 python stop_all.py
 ```
 
 ### Restart all services (redeploy latest)
 
 ```bash
+export RAILWAY_PROJECT_TOKEN="<your-project-token>"
 python start_all.py
 ```
 
 ### Check current status
 
 ```bash
+export RAILWAY_PROJECT_TOKEN="<your-project-token>"
 python status.py
 ```
 
@@ -34,7 +37,7 @@ The scripts use a **project-scoped token** that only has access to this specific
 ## Services Managed
 
 | Service | Service ID |
-|---------|------------|
+| ------- | ---------- |
 | toronto-parking (app) | `15593dae-9d71-4b15-8e39-ecc1cbee11d3` |
 | Postgres | `4ec76b6f-84e9-41d1-a487-abb89e517fa4` |
 | PostGIS | `b0a63598-8b62-4ad1-9c0d-b3c182bcc731` |

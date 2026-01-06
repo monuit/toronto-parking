@@ -8,6 +8,8 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { getRedisConfig } from './runtimeConfig.js';
 import { getCameraWardRollup } from './yearlyMetricsService.js';
+import { isUnderMemoryPressure, forceGC } from './memoryGuard.js';
+import { LRUCache } from 'lru-cache';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,27 +79,58 @@ const CAMERA_WARD_CACHE_MS = Number.isFinite(CAMERA_WARD_CACHE_SECONDS) && CAMER
 let redisClientPromise = null;
 let cachedManifest = null;
 let cachedManifestVersion = null;
-const cameraLocationsMemoryCache = new Map();
-const cameraGlowMemoryCache = new Map();
-const wardSummaryMemoryCache = new Map();
-const wardGeojsonMemoryCache = new Map();
+
+// Memory optimization: Using LRU caches with fixed size limits instead of unbounded Maps
+const MEMORY_CACHE_MAX_ENTRIES = Number.parseInt(
+  process.env.TICKETS_MEMORY_CACHE_MAX || '',
+  10,
+) || 16;
+
+// Helper to create LRU cache with TTL support
+function createMemoryCache(maxEntries = MEMORY_CACHE_MAX_ENTRIES) {
+  return new LRUCache({
+    max: maxEntries,
+    ttl: CAMERA_LOCATIONS_CACHE_MS,
+    ttlAutopurge: true,
+    allowStale: false,
+  });
+}
+
+const cameraLocationsMemoryCache = createMemoryCache();
+const cameraGlowMemoryCache = createMemoryCache();
+const wardSummaryMemoryCache = createMemoryCache();
+const wardGeojsonMemoryCache = createMemoryCache();
 const wardSummaryRefreshState = new Map();
 const wardGeojsonRefreshState = new Map();
+
+// Memory optimization: Clear all caches when under pressure
+function clearCachesIfUnderPressure() {
+  if (!isUnderMemoryPressure()) {
+    return false;
+  }
+  console.log('[tickets-data] Clearing caches due to memory pressure');
+  cameraLocationsMemoryCache.clear();
+  cameraGlowMemoryCache.clear();
+  wardSummaryMemoryCache.clear();
+  wardGeojsonMemoryCache.clear();
+  forceGC();
+  return true;
+}
 
 function resolveCacheTtlMs(sourceMs) {
   return Number.isFinite(sourceMs) && sourceMs > 0 ? sourceMs : 0;
 }
 
 function getCachedValue(cache, key) {
-  const entry = cache.get(key);
-  if (!entry) {
+  // Check for memory pressure before returning from cache
+  if (isUnderMemoryPressure()) {
+    clearCachesIfUnderPressure();
     return null;
   }
-  if (entry.expiresAt && entry.expiresAt <= Date.now()) {
-    cache.delete(key);
-    return null;
-  }
-  return entry.payload;
+
+  // LRU cache returns value directly, no wrapper object
+  const value = cache.get(key);
+  return value ?? null;
 }
 
 function setCachedValue(cache, key, payload, ttlMs) {
@@ -105,10 +138,9 @@ function setCachedValue(cache, key, payload, ttlMs) {
     cache.delete(key);
     return;
   }
-  cache.set(key, {
-    payload,
-    expiresAt: ttlMs > 0 ? Date.now() + ttlMs : null,
-  });
+  // LRU cache handles TTL internally
+  const ttl = ttlMs > 0 ? ttlMs : undefined;
+  cache.set(key, payload, { ttl });
 }
 
 function scheduleWardSummaryRefresh(dataset, baseWrapper) {

@@ -1,4 +1,10 @@
-"""Railway project configuration."""
+"""Railway project configuration.
+
+Important: do not hardcode tokens in this repo.
+Set a project-scoped token via environment variable instead.
+"""
+
+import os
 
 # Railway GraphQL API endpoint
 # Note: Use .com not .app
@@ -6,7 +12,10 @@ RAILWAY_API = "https://backboard.railway.com/graphql/v2"
 
 # Project-scoped token (only has access to this specific project)
 # Uses Project-Access-Token header instead of Authorization: Bearer
-RAILWAY_TOKEN = "6d6dc944-38bd-4fc4-b782-b3c79c80f014"
+#
+# Preferred env var: RAILWAY_PROJECT_TOKEN
+# Fallback env var:  RAILWAY_TOKEN
+RAILWAY_TOKEN = os.getenv("RAILWAY_PROJECT_TOKEN") or os.getenv("RAILWAY_TOKEN") or ""
 
 # Set to True if using a project token, False if using account/team token
 IS_PROJECT_TOKEN = True

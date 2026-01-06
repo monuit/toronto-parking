@@ -58,6 +58,7 @@ import {
 import { buildPmtilesManifest } from './pmtilesManifest.js';
 import { schedulePmtilesWarmup } from './pmtilesWarmup.js';
 import glowTileService from './glowTileService.js';
+import { isUnderMemoryPressure } from './memoryGuard.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -605,7 +606,32 @@ async function warmInitialTiles(reason = 'startup') {
 
 let maptilerRedisPromise = null;
 const maptilerInflight = new Map();
+const MAPTILER_INFLIGHT_MAX_SIZE = 50; // Prevent unbounded growth
+const MAPTILER_INFLIGHT_CLEANUP_INTERVAL_MS = 60_000; // Cleanup stale entries every minute
 const TEXT_CONTENT_TYPE_REGEX = /json|text|javascript|xml/i;
+
+// Memory optimization: Periodically clean up maptilerInflight to prevent unbounded growth
+let maptilerInflightCleanupTimer = null;
+function startMaptilerInflightCleanup() {
+  if (maptilerInflightCleanupTimer) {
+    return;
+  }
+  maptilerInflightCleanupTimer = setInterval(() => {
+    if (maptilerInflight.size > MAPTILER_INFLIGHT_MAX_SIZE) {
+      console.warn(`[maptiler] Clearing oversized inflight map (${maptilerInflight.size} entries)`);
+      maptilerInflight.clear();
+    }
+    // Also clear under memory pressure
+    if (isUnderMemoryPressure() && maptilerInflight.size > 0) {
+      console.log('[maptiler] Clearing inflight map due to memory pressure');
+      maptilerInflight.clear();
+    }
+  }, MAPTILER_INFLIGHT_CLEANUP_INTERVAL_MS);
+  if (typeof maptilerInflightCleanupTimer.unref === 'function') {
+    maptilerInflightCleanupTimer.unref();
+  }
+}
+startMaptilerInflightCleanup();
 
 let healthPgPool = null;
 

@@ -7,6 +7,13 @@ from config import RAILWAY_API, RAILWAY_TOKEN, IS_PROJECT_TOKEN
 
 def graphql_query(query: str, variables: dict = None) -> dict:
     """Execute a GraphQL query against Railway API."""
+    if not RAILWAY_TOKEN:
+        print(
+            "Missing Railway token. Set env var RAILWAY_PROJECT_TOKEN "
+            "(preferred) or RAILWAY_TOKEN."
+        )
+        return None
+
     # Project tokens use a different header than account/team tokens
     if IS_PROJECT_TOKEN:
         headers = {
