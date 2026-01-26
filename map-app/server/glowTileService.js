@@ -11,9 +11,12 @@ import geojsonvt from 'geojson-vt';
 import vtpbf from 'vt-pbf';
 
 import { getTileDbConfig, getRedisConfig } from './runtimeConfig.js';
-import { isUnderMemoryPressure, forceGC as memoryGuardGC } from './memoryGuard.js';
+import { isUnderMemoryPressure, forceGC as memoryGuardGC, registerMemoryCleanupCallback } from './memoryGuard.js';
 
 const ALLOWED_DATASETS = new Set(['parking_tickets', 'red_light_locations', 'ase_locations']);
+// Skip GeoJSON fallback for large datasets - parking_tickets is ~132MB and causes OOM
+// These datasets should use PostGIS only; if PostGIS is down, return empty tiles
+const SKIP_GEOJSON_FALLBACK_DATASETS = new Set(['parking_tickets']);
 const CACHE_NAMESPACE = process.env.MAP_DATA_REDIS_NAMESPACE || 'toronto:map-data';
 const CACHE_VERSION = process.env.GLOW_TILE_CACHE_VERSION || 'v1';
 const CACHE_PREFIX = `${CACHE_NAMESPACE}:glow:tiles:${CACHE_VERSION}`;
@@ -60,10 +63,24 @@ function clearGeojsonIndexCacheIfStale() {
       console.log('[glow-tiles] Clearing stale geojson index cache to free memory');
     }
     geojsonIndexCache.clear();
+    geojsonIndexPromises.clear();
     geojsonIndexCacheTimestamp = now;
     memoryGuardGC();
   }
 }
+
+// Force-clear GeoJSON caches (called by memory guard under pressure)
+function forceClearGeojsonCache() {
+  if (geojsonIndexCache.size > 0 || geojsonIndexPromises.size > 0) {
+    console.log('[glow-tiles] Force-clearing geojson index cache (memory pressure callback)');
+    geojsonIndexCache.clear();
+    geojsonIndexPromises.clear();
+    geojsonIndexCacheTimestamp = Date.now();
+  }
+}
+
+// Register cleanup callback with memory guard
+registerMemoryCleanupCallback(forceClearGeojsonCache);
 
 function buildCacheKey(dataset, z, x, y) {
   return `${CACHE_PREFIX}:${dataset}:${z}:${x}:${y}`;
@@ -304,13 +321,26 @@ class GlowTileService {
         this.dbRetryAfter = Date.now() + backoffMs;
 
         if (!this.fallbackWarned) {
-          console.warn(`[glow-tiles] Database glow tiles unavailable, falling back to GeoJSON. Will retry in ${backoffMs}ms. Error:`, error?.message || error);
+          console.warn(`[glow-tiles] Database glow tiles unavailable. Will retry in ${backoffMs}ms. Error:`, error?.message || error);
           this.fallbackWarned = true;
         }
-        tile = await this.fetchFromGeoJson(dataset, z, x, y);
+
+        // Skip GeoJSON fallback for large datasets - they cause OOM
+        if (SKIP_GEOJSON_FALLBACK_DATASETS.has(dataset)) {
+          console.warn(`[glow-tiles] Skipping GeoJSON fallback for ${dataset} (too large, would cause OOM)`);
+          tile = { raw: EMPTY_TILE_RAW, compressed: EMPTY_TILE_GZIP, empty: true };
+        } else {
+          tile = await this.fetchFromGeoJson(dataset, z, x, y);
+        }
       }
     } else {
-      tile = await this.fetchFromGeoJson(dataset, z, x, y);
+      // DB not available and not ready to retry
+      // Skip GeoJSON fallback for large datasets
+      if (SKIP_GEOJSON_FALLBACK_DATASETS.has(dataset)) {
+        tile = { raw: EMPTY_TILE_RAW, compressed: EMPTY_TILE_GZIP, empty: true };
+      } else {
+        tile = await this.fetchFromGeoJson(dataset, z, x, y);
+      }
     }
     if (!tile) {
       tile = { raw: EMPTY_TILE_RAW, compressed: EMPTY_TILE_GZIP, empty: true };

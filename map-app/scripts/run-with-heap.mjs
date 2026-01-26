@@ -3,9 +3,9 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
-// Memory: Default to 1536MB to leave headroom for Node.js native allocations
+// Memory: Default to 4096MB for Railway (32GB container)
 // Container typically needs 20-30% overhead beyond heap for buffers, GC, etc.
-const DEFAULT_HEAP_MB = 1536;
+const DEFAULT_HEAP_MB = 4096;
 
 // Memory watchdog interval (ms) - log memory usage periodically
 const MEMORY_LOG_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes

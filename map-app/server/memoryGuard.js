@@ -24,11 +24,11 @@ const MEMORY_CHECK_INTERVAL_MS = Number.parseInt(
   10,
 ) || 30_000; // 30 seconds
 
-// Heap limit from environment or default
+// Heap limit from environment or default (4096MB for Railway 32GB container)
 const HEAP_LIMIT_MB = Number.parseInt(
   process.env.MAP_APP_MAX_HEAP_MB || '',
   10,
-) || 1200;
+) || 4096;
 
 const HEAP_LIMIT_BYTES = HEAP_LIMIT_MB * 1024 * 1024;
 
@@ -36,6 +36,36 @@ const HEAP_LIMIT_BYTES = HEAP_LIMIT_MB * 1024 * 1024;
 let lastWarningTime = 0;
 let consecutivePressureCount = 0;
 let monitorTimer = null;
+
+// Cleanup callbacks registered by other modules
+const cleanupCallbacks = [];
+
+/**
+ * Register a cleanup callback that will be invoked when memory pressure is detected.
+ * Callbacks should release caches and other memory-intensive resources.
+ */
+export function registerMemoryCleanupCallback(fn) {
+  if (typeof fn === 'function' && !cleanupCallbacks.includes(fn)) {
+    cleanupCallbacks.push(fn);
+  }
+}
+
+/**
+ * Run all registered cleanup callbacks.
+ */
+function runCleanupCallbacks() {
+  if (cleanupCallbacks.length === 0) {
+    return;
+  }
+  console.log(`[memory-guard] Running ${cleanupCallbacks.length} cleanup callback(s)`);
+  for (const fn of cleanupCallbacks) {
+    try {
+      fn();
+    } catch (error) {
+      console.warn('[memory-guard] Cleanup callback error:', error?.message || error);
+    }
+  }
+}
 
 /**
  * Get current memory usage statistics
@@ -125,6 +155,9 @@ export function forceGCWithStats() {
 export function emergencyCleanup() {
   console.warn('[memory-guard] 🚨 Emergency memory cleanup triggered');
 
+  // Run cleanup callbacks first to release caches
+  runCleanupCallbacks();
+
   // Force GC multiple times
   for (let i = 0; i < 3; i++) {
     forceGC();
@@ -157,10 +190,11 @@ function checkMemoryAndAct() {
     if (now - lastWarningTime > 60_000) {
       console.warn(
         `[memory-guard] ⚠️ CRITICAL: heap ${stats.heapUsedMB}MB / ${stats.heapLimitMB}MB ` +
-        `(${Math.round(stats.heapUsedPercent * 100)}%) - triggering GC`,
+        `(${Math.round(stats.heapUsedPercent * 100)}%) - triggering cleanup`,
       );
       lastWarningTime = now;
     }
+    runCleanupCallbacks();
     forceGC();
   } else if (stats.isWarning) {
     consecutivePressureCount++;

@@ -58,7 +58,7 @@ import {
 import { buildPmtilesManifest } from './pmtilesManifest.js';
 import { schedulePmtilesWarmup } from './pmtilesWarmup.js';
 import glowTileService from './glowTileService.js';
-import { isUnderMemoryPressure } from './memoryGuard.js';
+import { isUnderMemoryPressure, isMemoryEmergency, forceGC } from './memoryGuard.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1910,6 +1910,17 @@ function registerTileRoutes(app) {
     const x = Number.parseInt(req.params.x, 10);
     const y = Number.parseInt(req.params.y, 10);
 
+    // Emergency failsafe - only triggers at 90%+ heap usage to prevent OOM crash
+    // This should be rare after other memory fixes; it's a last-resort safety valve
+    if (isMemoryEmergency()) {
+      console.warn(`[glow-tiles] Emergency load shed for ${dataset}/${z}/${x}/${y}`);
+      res.status(503)
+        .set('Retry-After', '3')
+        .set('X-Memory-Pressure', 'emergency')
+        .json({ error: 'Server temporarily overloaded, please retry' });
+      return;
+    }
+
     glowTileService.setup();
 
     const startedAt = performance.now();
@@ -3088,10 +3099,14 @@ async function createProdServer() {
     console.log(`\nSSR production server running at http://${host}:${port}`);
 
     // Warmup tasks run after server is listening (non-blocking)
+    // Stagger phases with GC pauses to prevent memory spikes
     try {
       console.time('app-data:warmup');
       await createAppData({ bypassCache: true });
       console.timeEnd('app-data:warmup');
+      // GC pause between warmup phases
+      forceGC();
+      await new Promise(r => setTimeout(r, 500));
     } catch (error) {
       console.warn('Unable to warm app data cache:', error.message);
     }
@@ -3100,9 +3115,11 @@ async function createProdServer() {
     // Loading the 132MB GeoJSON causes OOM on memory-constrained Railway containers
     if (!postgisTileService.isDatasetEnabled('parking_tickets')) {
       try {
+        forceGC();
         console.time('tile-service:warmup');
         await tileService.ensureLoaded();
         console.timeEnd('tile-service:warmup');
+        forceGC();
       } catch (error) {
         console.warn('Unable to warm tile cache:', error.message);
       }
@@ -3111,6 +3128,7 @@ async function createProdServer() {
     }
 
     try {
+      await new Promise(r => setTimeout(r, 500));
       await warmInitialTiles('prod-startup');
     } catch (error) {
       console.warn('[warmup] production tile warmup failed:', error?.message || error);

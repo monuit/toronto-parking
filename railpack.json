@@ -28,7 +28,7 @@
     "startCommand": "cd /app/map-app && node scripts/run-with-heap.mjs server/index.js",
     "variables": {
       "NODE_ENV": "production",
-      "MAP_APP_MAX_HEAP_MB": "1200",
+      "MAP_APP_MAX_HEAP_MB": "4096",
       "NODE_OPTIONS": "--expose-gc",
       "UV_THREADPOOL_SIZE": "2",
       "TILE_WARMUP_ENABLED": "0",
