@@ -123,7 +123,14 @@ class GlowTileService {
           /* ignore */
         });
       }
-      this.pool = new Pool({ connectionString: dbConfig.connectionString, ssl: dbConfig.ssl, max: 4 });
+      this.pool = new Pool({
+        connectionString: dbConfig.connectionString,
+        ssl: dbConfig.ssl,
+        max: 4,
+        idleTimeoutMillis: 30_000,      // Close idle connections after 30s
+        connectionTimeoutMillis: 5_000, // Timeout connection attempts after 5s
+        application_name: 'glow-tiles',
+      });
       this.poolSignature = dbConfig.connectionString;
     }
     this.dbAvailable = Boolean(this.pool);

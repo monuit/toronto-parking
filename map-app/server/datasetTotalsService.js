@@ -64,6 +64,8 @@ function ensurePool() {
       connectionString: config.connectionString,
       ssl: config.ssl,
       max: 4,
+      idleTimeoutMillis: 30_000,      // Close idle connections after 30s
+      connectionTimeoutMillis: 5_000, // Timeout connection attempts after 5s
       application_name: 'dataset-totals-node',
     });
     pool.on('error', (error) => {
