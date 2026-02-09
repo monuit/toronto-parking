@@ -19,6 +19,7 @@ import {
   prewarmWardTiles,
   EMPTY_TILE_BUFFER,
   TILE_HARD_TIMEOUT_MS,
+  resolveHardTimeout,
   getTileMetrics,
 } from './tileService.js';
 import { createPostgisTileService, DATASET_CONFIG as POSTGIS_DATASET_CONFIG } from './postgisTileService.js';
@@ -2083,9 +2084,8 @@ function registerTileRoutes(app) {
       return;
     }
 
-    const hardTimeoutMs = Number.isFinite(TILE_HARD_TIMEOUT_MS) && TILE_HARD_TIMEOUT_MS > 0
-      ? TILE_HARD_TIMEOUT_MS
-      : 450;
+    // Use zoom-dependent timeout - low zoom tiles need more time for cold queries
+    const hardTimeoutMs = resolveHardTimeout(z);
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(new Error('Tile render budget exceeded')),

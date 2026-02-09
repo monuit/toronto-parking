@@ -108,10 +108,31 @@ const PARKING_TILE_SNAPSHOT_LIMIT = Number.parseInt(
   10,
 ) || 32;
 
+
 const BROTLI_LEGACY_REWRITE_KEYS = new Set();
 
-const TILE_HARD_TIMEOUT_MS = Number.parseInt(process.env.TILE_HARD_MS || '', 10)
-  || 450;
+// Zoom-dependent timeout configuration
+// Low zoom tiles contain much more data and need more time for cold queries
+const TILE_HARD_TIMEOUT_BASE_MS = Number.parseInt(process.env.TILE_HARD_MS || '', 10) || 750;
+const TILE_TIMEOUT_ZOOM_RULES = [
+  { maxZoom: 10, multiplier: 2.5 },  // Low zoom: 1875ms default
+  { maxZoom: 12, multiplier: 1.5 },  // Mid zoom: 1125ms default
+  { maxZoom: 14, multiplier: 1.0 },  // Standard zoom: 750ms default
+  { maxZoom: Number.POSITIVE_INFINITY, multiplier: 0.6 }, // High zoom: 450ms default
+];
+
+function resolveHardTimeout(z) {
+  for (const rule of TILE_TIMEOUT_ZOOM_RULES) {
+    if (z <= rule.maxZoom) {
+      return Math.round(TILE_HARD_TIMEOUT_BASE_MS * rule.multiplier);
+    }
+  }
+  return TILE_HARD_TIMEOUT_BASE_MS;
+}
+
+// Legacy export for backward compatibility
+const TILE_HARD_TIMEOUT_MS = TILE_HARD_TIMEOUT_BASE_MS;
+
 // Memory optimization: Reduced from 6 to 3 for lower concurrent memory on Railway
 const MAX_ACTIVE_RENDERS = (() => {
   const parsed = Number.parseInt(process.env.MAX_ACTIVE_RENDERS || '', 10);
@@ -1934,5 +1955,5 @@ export function getTileMetrics() {
   return getTileMetricsSnapshot();
 }
 
-export { TILE_HARD_TIMEOUT_MS, EMPTY_TILE_BUFFER };
+export { TILE_HARD_TIMEOUT_MS, EMPTY_TILE_BUFFER, resolveHardTimeout };
 

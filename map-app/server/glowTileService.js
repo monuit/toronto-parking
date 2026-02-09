@@ -50,6 +50,13 @@ const geojsonIndexCache = new Map();
 const geojsonIndexPromises = new Map();
 let geojsonIndexCacheTimestamp = Date.now();
 
+// Request coalescing: prevent duplicate renders for same tile
+const inflightTileRequests = new Map();
+
+// Rate-limited warnings to reduce log spam
+const fallbackSkipWarnings = new Map(); // dataset -> lastWarnTimestamp
+const FALLBACK_SKIP_WARN_INTERVAL_MS = 60_000; // Once per minute per dataset
+
 // Memory optimization: Clear geojson index cache periodically or under memory pressure
 function clearGeojsonIndexCacheIfStale() {
   const now = Date.now();
@@ -287,6 +294,25 @@ class GlowTileService {
     const startedAt = performance.now();
     let cacheStatus = 'miss';
 
+    // Request coalescing: if same tile is already being rendered, wait for it
+    const inflightKey = `${dataset}:${z}:${x}:${y}`;
+    const existing = inflightTileRequests.get(inflightKey);
+    if (existing) {
+      cacheStatus = 'coalesced';
+      try {
+        const result = await existing;
+        return {
+          ...result,
+          cacheStatus,
+          durationMs: performance.now() - startedAt,
+        };
+      } catch (error) {
+        // If the original request failed, remove it and let this one retry
+        inflightTileRequests.delete(inflightKey);
+        throw error;
+      }
+    }
+
     const cached = await this.getFromCache(cacheKey);
     if (cached) {
       cacheStatus = 'hit';
@@ -299,6 +325,25 @@ class GlowTileService {
       };
     }
 
+    // Register this request for coalescing before doing expensive work
+    const renderPromise = this._renderTileInternal({ dataset, z, x, y, cacheKey, signal });
+    inflightTileRequests.set(inflightKey, renderPromise);
+
+    try {
+      const tile = await renderPromise;
+      return {
+        buffer: tile.compressed,
+        empty: tile.empty,
+        cacheStatus,
+        durationMs: performance.now() - startedAt,
+        size: tile.compressed.length,
+      };
+    } finally {
+      inflightTileRequests.delete(inflightKey);
+    }
+  }
+
+  async _renderTileInternal({ dataset, z, x, y, cacheKey, signal }) {
     let tile;
     const canRetryDb = this.pool && (this.dbAvailable || Date.now() >= this.dbRetryAfter);
 
@@ -327,7 +372,13 @@ class GlowTileService {
 
         // Skip GeoJSON fallback for large datasets - they cause OOM
         if (SKIP_GEOJSON_FALLBACK_DATASETS.has(dataset)) {
-          console.warn(`[glow-tiles] Skipping GeoJSON fallback for ${dataset} (too large, would cause OOM)`);
+          // Rate-limit this warning to reduce log spam
+          const now = Date.now();
+          const lastWarn = fallbackSkipWarnings.get(dataset) || 0;
+          if (now - lastWarn > FALLBACK_SKIP_WARN_INTERVAL_MS) {
+            console.warn(`[glow-tiles] Skipping GeoJSON fallback for ${dataset} (too large, would cause OOM)`);
+            fallbackSkipWarnings.set(dataset, now);
+          }
           tile = { raw: EMPTY_TILE_RAW, compressed: EMPTY_TILE_GZIP, empty: true };
         } else {
           tile = await this.fetchFromGeoJson(dataset, z, x, y);
@@ -348,13 +399,7 @@ class GlowTileService {
     const ttl = tile.empty ? EMPTY_CACHE_TTL_SECONDS : CACHE_TTL_SECONDS;
     await this.storeInCache(cacheKey, tile.compressed, ttl);
 
-    return {
-      buffer: tile.compressed,
-      empty: tile.empty,
-      cacheStatus,
-      durationMs: performance.now() - startedAt,
-      size: tile.compressed.length,
-    };
+    return tile;
   }
 
   // MARK: - Health Check
